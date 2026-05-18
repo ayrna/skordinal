@@ -2,7 +2,7 @@
 
 | Overview  |                                                                                                                                          |
 |-----------|------------------------------------------------------------------------------------------------------------------------------------------|
-| **CI/CD** | [![Unit tests](https://github.com/ayrna/skordinal/actions/workflows/unit-tests.yml/badge.svg?branch=main)](https://github.com/ayrna/skordinal/actions/workflows/unit-tests.yml) [![!python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/) |
+| **CI/CD** | [![Unit tests](https://github.com/ayrna/skordinal/actions/workflows/unit-tests.yml/badge.svg?branch=main)](https://github.com/ayrna/skordinal/actions/workflows/unit-tests.yml) [![!python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue)](https://www.python.org/) |
 | **Code**  | [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff) [![License - BSD 3-Clause](https://img.shields.io/pypi/l/pandas.svg)](https://github.com/ayrna/skordinal/blob/main/LICENSE) |
 
 
@@ -29,7 +29,7 @@
 
 ### Requirements
 
-skordinal requires Python 3.9 or higher and is tested on Python 3.9, 3.10, 3.11, and 3.12.
+skordinal requires Python 3.10 or higher and is tested on Python 3.10, 3.11, 3.12, 3.13, and 3.14.
 
 All dependencies are managed through `pyproject.toml` and include:
 - numpy (>=1.21)

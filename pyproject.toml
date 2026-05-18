@@ -7,7 +7,7 @@ name = "skordinal"
 version = "0.0.1"
 description = "Ordinal classification for Python, scikit-learn compatible"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "BSD-3-Clause"}
 authors = [
     {name = "David Guijo-Rubio", email = "dguijo@uco.es"},
@@ -25,10 +25,11 @@ classifiers = [
     "Programming Language :: C",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries",
 ]
@@ -105,7 +106,7 @@ addopts = ["--color=yes", "--import-mode=importlib"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py310"
 exclude = [
     ".eggs",
     ".git",
@@ -122,6 +123,7 @@ select = ["E", "F", "W", "I"]
 ignore = ["E501"]
 
 [tool.mypy]
+python_version = "3.10"
 ignore_missing_imports = true
 allow_redefinition = true
 exclude = ["skordinal/classifiers/src/libsvmrank/", "skordinal/classifiers/src/svorex/"]

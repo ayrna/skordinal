@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["39", "310", "311", "312"]
+        python-version: ["310", "311", "312", "313", "314"]
     steps:
       - uses: actions/checkout@v6
       - uses: pypa/cibuildwheel@v3.4.1
