@@ -204,3 +204,15 @@ def test_nnpom_random_state_accepts_random_state_instance(X, y):
     ).fit(X, y)
 
     np.testing.assert_array_equal(rs_seed.theta1_, rs_instance.theta1_)
+
+
+def test_fit_no_nan_with_near_zero_probabilities():
+    """Training on perfectly separated data must produce finite weights."""
+    X_reg = np.vstack([np.ones((10, 2)) * 10, -np.ones((10, 2)) * 10])
+    y_reg = np.array([0] * 10 + [1] * 10)
+    clf = NNPOM(n_hidden=8, max_iter=50, random_state=0)
+    clf.fit(X_reg, y_reg)
+    assert np.isfinite(clf.theta1_).all()
+    assert np.isfinite(clf.theta2_).all()
+    assert np.isfinite(clf.thresholds_).all()
+    assert set(clf.predict(X_reg)).issubset(set(clf.classes_))

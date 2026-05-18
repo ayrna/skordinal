@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import math as math
 from numbers import Integral, Real
 
 import numpy as np
 import scipy
 from numpy.typing import ArrayLike
+from scipy.special import expit
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.utils import check_random_state
 from sklearn.utils._param_validation import Interval
@@ -76,10 +76,10 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         Name of the output activation function.
 
     theta1_ : ndarray of shape (n_hidden, n_features + 1)
-        Hidden layer weigths (with bias)
+        Hidden layer weights (with bias)
 
     theta2_ : ndarray of shape (1, n_hidden)
-        Output layer weigths (without bias, the biases will be the thresholds)
+        Output layer weights (without bias, the biases will be the thresholds)
 
     thresholds_ : ndarray of shape (n_classes - 1, 1)
         Class thresholds parameters
@@ -175,11 +175,11 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             == np.tile(np.arange(1, n_classes + 1)[np.newaxis, :], (n_samples, 1))
         )
 
-        # Hidden layer weigths (with bias)
+        # Hidden layer weights (with bias)
         initial_theta1 = self._rand_initialize_weights(
             self.n_features_in_ + 1, self.n_hidden, rng
         )
-        # Output layer weigths (without bias, the biases will be the thresholds)
+        # Output layer weights (without bias, the biases will be the thresholds)
         initial_theta2 = self._rand_initialize_weights(self.n_hidden, 1, rng)
         # Class thresholds parameters
         initial_thresholds = self._rand_initialize_weights((n_classes - 1), 1, rng)
@@ -259,13 +259,13 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         a1 = np.append(np.ones((n_samples, 1)), X, axis=1)
         z2 = np.matmul(a1, self.theta1_.T)
-        a2 = 1.0 / (1.0 + np.exp(-z2))
+        a2 = expit(z2)
         projected = np.matmul(a2, self.theta2_.T)
 
         z3 = np.tile(self.thresholds_, (n_samples, 1)) - np.tile(
             projected, (1, n_classes - 1)
         )
-        a3T = 1.0 / (1.0 + np.exp(-z3))
+        a3T = expit(z3)
         a3 = np.append(a3T, np.ones((n_samples, 1)), axis=1)
         a3[:, 1:] = a3[:, 1:] - a3[:, 0:-1]
         y_pred = self.classes_[a3.argmax(1)]
@@ -468,21 +468,21 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         # Neural Network model
         a1 = np.append(np.ones((n_samples, 1)), X, axis=1)
         z2 = np.matmul(a1, theta1.T)
-        a2 = 1.0 / (1.0 + np.exp(-z2))
+        a2 = expit(z2)
 
         z3 = np.tile(thresholds, (n_samples, 1)) - np.tile(
             np.matmul(a2, theta2.T), (1, n_classes - 1)
         )
-        a3T = 1.0 / (1.0 + np.exp(-z3))
+        a3T = expit(z3)
         a3 = np.append(a3T, np.ones((n_samples, 1)), axis=1)
         h = np.concatenate(
             (a3[:, 0].reshape((a3.shape[0], 1)), a3[:, 1:] - a3[:, 0:-1]), axis=1
         )
 
-        # Final output
-        out = h
+        # Guard against zero probabilities: log(0) and -1/0 would produce NaN.
+        out = np.maximum(h, 1e-15)
 
-        # Calculate penalty (regularización L2)
+        # Calculate penalty (L2 regularization)
         p = np.sum((theta1[:, 1:] ** 2).sum() + (theta2[:, 0:] ** 2).sum())
 
         # Cross entropy
@@ -490,7 +490,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             2 * n_samples
         )
 
-        # Cross entropy
+        # Error derivative
         error_der = np.zeros(Y.shape)
         error_der[np.where(Y != 0)] = np.divide(
             -Y[np.where(Y != 0)], out[np.where(Y != 0)]
@@ -524,7 +524,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         theta1_grad = delta_1 / n_samples + p1
         theta2_grad = delta_2 / n_samples + p2
 
-        # Treshold gradients
+        # Threshold gradients
         thresh_grad_matrix = np.multiply(
             np.concatenate(
                 (
