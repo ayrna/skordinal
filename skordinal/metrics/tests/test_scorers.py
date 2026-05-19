@@ -47,7 +47,7 @@ def test_scorers_not_in_public_all():
     "name, metric_fn",
     [
         ("accuracy_off1", accuracy_off1),
-        ("accuracy", accuracy_score),
+        ("accuracy_score", accuracy_score),
         ("geometric_mean", geometric_mean),
         ("gmsec", gmsec),
         ("minimum_sensitivity", minimum_sensitivity),
@@ -84,44 +84,6 @@ def test_loss_scorer_sign(name, metric_fn):
     assert scorer._sign == -1
 
 
-@pytest.mark.parametrize(
-    "name, metric_fn",
-    [
-        ("ccr", accuracy_score),
-        ("gm", geometric_mean),
-        ("ms", minimum_sensitivity),
-        ("spearman", spearmans_rho),
-        ("tkendall", kendalls_tau),
-        ("wkappa", weighted_kappa),
-    ],
-)
-def test_deprecated_utility_scorer_sign(name, metric_fn):
-    """Deprecated short-name utility scorers have sign +1 and wrap the correct function."""
-    scorer = get_ordinal_scorer(name)
-    assert scorer._score_func is metric_fn
-    assert scorer._sign == 1
-
-
-@pytest.mark.parametrize(
-    "name, metric_fn",
-    [
-        ("neg_amae", average_mean_absolute_error),
-        ("neg_mae", mean_absolute_error),
-        ("neg_mmae", maximum_mean_absolute_error),
-        ("neg_mze", mean_zero_one_error),
-        ("amae", average_mean_absolute_error),
-        ("mae", mean_absolute_error),
-        ("mmae", maximum_mean_absolute_error),
-        ("mze", mean_zero_one_error),
-    ],
-)
-def test_deprecated_loss_scorer_sign(name, metric_fn):
-    """Deprecated short-name loss scorers have sign -1 and wrap the correct function."""
-    scorer = get_ordinal_scorer(name)
-    assert scorer._score_func is metric_fn
-    assert scorer._sign == -1
-
-
 def test_whitespace_stripped():
     """Leading and trailing whitespace in the name is ignored."""
     assert get_ordinal_scorer("  neg_mean_absolute_error  ")._sign == -1
@@ -130,7 +92,7 @@ def test_whitespace_stripped():
 @pytest.mark.parametrize(
     "name, metric_fn",
     [
-        ("accuracy", accuracy_score),
+        ("accuracy_score", accuracy_score),
         ("accuracy_off1", accuracy_off1),
         ("geometric_mean", geometric_mean),
         ("gmsec", gmsec),
@@ -146,33 +108,6 @@ def test_whitespace_stripped():
 )
 def test_scorer_output_matches_metric(name, metric_fn):
     """Scorer's score function returns the same value as calling the metric directly."""
-    y_true = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]
-    y_pred = [1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3]
-    scorer = get_ordinal_scorer(name)
-    npt.assert_almost_equal(
-        scorer._score_func(y_true, y_pred), metric_fn(y_true, y_pred)
-    )
-
-
-@pytest.mark.parametrize(
-    "name, metric_fn",
-    [
-        ("ccr", accuracy_score),
-        ("accuracy_off1", accuracy_off1),
-        ("gm", geometric_mean),
-        ("gmsec", gmsec),
-        ("mae", mean_absolute_error),
-        ("mmae", maximum_mean_absolute_error),
-        ("amae", average_mean_absolute_error),
-        ("ms", minimum_sensitivity),
-        ("mze", mean_zero_one_error),
-        ("tkendall", kendalls_tau),
-        ("wkappa", weighted_kappa),
-        ("spearman", spearmans_rho),
-    ],
-)
-def test_deprecated_scorer_output_matches_metric(name, metric_fn):
-    """Deprecated scorer's score function returns the same value as the metric."""
     y_true = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]
     y_pred = [1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3]
     scorer = get_ordinal_scorer(name)
@@ -220,7 +155,7 @@ def test_scorer_names_present():
         "neg_maximum_mean_absolute_error",
         "neg_mean_zero_one_error",
         "neg_ranked_probability_score",
-        "accuracy",
+        "accuracy_score",
         "accuracy_off1",
         "geometric_mean",
         "gmsec",
@@ -230,29 +165,4 @@ def test_scorer_names_present():
         "weighted_kappa",
     ]
     for name in expected:
-        assert name in names, f"{name!r} missing from list_ordinal_scorers()"
-
-
-def test_deprecated_scorer_names_present():
-    """Deprecated short-name scorer keys are still registered."""
-    names = list_ordinal_scorers()
-    deprecated = [
-        "neg_amae",
-        "neg_mae",
-        "neg_mmae",
-        "neg_mze",
-        "neg_rps",
-        "amae",
-        "ccr",
-        "gm",
-        "mae",
-        "mmae",
-        "ms",
-        "mze",
-        "rps",
-        "spearman",
-        "tkendall",
-        "wkappa",
-    ]
-    for name in deprecated:
         assert name in names, f"{name!r} missing from list_ordinal_scorers()"

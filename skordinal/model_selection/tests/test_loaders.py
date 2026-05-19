@@ -72,7 +72,7 @@ def test_load_classifier_with_searchcv():
         param_grid=param_grid,
         random_state=TEST_RANDOM_STATE,
         cv_n_folds=5,
-        cv_metric="mae",
+        cv_metric="neg_mean_absolute_error",
         n_jobs=1,
     )
 
@@ -104,7 +104,7 @@ def test_load_classifier_with_ensemble_method():
         param_grid=param_grid,
         n_jobs=10,
         cv_n_folds=3,
-        cv_metric=get_ordinal_scorer("neg_mae"),
+        cv_metric=get_ordinal_scorer("neg_mean_absolute_error"),
         random_state=TEST_RANDOM_STATE,
     )
     assert isinstance(classifier, GridSearchCV)

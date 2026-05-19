@@ -280,63 +280,6 @@ def test_spearmans_rho_constant_input():
     npt.assert_equal(spearmans_rho(np.array([1, 1, 1, 1]), np.array([0, 1, 2, 3])), 0.0)
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "ccr",
-        "amae",
-        "gm",
-        "mae",
-        "mmae",
-        "ms",
-        "mze",
-        "tkendall",
-        "wkappa",
-        "spearman",
-    ],
-)
-def test_deprecated_alias_warns(name):
-    """Calling a deprecated short-name alias emits DeprecationWarning."""
-    import skordinal.metrics as m
-
-    y_true = np.array([0, 1, 2, 1, 0])
-    y_pred = np.array([0, 1, 1, 2, 0])
-    fn = getattr(m, name)
-    with pytest.warns(DeprecationWarning, match=name):
-        fn(y_true, y_pred)
-
-
-def test_deprecated_rps_warns():
-    """Calling the deprecated rps alias emits DeprecationWarning."""
-    import skordinal.metrics as m
-
-    y_true = np.array([0, 1, 2])
-    y_proba = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]])
-    with pytest.warns(DeprecationWarning, match="rps"):
-        m.rps(y_true, y_proba)
-
-
-def test_deprecated_alias_not_in_all():
-    """Deprecated short names are not present in skordinal.metrics.__all__."""
-    import skordinal.metrics as m
-
-    deprecated = [
-        "ccr",
-        "amae",
-        "gm",
-        "mae",
-        "mmae",
-        "ms",
-        "mze",
-        "tkendall",
-        "wkappa",
-        "spearman",
-        "rps",
-    ]
-    for name in deprecated:
-        assert name not in m.__all__, f"{name!r} should not be in __all__"
-
-
 def test_metric_names_in_all():
     """All public metric names are present in skordinal.metrics.__all__."""
     import skordinal.metrics as m

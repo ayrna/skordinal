@@ -53,7 +53,7 @@ def experiment_conf(tmp_path, partition_dataset):
         "jobs": 1,
         "output_folder": str(tmp_path / "runs"),
         "metrics": [
-            "accuracy",
+            "accuracy_score",
             "mean_absolute_error",
             "average_mean_absolute_error",
             "mean_zero_one_error",
