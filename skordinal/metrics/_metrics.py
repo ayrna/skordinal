@@ -2,17 +2,10 @@
 
 from __future__ import annotations
 
-import warnings
-
 import numpy as np
 import scipy.stats
 from numpy.typing import ArrayLike, NDArray
-from sklearn.metrics import (
-    accuracy_score,
-    confusion_matrix,
-    mean_absolute_error,
-    recall_score,
-)
+from sklearn.metrics import confusion_matrix, recall_score
 from sklearn.utils import check_array, check_consistent_length
 
 
@@ -741,113 +734,3 @@ def accuracy_off1(
     correct = mask * conf_mat
 
     return float(np.sum(correct) / np.sum(conf_mat))
-
-
-def ccr(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`accuracy_score`."""
-    warnings.warn(
-        "ccr is deprecated, use accuracy_score instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return accuracy_score(y_true, y_pred)
-
-
-def amae(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`average_mean_absolute_error`."""
-    warnings.warn(
-        "amae is deprecated, use average_mean_absolute_error instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return average_mean_absolute_error(y_true, y_pred)
-
-
-def gm(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`geometric_mean`."""
-    warnings.warn(
-        "gm is deprecated, use geometric_mean instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return geometric_mean(y_true, y_pred)
-
-
-def mae(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`mean_absolute_error`."""
-    warnings.warn(
-        "mae is deprecated, use mean_absolute_error instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return mean_absolute_error(y_true, y_pred)
-
-
-def mmae(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`maximum_mean_absolute_error`."""
-    warnings.warn(
-        "mmae is deprecated, use maximum_mean_absolute_error instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return maximum_mean_absolute_error(y_true, y_pred)
-
-
-def ms(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`minimum_sensitivity`."""
-    warnings.warn(
-        "ms is deprecated, use minimum_sensitivity instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return minimum_sensitivity(y_true, y_pred)
-
-
-def mze(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`mean_zero_one_error`."""
-    warnings.warn(
-        "mze is deprecated, use mean_zero_one_error instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return mean_zero_one_error(y_true, y_pred)
-
-
-def tkendall(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`kendalls_tau`."""
-    warnings.warn(
-        "tkendall is deprecated, use kendalls_tau instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return kendalls_tau(y_true, y_pred)
-
-
-def wkappa(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`weighted_kappa`."""
-    warnings.warn(
-        "wkappa is deprecated, use weighted_kappa instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return weighted_kappa(y_true, y_pred)
-
-
-def spearman(y_true: ArrayLike, y_pred: ArrayLike) -> float:
-    """Deprecated alias for :func:`spearmans_rho`."""
-    warnings.warn(
-        "spearman is deprecated, use spearmans_rho instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return spearmans_rho(y_true, y_pred)
-
-
-def rps(y_true: ArrayLike, y_proba: ArrayLike) -> float:
-    """Deprecated alias for :func:`ranked_probability_score`."""
-    warnings.warn(
-        "rps is deprecated, use ranked_probability_score instead",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return ranked_probability_score(y_true, y_proba)

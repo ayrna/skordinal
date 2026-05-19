@@ -15,39 +15,6 @@ from ._metrics import (
     spearmans_rho,
     weighted_kappa,
 )
-from ._metrics import (
-    amae as amae,
-)
-from ._metrics import (
-    ccr as ccr,
-)
-from ._metrics import (
-    gm as gm,
-)
-from ._metrics import (
-    mae as mae,
-)
-from ._metrics import (
-    mmae as mmae,
-)
-from ._metrics import (
-    ms as ms,
-)
-from ._metrics import (
-    mze as mze,
-)
-from ._metrics import (
-    rps as rps,
-)
-from ._metrics import (
-    spearman as spearman,
-)
-from ._metrics import (
-    tkendall as tkendall,
-)
-from ._metrics import (
-    wkappa as wkappa,
-)
 from ._scorers import get_ordinal_scorer, list_ordinal_scorers
 
 __all__ = [
