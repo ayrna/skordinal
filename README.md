@@ -81,8 +81,8 @@ skordinal includes sample datasets with pre-partitioned train/test splits using 
         "datasets": ["balance-scale", "contact-lenses", "tae"],
         "hyperparam_cv_nfolds": 3,
         "output_folder": "results/",
-        "metrics": ["ccr", "mae", "amae"],
-        "cv_metric": "mae"
+        "metrics": ["accuracy_score", "neg_mean_absolute_error", "neg_average_mean_absolute_error"],
+        "cv_metric": "neg_mean_absolute_error"
     },
     "configurations": {
         "SVM": {
