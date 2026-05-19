@@ -6,7 +6,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import (
-    accuracy_off1,
+    accuracy_off1_score,
     accuracy_score,
     average_mean_absolute_error,
     geometric_mean,
@@ -46,7 +46,7 @@ def test_scorers_not_in_public_all():
 @pytest.mark.parametrize(
     "name, metric_fn",
     [
-        ("accuracy_off1", accuracy_off1),
+        ("accuracy_off1_score", accuracy_off1_score),
         ("accuracy_score", accuracy_score),
         ("geometric_mean", geometric_mean),
         ("gmsec", gmsec),
@@ -93,7 +93,7 @@ def test_whitespace_stripped():
     "name, metric_fn",
     [
         ("accuracy_score", accuracy_score),
-        ("accuracy_off1", accuracy_off1),
+        ("accuracy_off1_score", accuracy_off1_score),
         ("geometric_mean", geometric_mean),
         ("gmsec", gmsec),
         ("mean_absolute_error", mean_absolute_error),
@@ -156,7 +156,7 @@ def test_scorer_names_present():
         "neg_mean_zero_one_error",
         "neg_ranked_probability_score",
         "accuracy_score",
-        "accuracy_off1",
+        "accuracy_off1_score",
         "geometric_mean",
         "gmsec",
         "kendalls_tau",

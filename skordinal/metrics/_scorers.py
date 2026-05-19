@@ -7,7 +7,7 @@ from collections.abc import Callable
 from sklearn.metrics import accuracy_score, make_scorer, mean_absolute_error
 
 from ._metrics import (
-    accuracy_off1,
+    accuracy_off1_score,
     average_mean_absolute_error,
     geometric_mean,
     gmsec,
@@ -45,7 +45,7 @@ _SCORERS: dict[str, Callable] = {
     ),
     "mean_zero_one_error": make_scorer(mean_zero_one_error, greater_is_better=False),
     "accuracy_score": make_scorer(accuracy_score),
-    "accuracy_off1": make_scorer(accuracy_off1),
+    "accuracy_off1_score": make_scorer(accuracy_off1_score),
     "geometric_mean": make_scorer(geometric_mean),
     "gmsec": make_scorer(gmsec),
     "kendalls_tau": make_scorer(kendalls_tau),

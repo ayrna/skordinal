@@ -675,7 +675,7 @@ def ranked_probability_score(
     return float(np.average(per_sample, weights=weights))
 
 
-def accuracy_off1(
+def accuracy_off1_score(
     y_true: ArrayLike,
     y_pred: ArrayLike,
     *,
@@ -715,10 +715,10 @@ def accuracy_off1(
     Examples
     --------
     >>> import numpy as np
-    >>> from skordinal.metrics import accuracy_off1
+    >>> from skordinal.metrics import accuracy_off1_score
     >>> y_true = np.array([0, 0, 1, 2, 3, 0, 0])
     >>> y_pred = np.array([0, 1, 1, 2, 0, 0, 1])
-    >>> accuracy_off1(y_true, y_pred)
+    >>> accuracy_off1_score(y_true, y_pred)
     0.8571428571428571
 
     """

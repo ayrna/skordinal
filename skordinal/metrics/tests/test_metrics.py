@@ -7,7 +7,7 @@ import numpy.testing as npt
 import pytest
 
 from skordinal.metrics import (
-    accuracy_off1,
+    accuracy_off1_score,
     accuracy_score,
     average_mean_absolute_error,
     geometric_mean,
@@ -24,7 +24,7 @@ from skordinal.metrics import (
 from skordinal.metrics._metrics import _check_metric_inputs, _check_proba_inputs
 
 _WEIGHTED_METRICS = [
-    accuracy_off1,
+    accuracy_off1_score,
     average_mean_absolute_error,
     geometric_mean,
     gmsec,
@@ -118,16 +118,16 @@ def test_accuracy_score():
         ([0, 1, 2, 3, 4], [0, 2, 1, 4, 3], 1.0),
     ],
 )
-def test_accuracy_off1(y_true, y_pred, expected):
-    """accuracy_off1 counts predictions within one ordinal class of truth."""
-    npt.assert_almost_equal(accuracy_off1(y_true, y_pred), expected, decimal=6)
+def test_accuracy_off1_score(y_true, y_pred, expected):
+    """accuracy_off1_score counts predictions within one ordinal class of truth."""
+    npt.assert_almost_equal(accuracy_off1_score(y_true, y_pred), expected, decimal=6)
 
 
-def test_accuracy_off1_lower_diagonal():
+def test_accuracy_off1_score_lower_diagonal():
     """Predictions one class below truth all count as correct (off1 = 1.0)."""
     y_true = np.array([1, 2, 3])
     y_pred = np.array([0, 1, 2])
-    npt.assert_allclose(accuracy_off1(y_true, y_pred), 1.0)
+    npt.assert_allclose(accuracy_off1_score(y_true, y_pred), 1.0)
 
 
 @pytest.mark.parametrize(
@@ -297,7 +297,7 @@ def test_metric_names_in_all():
         "spearmans_rho",
         "ranked_probability_score",
         "gmsec",
-        "accuracy_off1",
+        "accuracy_off1_score",
     ]
     for name in expected:
         assert name in m.__all__, f"{name!r} missing from __all__"
@@ -310,9 +310,9 @@ def test_sample_weight_is_keyword_only(fn):
     assert sig.parameters["sample_weight"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
-def test_accuracy_off1_labels_is_keyword_only():
-    """labels is a keyword-only parameter of accuracy_off1."""
-    sig = inspect.signature(accuracy_off1)
+def test_accuracy_off1_score_labels_is_keyword_only():
+    """labels is a keyword-only parameter of accuracy_off1_score."""
+    sig = inspect.signature(accuracy_off1_score)
     assert sig.parameters["labels"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
@@ -345,7 +345,7 @@ def test_metric_unit_sample_weight_matches_unweighted(fn):
 
 
 def test_metric_zero_weight_excludes_sample():
-    """Setting a sample's weight to 0 removes its contribution to accuracy_off1."""
+    """Setting a sample's weight to 0 removes its contribution to accuracy_off1_score."""
     y_t = np.array([0, 1, 2, 1, 0, 3])
     y_p = np.array([3, 1, 2, 1, 0, 3])
     n = len(y_t)
@@ -354,8 +354,8 @@ def test_metric_zero_weight_excludes_sample():
     zero_w = np.ones(n)
     zero_w[0] = 0.0
 
-    score_unit = accuracy_off1(y_t, y_p, sample_weight=unit_w)
-    score_zero = accuracy_off1(y_t, y_p, sample_weight=zero_w)
+    score_unit = accuracy_off1_score(y_t, y_p, sample_weight=unit_w)
+    score_zero = accuracy_off1_score(y_t, y_p, sample_weight=zero_w)
     assert score_zero > score_unit
 
 
