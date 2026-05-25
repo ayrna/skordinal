@@ -15,7 +15,8 @@ from sklearn.base import BaseEstimator
 from sklearn.model_selection import GridSearchCV
 
 from skordinal.model_selection import load_classifier
-from skordinal.results import Results
+
+from ._results import Results
 
 
 def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:

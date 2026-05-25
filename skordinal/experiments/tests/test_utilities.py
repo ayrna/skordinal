@@ -7,7 +7,7 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 
-from skordinal.utilities import Utilities
+from skordinal.experiments import Utilities
 from skordinal.utils._testing import make_balance_scale_split
 
 

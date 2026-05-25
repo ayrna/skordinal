@@ -2,7 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
-from skordinal.utilities import Utilities
+from skordinal.experiments import Utilities
 
 
 def main(general_conf, configurations):

@@ -12,7 +12,7 @@ import pandas.testing as pdt
 import pytest
 from sklearn.svm import SVC
 
-from skordinal.results import Results
+from skordinal.experiments import Results
 
 
 @pytest.fixture
