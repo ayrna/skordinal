@@ -16,7 +16,7 @@ from sklearn.model_selection import GridSearchCV
 
 from skordinal.model_selection import load_classifier
 
-from ._results import Results
+from ._results import ExperimentResult, Results
 
 
 def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:
@@ -204,14 +204,28 @@ class Utilities:
                         train_metrics["time_train"] = optimal_estimator.refit_time_
                         test_metrics["time_test"] = elapsed
 
+                    y_proba = None
+                    if "test_outputs" in partition and hasattr(
+                        optimal_estimator.best_estimator_, "predict_proba"
+                    ):
+                        y_proba = optimal_estimator.best_estimator_.predict_proba(
+                            partition["test_inputs"]
+                        )
+
                     # Saving the results for this partition
-                    self._results.add_record(
-                        part_idx,
-                        optimal_estimator.best_params_,
-                        optimal_estimator.best_estimator_,
-                        {"dataset": dataset_name, "config": conf_name},
-                        {"train": train_metrics, "test": test_metrics},
-                        {"train": train_predicted_y, "test": test_predicted_y},
+                    self._results.save(
+                        ExperimentResult(
+                            dataset_name=dataset_name,
+                            classifier_name=conf_name,
+                            resample_id=part_idx,
+                            train_predicted_y=train_predicted_y,
+                            test_predicted_y=test_predicted_y,
+                            y_proba=y_proba,
+                            train_metrics=train_metrics,
+                            test_metrics=test_metrics,
+                            best_params=optimal_estimator.best_params_,
+                            best_model=optimal_estimator.best_estimator_,
+                        )
                     )
 
     def _load_dataset(self, dataset_path: Path) -> list[tuple[str, dict[str, Any]]]:

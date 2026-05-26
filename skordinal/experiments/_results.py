@@ -96,44 +96,21 @@ class Results:
 
         self._experiment_folder = Path(output_folder) / folder_name
 
-    def add_record(
+    def save(
         self,
-        partition: str,
-        best_params: dict[str, Any],
-        best_model: BaseEstimator,
-        configuration: dict[str, str],
-        metrics: dict[str, dict[str, Any]],
-        predictions: dict[str, np.ndarray | None],
+        result: ExperimentResult,
+        *,
+        save_model: bool = True,
     ) -> None:
         """Store information obtained from the run of one partition.
 
         Parameters
         ----------
-        partition : str
-            Partition's index.
+        result : ExperimentResult
+            All data produced by a single classifier run on one partition.
 
-        best_params : dict
-            Best hyper-parameter's values found for this configuration and dataset
-            during cross-validation. If an ensemble method has been used, there'll
-            exist a parameter called 'parameters' that will store a dict with the best
-            hyper-parameters found for the base classifier. Keys are the name of each
-            parameter.
-
-        best_model : estimator
-            Best model created during cross-validation.
-
-        configuration : dict
-            Dictionary containing the name used for this pair of dataset and
-            configuration. Keys are 'dataset' and 'config'.
-
-        metrics : dict of dictionaries
-            Dictionary containing the metrics for train and test for this particular
-            configuration. It contains computational times for both of them as well.
-            Keys are 'train' and 'test'.
-
-        predictions : dict of lists
-            Dictionary that stores train and test class predictions. Keys are 'train'
-            and 'test'.
+        save_model : bool, default=True
+            Whether to pickle the fitted model to disk.
 
         Raises
         ------
@@ -142,7 +119,7 @@ class Results:
 
         """
         dataset_folder = self._experiment_folder / (
-            configuration["dataset"] + "-" + configuration["config"]
+            result.dataset_name + "-" + result.classifier_name
         )
         models_folder = dataset_folder / "models"
         predictions_folder = dataset_folder / "predictions"
@@ -150,44 +127,62 @@ class Results:
         # Creating folder for this dataset-configuration if necessary
         if not dataset_folder.exists():
             try:
-                models_folder.mkdir(parents=True)
-                predictions_folder.mkdir(parents=True)
+                if save_model:
+                    models_folder.mkdir(parents=True)
+                else:
+                    predictions_folder.mkdir(parents=True)
+                predictions_folder.mkdir(exist_ok=True)
 
             except OSError:
                 raise OSError(
-                    f"Could not create folder {dataset_folder} (or subfolders) to store results."
+                    f"Could not create folder {dataset_folder} (or subfolders) "
+                    "to store results."
                 )
 
         # Saving partition model
-        model_filename = (
-            configuration["dataset"] + "-" + configuration["config"] + "." + partition
-        )
-        with open(models_folder / model_filename, "wb") as output:
-            pickle.dump(best_model, output)
+        if save_model:
+            models_folder.mkdir(exist_ok=True)
+            model_filename = (
+                result.dataset_name
+                + "-"
+                + result.classifier_name
+                + "."
+                + result.resample_id
+            )
+            with open(models_folder / model_filename, "wb") as output:
+                pickle.dump(result.best_model, output)
 
         # Saving model predictions
         pred_filename = (
-            configuration["dataset"] + "-" + configuration["config"] + "." + partition
+            result.dataset_name
+            + "-"
+            + result.classifier_name
+            + "."
+            + result.resample_id
         )
-        train_pred = predictions["train"]
-        if train_pred is not None:
+        if result.train_predicted_y is not None:
             np.savetxt(
                 predictions_folder / f"train_{pred_filename}",
-                train_pred,
+                result.train_predicted_y,
                 fmt="%d",
             )
 
-        test_pred = predictions["test"]
-        if test_pred is not None:
+        if result.test_predicted_y is not None:
             np.savetxt(
                 predictions_folder / f"test_{pred_filename}",
-                test_pred,
+                result.test_predicted_y,
                 fmt="%d",
+            )
+
+        if result.y_proba is not None:
+            np.savetxt(
+                predictions_folder / f"proba_{pred_filename}",
+                result.y_proba,
             )
 
         dataframe_row = OrderedDict()
         # Adding best parameters as first elements in row
-        for p_name, p_value in best_params.items():
+        for p_name, p_value in result.best_params.items():
             # If some ensemble method has been used, then one of its parameters will be
             # a dictionary containing the best parameters found for the base classifier.
             if isinstance(p_value, dict):
@@ -198,17 +193,15 @@ class Results:
 
         # Concatenating train and test metrics
         for (tm_name, tm_value), (ts_name, ts_value) in zip(
-            metrics["train"].items(), metrics["test"].items()
+            result.train_metrics.items(), result.test_metrics.items()
         ):
             dataframe_row[tm_name] = tm_value
             dataframe_row[ts_name] = ts_value
 
         # Adding row to existing DataFrame or creating new one
-        df_path = (
-            dataset_folder / f"{configuration['dataset']}-{configuration['config']}.csv"
-        )
+        df_path = dataset_folder / f"{result.dataset_name}-{result.classifier_name}.csv"
 
-        df = pd.DataFrame([dataframe_row], index=[partition])
+        df = pd.DataFrame([dataframe_row], index=[result.resample_id])
         if df_path.is_file():
             previous_df = pd.read_csv(df_path, index_col=[0])
             df = pd.concat([previous_df, df], axis=0)
