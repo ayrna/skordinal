@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pickle
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,59 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
+
+
+@dataclass(frozen=True)
+class ExperimentResult:
+    """Result of running a single classifier on one dataset partition.
+
+    Parameters
+    ----------
+    dataset_name : str
+        Name of the dataset.
+
+    classifier_name : str
+        Name of the classifier configuration.
+
+    resample_id : str
+        Partition identifier.
+
+    train_predicted_y : ndarray
+        Class predictions on the training partition.
+
+    test_predicted_y : ndarray or None
+        Class predictions on the test partition. ``None`` if no test partition
+        was available.
+
+    y_proba : ndarray or None
+        Class probability estimates on the test partition, shape
+        ``(n_samples, n_classes)``. ``None`` if the estimator does not support
+        ``predict_proba``.
+
+    train_metrics : dict
+        Metric values computed on the training partition, including timing.
+
+    test_metrics : dict
+        Metric values computed on the test partition, including timing.
+
+    best_params : dict
+        Best hyper-parameter values found during cross-validation.
+
+    best_model : estimator
+        Fitted estimator selected during cross-validation or direct fit.
+
+    """
+
+    dataset_name: str
+    classifier_name: str
+    resample_id: str
+    train_predicted_y: np.ndarray
+    test_predicted_y: np.ndarray | None
+    y_proba: np.ndarray | None
+    train_metrics: dict[str, Any]
+    test_metrics: dict[str, Any]
+    best_params: dict[str, Any]
+    best_model: BaseEstimator
 
 
 class Results:
