@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import pickle
-from collections import OrderedDict
+import json
 from dataclasses import dataclass
-from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
@@ -29,17 +28,16 @@ class ExperimentResult:
     resample_id : str
         Partition identifier.
 
-    train_predicted_y : ndarray
+    train_predicted_y : ndarray of shape (n_train_samples,)
         Class predictions on the training partition.
 
-    test_predicted_y : ndarray or None
+    test_predicted_y : ndarray of shape (n_test_samples,) or None
         Class predictions on the test partition. ``None`` if no test partition
         was available.
 
-    y_proba : ndarray or None
-        Class probability estimates on the test partition, shape
-        ``(n_samples, n_classes)``. ``None`` if the estimator does not support
-        ``predict_proba``.
+    y_proba : ndarray of shape (n_test_samples, n_classes) or None
+        Class probability estimates on the test partition. ``None`` if the
+        estimator does not support ``predict_proba``.
 
     train_metrics : dict
         Metric values computed on the training partition, including timing.
@@ -80,31 +78,21 @@ class ExperimentResult:
 class Results:
     """Handle all information from an experiment that needs to be saved.
 
-    This information will be saved into an specified folder.
-
     Parameters
     ----------
-    output_folder : Path
-        Base directory for storing experimental results.
+    output_folder : str or Path
+        Directory where all results for this run will be stored. Used directly
+        as the experiment root; no timestamp subfolder is created.
 
     Attributes
     ----------
     _experiment_folder : Path
-        Path where all the information about the actual experiment will be saved. This
-        folder will have the next format: 'exp-YY-MM-DD-hh-mm-ss'.
+        Path to the experiment folder.
 
     """
 
-    def __init__(self, output_folder: Path) -> None:
-        # Getting experiment's folder name
-        folder_name = (
-            "exp-"
-            + date.today().strftime("%y-%m-%d")
-            + "-"
-            + datetime.now().strftime("%H-%M-%S")
-        )
-
-        self._experiment_folder = Path(output_folder) / folder_name
+    def __init__(self, output_folder: str | Path) -> None:
+        self._experiment_folder = Path(output_folder)
 
     def save(
         self,
@@ -120,7 +108,7 @@ class Results:
             All data produced by a single classifier run on one partition.
 
         save_model : bool, default=True
-            Whether to pickle the fitted model to disk.
+            Whether to persist the fitted model to disk with joblib.
 
         Raises
         ------
@@ -128,93 +116,58 @@ class Results:
             If the folder cannot be created.
 
         """
-        dataset_folder = self._experiment_folder / (
-            result.dataset_name + "-" + result.classifier_name
+        base_dir, models_dir, pred_dir = self._ensure_dirs(
+            result.classifier_name, result.dataset_name, save_model=save_model
         )
-        models_folder = dataset_folder / "models"
-        predictions_folder = dataset_folder / "predictions"
 
-        # Creating folder for this dataset-configuration if necessary
-        if not dataset_folder.exists():
-            try:
-                if save_model:
-                    models_folder.mkdir(parents=True)
-                else:
-                    predictions_folder.mkdir(parents=True)
-                predictions_folder.mkdir(exist_ok=True)
-
-            except OSError:
-                raise OSError(
-                    f"Could not create folder {dataset_folder} (or subfolders) "
-                    "to store results."
-                )
-
-        # Saving partition model
+        # Write model and prediction CSVs
         if save_model:
-            models_folder.mkdir(exist_ok=True)
-            model_filename = (
-                result.dataset_name
-                + "-"
-                + result.classifier_name
-                + "."
-                + result.resample_id
-            )
-            with open(models_folder / model_filename, "wb") as output:
-                pickle.dump(result.best_model, output)
-
-        # Saving model predictions
-        pred_filename = (
-            result.dataset_name
-            + "-"
-            + result.classifier_name
-            + "."
-            + result.resample_id
-        )
-        if result.train_predicted_y is not None:
-            np.savetxt(
-                predictions_folder / f"train_{pred_filename}",
-                result.train_predicted_y,
-                fmt="%d",
-            )
-
+            joblib.dump(result.best_model, models_dir / f"{result.resample_id}.joblib")
+        train_df = pd.DataFrame({"y_pred": result.train_predicted_y})
+        if result.train_true_y is not None:
+            train_df.insert(0, "y_true", result.train_true_y)
+        train_df.to_csv(pred_dir / f"train_{result.resample_id}.csv", index=False)
         if result.test_predicted_y is not None:
-            np.savetxt(
-                predictions_folder / f"test_{pred_filename}",
-                result.test_predicted_y,
-                fmt="%d",
+            test_df = pd.DataFrame({"y_pred": result.test_predicted_y})
+            if result.test_true_y is not None:
+                test_df.insert(0, "y_true", result.test_true_y)
+            test_df.to_csv(pred_dir / f"test_{result.resample_id}.csv", index=False)
+
+        self._append_report_row(result, base_dir)
+
+        # Upsert params entry in params.json
+        json_path = base_dir / "params.json"
+        params: dict[str, Any] = {}
+        if json_path.is_file():
+            params = json.loads(json_path.read_text(encoding="utf-8"))
+        params[str(result.resample_id)] = dict(result.best_params)
+        json_path.write_text(json.dumps(params, indent=2), encoding="utf-8")
+
+    def _ensure_dirs(
+        self, classifier_name: str, dataset_name: str, *, save_model: bool
+    ) -> tuple[Path, Path, Path]:
+        """Create required sub-directories and return ``(base_dir, models_dir, pred_dir)``."""
+        base = self._experiment_folder / classifier_name / dataset_name
+        pred_dir = base / "predictions"
+        models_dir = base / "models"
+        try:
+            pred_dir.mkdir(parents=True, exist_ok=True)
+            if save_model:
+                models_dir.mkdir(exist_ok=True)
+        except OSError:
+            raise OSError(
+                f"Could not create folder {base} (or subfolders) to store results."
             )
+        return base, models_dir, pred_dir
 
-        if result.y_proba is not None:
-            np.savetxt(
-                predictions_folder / f"proba_{pred_filename}",
-                result.y_proba,
-            )
+    def _append_report_row(self, result: ExperimentResult, base_dir: Path) -> None:
+        """Append one metrics row to ``report.csv``."""
+        row: dict[str, Any] = {**result.train_metrics, **result.test_metrics}
 
-        dataframe_row = OrderedDict()
-        # Adding best parameters as first elements in row
-        for p_name, p_value in result.best_params.items():
-            # If some ensemble method has been used, then one of its parameters will be
-            # a dictionary containing the best parameters found for the base classifier.
-            if isinstance(p_value, dict):
-                for k, v in p_value.items():
-                    dataframe_row[k] = v
-            else:
-                dataframe_row[p_name] = p_value
-
-        # Concatenating train and test metrics
-        for (tm_name, tm_value), (ts_name, ts_value) in zip(
-            result.train_metrics.items(), result.test_metrics.items()
-        ):
-            dataframe_row[tm_name] = tm_value
-            dataframe_row[ts_name] = ts_value
-
-        # Adding row to existing DataFrame or creating new one
-        df_path = dataset_folder / f"{result.dataset_name}-{result.classifier_name}.csv"
-
-        df = pd.DataFrame([dataframe_row], index=[result.resample_id])
-        if df_path.is_file():
-            previous_df = pd.read_csv(df_path, index_col=[0])
-            df = pd.concat([previous_df, df], axis=0)
-
-        # Saving DataFrame to file
-        df.to_csv(df_path)
+        csv_path = base_dir / "report.csv"
+        df = pd.DataFrame([row], index=pd.Index([result.resample_id], dtype=str))
+        if csv_path.is_file():
+            existing = pd.read_csv(csv_path, index_col=0)
+            existing.index = existing.index.astype(str)
+            df = pd.concat([existing, df])
+        df.to_csv(csv_path)

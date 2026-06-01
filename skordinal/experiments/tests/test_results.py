@@ -1,15 +1,12 @@
 """Tests for the Results class."""
 
-from collections import OrderedDict
+import json
 from pathlib import Path
-from pickle import load
-from shutil import rmtree
 
+import joblib
 import numpy as np
 import numpy.testing as npt
 import pandas as pd
-import pandas.testing as pdt
-import pytest
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
@@ -25,6 +22,8 @@ def _make_result(
     train_predicted_y: np.ndarray,
     test_predicted_y: np.ndarray,
     estimator=None,
+    train_true_y=None,
+    test_true_y=None,
 ) -> ExperimentResult:
     if estimator is None:
         estimator = SVC()
@@ -39,187 +38,127 @@ def _make_result(
         test_metrics=test_metrics,
         best_params=best_params,
         best_model=estimator,
+        train_true_y=train_true_y,
+        test_true_y=test_true_y,
     )
 
 
-@pytest.fixture
-def results():
-    return Results(Path("my_runs/"))
+def _make_pair_csv(base: Path, classifier: str, dataset: str, rows: list[dict]) -> Path:
+    """Write a minimal report.csv under base/classifier/dataset/."""
+    pair_dir = base / classifier / dataset
+    pair_dir.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(rows)
+    csv_path = pair_dir / "report.csv"
+    df.to_csv(csv_path)
+    return csv_path
 
 
-def test_save(results):
-    """Checking behavior of save method.
-
-    Two partitions for the same dataset and configuration will be added and
-    retreived later on to check if they are similar.
-
-    """
+def test_save(tmp_path):
+    """Two partitions produce the expected on-disk layout: report.csv, params.json, models, predictions."""
     estimator = SVC()
+    results = Results(tmp_path)
 
-    # Saving first partition results to DataFrame
     result_0 = _make_result(
         partition="0",
         dataset="toy",
         configuration="conf_1",
-        best_params=OrderedDict([("C", 0.1), ("gamma", 1)]),
-        train_metrics=OrderedDict(
-            [("ccr_train", 0.7222222222), ("mae_train", 0.2777777777)]
-        ),
-        test_metrics=OrderedDict(
-            [("ccr_test", 0.6666666666), ("mae_test", 0.3333333333)]
-        ),
+        best_params={"C": 0.1, "gamma": 1},
+        train_metrics={"ccr_train": 0.7222, "mae_train": 0.2778},
+        test_metrics={"ccr_test": 0.6667, "mae_test": 0.3333},
         train_predicted_y=np.array([1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3]),
         test_predicted_y=np.array([1, 1, 2, 2, 2, 3, 3]),
         estimator=estimator,
     )
     results.save(result_0)
 
-    # Saving second partition to DataFrame
     result_1 = _make_result(
         partition="1",
         dataset="toy",
         configuration="conf_1",
-        best_params=OrderedDict([("C", 1), ("gamma", 1)]),
-        train_metrics=OrderedDict(
-            [("ccr_train", 0.9333333333), ("mae_train", 0.2777777777)]
-        ),
-        test_metrics=OrderedDict([("ccr_test", 1.0), ("mae_test", 0.3333333333)]),
+        best_params={"C": 1, "gamma": 1},
+        train_metrics={"ccr_train": 0.9333, "mae_train": 0.2778},
+        test_metrics={"ccr_test": 1.0, "mae_test": 0.3333},
         train_predicted_y=np.array([1, 1, 1, 1, 1, 2, 2, 3, 3, 2, 3, 3, 3, 3]),
         test_predicted_y=np.array([1, 1, 2, 1, 2, 3, 3]),
         estimator=estimator,
     )
     results.save(result_1)
 
-    # Saving first partition for a different configuration
-    result_conf2 = _make_result(
+    pair_dir = tmp_path / "conf_1" / "toy"
+
+    df = pd.read_csv(pair_dir / "report.csv", index_col=0)
+    assert df.shape == (2, 4)
+    assert list(df.columns) == ["ccr_train", "mae_train", "ccr_test", "mae_test"]
+
+    params = json.loads((pair_dir / "params.json").read_text())
+    assert params["0"] == {"C": 0.1, "gamma": 1}
+    assert params["1"] == {"C": 1, "gamma": 1}
+
+    models_dir = pair_dir / "models"
+    assert (models_dir / "0.joblib").is_file()
+    assert (models_dir / "1.joblib").is_file()
+    assert isinstance(joblib.load(models_dir / "0.joblib"), SVC)
+
+    pred_dir = pair_dir / "predictions"
+    train_0 = pd.read_csv(pred_dir / "train_0.csv")
+    assert list(train_0.columns) == ["y_pred"]
+    npt.assert_array_equal(train_0["y_pred"].values, result_0.train_predicted_y)
+
+    test_0 = pd.read_csv(pred_dir / "test_0.csv")
+    assert list(test_0.columns) == ["y_pred"]
+    npt.assert_array_equal(test_0["y_pred"].values, result_0.test_predicted_y)
+
+
+def test_save_with_true_labels(tmp_path):
+    """When true labels are provided, y_true appears first in prediction CSVs."""
+    train_true = np.array([1, 2, 3, 1, 2])
+    test_true = np.array([1, 2, 3])
+    result = _make_result(
         partition="0",
         dataset="toy",
-        configuration="conf_2",
-        best_params=OrderedDict([("C", 1), ("gamma", 0.1)]),
-        train_metrics=OrderedDict(
-            [("ccr_train", 0.8333333333), ("mae_train", 0.2777777777)]
-        ),
-        test_metrics=OrderedDict([("ccr_test", 1.0), ("mae_test", 0.3333333333)]),
-        train_predicted_y=np.array([1, 1, 1, 1, 1, 2, 2, 3, 3, 2, 3, 3, 3, 3]),
-        test_predicted_y=np.array([1, 1, 2, 1, 2, 3, 3]),
-        estimator=estimator,
+        configuration="clf",
+        best_params={},
+        train_metrics={"acc_train": 0.8},
+        test_metrics={"acc_test": 0.7},
+        train_predicted_y=np.array([1, 2, 2, 1, 2]),
+        test_predicted_y=np.array([1, 2, 2]),
+        train_true_y=train_true,
+        test_true_y=test_true,
     )
-    results.save(result_conf2)
+    Results(tmp_path).save(result, save_model=False)
 
-    # Checking if everything has been saved correctly
-    experiment_folder = Path(results._experiment_folder)
+    pred_dir = tmp_path / "clf" / "toy" / "predictions"
 
-    # Data for toy-conf_1
-    expected_data_conf_1 = [
-        OrderedDict(
-            [
-                ("C", 0.1),
-                ("gamma", 1),
-                ("ccr_train", 0.7222222222),
-                ("ccr_test", 0.6666666666),
-                ("mae_train", 0.2777777777),
-                ("mae_test", 0.3333333333),
-            ]
-        ),
-        OrderedDict(
-            [
-                ("C", 1),
-                ("gamma", 1),
-                ("ccr_train", 0.9333333333),
-                ("ccr_test", 1.0),
-                ("mae_train", 0.2777777777),
-                ("mae_test", 0.3333333333),
-            ]
-        ),
-    ]
-    expected_data_conf_1 = pd.DataFrame(data=expected_data_conf_1, index=[0, 1])
-    conf_1_path = experiment_folder / "toy-conf_1"
+    train_df = pd.read_csv(pred_dir / "train_0.csv")
+    assert list(train_df.columns) == ["y_true", "y_pred"]
+    npt.assert_array_equal(train_df["y_true"].values, train_true)
 
-    # Check inconsistencies in CSV for toy-conf_1
-    actual_data_conf_1 = pd.read_csv(conf_1_path / "toy-conf_1.csv", index_col=[0])
-    pdt.assert_frame_equal(actual_data_conf_1, expected_data_conf_1)
-
-    # Data for toy-conf_2
-    expected_data_conf_2 = [
-        OrderedDict(
-            [
-                ("C", 1),
-                ("gamma", 0.1),
-                ("ccr_train", 0.8333333333),
-                ("ccr_test", 1.0),
-                ("mae_train", 0.2777777777),
-                ("mae_test", 0.3333333333),
-            ]
-        )
-    ]
-    expected_data_conf_2 = pd.DataFrame(data=expected_data_conf_2, index=[0])
-    conf_2_path = experiment_folder / "toy-conf_2"
-
-    # Check inconsistencies in CSV for toy-conf_2
-    actual_data_conf_2 = pd.read_csv(conf_2_path / "toy-conf_2.csv", index_col=[0])
-    pdt.assert_frame_equal(actual_data_conf_2, expected_data_conf_2)
-
-    # Checking if models have been saved successfully
-    with (
-        open(conf_1_path / "models" / "toy-conf_1.0", "rb") as model_0,
-        open(conf_1_path / "models" / "toy-conf_1.1", "rb") as model_1,
-    ):
-        actual_data = [load(model_0), load(model_1)]
-        npt.assert_equal(all(isinstance(model, SVC) for model in actual_data), True)
-
-    # Checking if actual and expected predictions are the same
-    expected_data = {
-        "0": {
-            "train": np.array([1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3]),
-            "test": np.array([1, 1, 2, 2, 2, 3, 3]),
-        },
-        "1": {
-            "train": np.array([1, 1, 1, 1, 1, 2, 2, 3, 3, 2, 3, 3, 3, 3]),
-            "test": np.array([1, 1, 2, 1, 2, 3, 3]),
-        },
-    }
-
-    with (
-        open(conf_1_path / "predictions" / "train_toy-conf_1.0", "rb") as train_0,
-        open(conf_1_path / "predictions" / "test_toy-conf_1.0", "rb") as test_0,
-        open(conf_1_path / "predictions" / "train_toy-conf_1.1", "rb") as train_1,
-        open(conf_1_path / "predictions" / "test_toy-conf_1.1", "rb") as test_1,
-    ):
-        actual_data = {
-            "0": {"train": np.loadtxt(train_0), "test": np.loadtxt(test_0)},
-            "1": {"train": np.loadtxt(train_1), "test": np.loadtxt(test_1)},
-        }
-
-        npt.assert_equal(actual_data, expected_data)
-
-    # Deleting temporary directories
-    rmtree("my_runs/")
+    test_df = pd.read_csv(pred_dir / "test_0.csv")
+    assert list(test_df.columns) == ["y_true", "y_pred"]
+    npt.assert_array_equal(test_df["y_true"].values, test_true)
 
 
-def test_save_model_false(results):
+def test_save_model_false(tmp_path):
     """save_model=False must not create a models/ folder."""
     result = _make_result(
         partition="0",
         dataset="toy",
         configuration="conf_1",
-        best_params=OrderedDict([("C", 1)]),
-        train_metrics=OrderedDict([("ccr_train", 0.9)]),
-        test_metrics=OrderedDict([("ccr_test", 0.8)]),
+        best_params={"C": 1},
+        train_metrics={"ccr_train": 0.9},
+        test_metrics={"ccr_test": 0.8},
         train_predicted_y=np.array([1, 2, 3]),
         test_predicted_y=np.array([1, 2]),
     )
-    results.save(result, save_model=False)
+    Results(tmp_path).save(result, save_model=False)
 
-    folder = Path(results._experiment_folder) / "toy-conf_1"
-    assert not (folder / "models").exists()
-    assert (folder / "predictions").exists()
-
-    # Deleting temporary directories
-    rmtree("my_runs/")
+    pair_dir = tmp_path / "conf_1" / "toy"
+    assert not (pair_dir / "models").exists()
+    assert (pair_dir / "predictions").exists()
 
 
-def test_save_proba(results):
-    """y_proba is persisted when provided."""
+def test_save_proba_not_written_to_disk(tmp_path):
+    """y_proba is stored in ExperimentResult but not written to disk."""
     y_proba = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3]])
     result = ExperimentResult(
         dataset_name="toy",
@@ -228,22 +167,75 @@ def test_save_proba(results):
         train_predicted_y=np.array([1, 2]),
         test_predicted_y=np.array([1, 2]),
         y_proba=y_proba,
-        train_metrics=OrderedDict([("ccr_train", 0.9)]),
-        test_metrics=OrderedDict([("ccr_test", 0.8)]),
+        train_metrics={"ccr_train": 0.9},
+        test_metrics={"ccr_test": 0.8},
         best_params={"C": 1},
         best_model=SVC(),
     )
-    results.save(result, save_model=False)
+    Results(tmp_path).save(result, save_model=False)
 
-    proba_path = (
-        Path(results._experiment_folder)
-        / "toy-conf_1"
-        / "predictions"
-        / "proba_toy-conf_1.0"
+    pred_dir = tmp_path / "conf_1" / "toy" / "predictions"
+    assert list(pred_dir.glob("proba*")) == []
+
+
+def test_save_no_test_partition(tmp_path):
+    """When test_predicted_y is None, no test CSV is written."""
+    result = ExperimentResult(
+        dataset_name="toy",
+        classifier_name="clf",
+        resample_id="0",
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=None,
+        y_proba=None,
+        train_metrics={"ccr_train": 0.9},
+        test_metrics={},
+        best_params={},
+        best_model=SVC(),
     )
-    assert proba_path.exists()
-    loaded = np.loadtxt(proba_path)
-    npt.assert_allclose(loaded, y_proba)
+    Results(tmp_path).save(result, save_model=False)
 
-    # Deleting temporary directories
-    rmtree("my_runs/")
+    pred_dir = tmp_path / "clf" / "toy" / "predictions"
+    assert (pred_dir / "train_0.csv").is_file()
+    assert not (pred_dir / "test_0.csv").exists()
+
+
+def test_save_multiple_partitions_and_params_upsert(tmp_path):
+    """Saving multiple partitions accumulates rows in report.csv; saving the same id twice overwrites its params entry."""
+    r = Results(tmp_path)
+    for i in range(3):
+        r.save(
+            _make_result(
+                partition=str(i),
+                dataset="ds",
+                configuration="clf",
+                best_params={},
+                train_metrics={"mae_train": float(i)},
+                test_metrics={"mae_test": float(i)},
+                train_predicted_y=np.array([1]),
+                test_predicted_y=np.array([1]),
+            ),
+            save_model=False,
+        )
+
+    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
+    assert df.shape[0] == 3
+
+    base_result = dict(
+        dataset="ds",
+        configuration="clf",
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    r.save(
+        _make_result(partition="0", best_params={"C": 0.1}, **base_result),
+        save_model=False,
+    )
+    r.save(
+        _make_result(partition="0", best_params={"C": 1.0}, **base_result),
+        save_model=False,
+    )
+
+    params = json.loads((tmp_path / "clf" / "ds" / "params.json").read_text())
+    assert params["0"]["C"] == 1.0
