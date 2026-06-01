@@ -15,6 +15,7 @@ from skordinal.metrics import (
     kendalls_tau,
     maximum_mean_absolute_error,
     mean_absolute_error,
+    mean_extreme_sensitivity,
     mean_zero_one_error,
     minimum_sensitivity,
     ranked_probability_score,
@@ -29,6 +30,7 @@ _WEIGHTED_METRICS = [
     geometric_mean,
     gmsec,
     maximum_mean_absolute_error,
+    mean_extreme_sensitivity,
     mean_zero_one_error,
     minimum_sensitivity,
     weighted_kappa,
@@ -203,6 +205,21 @@ def test_maximum_mean_absolute_error(y_true, y_pred, expected):
     )
 
 
+@pytest.mark.parametrize(
+    "y_true, y_pred, expected",
+    [
+        ([0, 0, 1, 2, 3, 0, 0], [0, 1, 1, 2, 3, 0, 1], 0.75),
+        ([0, 0, 1, 1, 2, 2], [0, 0, 1, 1, 2, 2], 1.0),
+        ([0, 0, 1, 1], [1, 1, 1, 1], 0.5),
+    ],
+)
+def test_mean_extreme_sensitivity(y_true, y_pred, expected):
+    """mean_extreme_sensitivity returns the arithmetic mean of the two extreme class recalls."""
+    npt.assert_almost_equal(
+        mean_extreme_sensitivity(y_true, y_pred), expected, decimal=6
+    )
+
+
 def test_maximum_mean_absolute_error_pred_only_class_excluded():
     """Classes that appear only in predictions are excluded from MMAE."""
     npt.assert_almost_equal(
@@ -290,6 +307,7 @@ def test_metric_names_in_all():
         "geometric_mean",
         "mean_absolute_error",
         "maximum_mean_absolute_error",
+        "mean_extreme_sensitivity",
         "minimum_sensitivity",
         "mean_zero_one_error",
         "kendalls_tau",

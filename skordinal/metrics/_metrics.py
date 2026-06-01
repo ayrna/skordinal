@@ -328,6 +328,49 @@ def gmsec(
     return float(np.sqrt(sensitivities[0] * sensitivities[-1]))
 
 
+def mean_extreme_sensitivity(
+    y_true: ArrayLike,
+    y_pred: ArrayLike,
+    *,
+    sample_weight: ArrayLike | None = None,
+) -> float:
+    """Arithmetic mean of the sensitivities of the extreme ordinal classes.
+
+    Assesses the balanced performance between the extreme classes of an
+    ordinal scale using the arithmetic mean. Returns the mean of the recall
+    of the lowest and the highest classes that appear in ``y_true``.
+
+    Parameters
+    ----------
+    y_true : array-like of shape (n_samples,)
+        Ground truth labels.
+
+    y_pred : array-like of shape (n_samples,)
+        Predicted labels.
+
+    sample_weight : array-like of shape (n_samples,), default=None
+        Sample weights forwarded to ``recall_score``.
+
+    Returns
+    -------
+    score : float
+        Arithmetic mean of the sensitivities of the extreme classes.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> from skordinal.metrics import mean_extreme_sensitivity
+    >>> y_true = np.array([0, 0, 1, 2, 3, 0, 0])
+    >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
+    >>> mean_extreme_sensitivity(y_true, y_pred)
+    0.75
+
+    """
+    y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
+    return float((sensitivities[0] + sensitivities[-1]) / 2.0)
+
+
 def maximum_mean_absolute_error(
     y_true: ArrayLike,
     y_pred: ArrayLike,
