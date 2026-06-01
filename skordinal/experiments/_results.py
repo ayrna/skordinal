@@ -53,6 +53,14 @@ class ExperimentResult:
     best_model : estimator
         Fitted estimator selected during cross-validation or direct fit.
 
+    train_true_y : ndarray of shape (n_train_samples,) or None, default=None
+        True class labels for the training partition. When provided, predictions
+        CSV files include a ``y_true`` column alongside ``y_pred``.
+
+    test_true_y : ndarray of shape (n_test_samples,) or None, default=None
+        True class labels for the test partition. When provided, the test
+        predictions CSV file includes a ``y_true`` column alongside ``y_pred``.
+
     """
 
     dataset_name: str
@@ -65,6 +73,8 @@ class ExperimentResult:
     test_metrics: dict[str, Any]
     best_params: dict[str, Any]
     best_model: BaseEstimator
+    train_true_y: np.ndarray | None = None
+    test_true_y: np.ndarray | None = None
 
 
 class Results:

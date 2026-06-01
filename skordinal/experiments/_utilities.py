@@ -225,6 +225,8 @@ class Utilities:
                             test_metrics=test_metrics,
                             best_params=optimal_estimator.best_params_,
                             best_model=optimal_estimator.best_estimator_,
+                            train_true_y=partition["train_outputs"],
+                            test_true_y=partition.get("test_outputs"),
                         )
                     )
 
