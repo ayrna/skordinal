@@ -475,3 +475,9 @@ class Utilities:
         """Save summarized information about experiment through Results class."""
         if self.verbose:
             print("\nSaving Results...")
+
+        for split in ("train", "test"):
+            try:
+                self._results.save_summary(split=split)
+            except ValueError:
+                pass
