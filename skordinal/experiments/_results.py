@@ -191,3 +191,69 @@ class Results:
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
         df.to_csv(csv_path)
+
+    @classmethod
+    def load(cls, experiment_folder: str | Path) -> Results:
+        """Load an existing experiment folder for post-hoc analysis.
+
+        Parameters
+        ----------
+        experiment_folder : str or Path
+            Path to an already-populated experiment folder. The folder does not
+            need to exist at construction time; it is only accessed when a
+            method such as :meth:`exists` is called.
+
+        Returns
+        -------
+        Results
+            A :class:`Results` instance pointing at ``experiment_folder``.
+
+        Examples
+        --------
+        >>> from pathlib import Path
+        >>> from skordinal.experiments import Results
+        >>> results = Results.load(Path("/path/to/my-run"))  # doctest: +SKIP
+
+        """
+        return cls(experiment_folder)
+
+    def exists(
+        self,
+        classifier_name: str,
+        dataset_name: str,
+        resample_id: str,
+    ) -> bool:
+        """Return whether a partition result has already been saved.
+
+        Parameters
+        ----------
+        classifier_name : str
+            Name of the classifier configuration.
+
+        dataset_name : str
+            Name of the dataset.
+
+        resample_id : str
+            Partition identifier (the CSV row index).
+
+        Returns
+        -------
+        bool
+            ``True`` if the per-pair CSV exists **and** contains a row
+            whose index equals ``resample_id``.
+
+        Examples
+        --------
+        >>> from skordinal.experiments import Results
+        >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
+        >>> results.exists("SVC", "toy", "0")  # doctest: +SKIP
+        False
+
+        """
+        csv_path = (
+            self._experiment_folder / classifier_name / dataset_name / "report.csv"
+        )
+        if not csv_path.is_file():
+            return False
+        df = pd.read_csv(csv_path, index_col=0)
+        return resample_id in df.index.astype(str)

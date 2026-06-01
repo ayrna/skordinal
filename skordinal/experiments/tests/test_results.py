@@ -239,3 +239,37 @@ def test_save_multiple_partitions_and_params_upsert(tmp_path):
 
     params = json.loads((tmp_path / "clf" / "ds" / "params.json").read_text())
     assert params["0"]["C"] == 1.0
+
+
+def test_load(tmp_path):
+    """Results.load() returns a Results pointing at the given folder; does not raise if folder is absent."""
+    r = Results.load(tmp_path)
+    assert isinstance(r, Results)
+    assert r._experiment_folder == tmp_path
+
+    Results.load("/nonexistent/path/that/does/not/exist")
+
+
+def test_exists(tmp_path):
+    """exists() returns False when CSV is absent, False when resample is missing, True after save."""
+    r = Results(tmp_path)
+    assert r.exists("SVC", "toy", "0") is False
+
+    _make_pair_csv(tmp_path, "SVC", "toy", [{"mae_test": 0.3}])
+    assert r.exists("SVC", "toy", "99") is False
+
+    r.save(
+        _make_result(
+            partition="0",
+            dataset="toy",
+            configuration="SVC",
+            best_params={},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.2},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    assert r.exists("SVC", "toy", "0") is True
+    assert r.exists("SVC", "toy", "1") is False
