@@ -89,6 +89,20 @@ class Results:
     _experiment_folder : Path
         Path to the experiment folder.
 
+    Notes
+    -----
+    On-disk layout under :attr:`_experiment_folder`::
+
+        <classifier_name>/
+            <dataset_name>/
+                report.csv
+                params.json
+                predictions/
+                    train_<resample_id>.csv
+                    test_<resample_id>.csv
+                models/
+                    <resample_id>.joblib
+
     """
 
     def __init__(self, output_folder: str | Path) -> None:
@@ -114,6 +128,12 @@ class Results:
         ------
         OSError
             If the folder cannot be created.
+
+        Examples
+        --------
+        >>> from skordinal.experiments import Results
+        >>> results = Results("/path/to/my-run")  # doctest: +SKIP
+        >>> results.save(result)  # doctest: +SKIP
 
         """
         base_dir, models_dir, pred_dir = self._ensure_dirs(
