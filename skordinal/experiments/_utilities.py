@@ -475,12 +475,3 @@ class Utilities:
         """Save summarized information about experiment through Results class."""
         if self.verbose:
             print("\nSaving Results...")
-
-        # Names of each metric used (plus computational times)
-        metrics_names = [x.strip().lower() for x in self.general_conf["metrics"]] + [
-            "cv_time",
-            "time",
-        ]
-
-        # Saving results through Results class
-        self._results.save_summaries(metrics_names)

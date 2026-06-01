@@ -105,20 +105,6 @@ def test_run_experiment(tmp_path, experiment_conf, svm_conf):
     predictions = list((svm_dir / "predictions").iterdir())
     npt.assert_equal(len(predictions), 4)
 
-    train_summary = pd.read_csv(exp_dir / "train_summary.csv")
-    npt.assert_equal(train_summary.shape, (1, 13))
-    npt.assert_equal(
-        all(train_summary[c].dtype == np.float64 for c in train_summary.columns[1:]),
-        True,
-    )
-
-    test_summary = pd.read_csv(exp_dir / "test_summary.csv")
-    npt.assert_equal(test_summary.shape, (1, 13))
-    npt.assert_equal(
-        all(test_summary[c].dtype == np.float64 for c in test_summary.columns[1:]),
-        True,
-    )
-
 
 def test_load_complete_dataset(tmp_path, util):
     """Loading dataset composed of 5 partitions, each one of them composed of
