@@ -10,12 +10,23 @@ import pytest
 from skordinal.experiments import Utilities
 from skordinal.utils._testing import make_balance_scale_split
 
+_MINIMAL_CONF = {"cfg": {"classifier": "SVC", "parameters": {}}}
 
-@pytest.fixture
-def util():
-    general_conf = {}
-    configurations = {}
-    return Utilities(general_conf, configurations)
+
+def _minimal_util(results_path: Path) -> Utilities:
+    """Return a Utilities instance with stub args sufficient to pass validation.
+
+    Used by tests that only exercise helper methods (_load_dataset,
+    _read_file, _normalize_data, _standardize_data) and therefore do not
+    need real dataset paths or metric names beyond the minimum to construct.
+    """
+    return Utilities(
+        _MINIMAL_CONF,
+        data_path=".",
+        datasets=["x"],
+        eval_metrics=["mean_absolute_error"],
+        results_path=str(results_path),
+    )
 
 
 def create_csv(path, filename):
@@ -31,6 +42,31 @@ def _write_partition_csv(directory, filename, n_per_class=10):
     labels = np.repeat([0, 1, 2], n_per_class).reshape(-1, 1)
     data = np.hstack([features, labels])
     np.savetxt(directory / filename, data, delimiter=",", fmt="%d")
+
+
+def _from_general_conf(general_conf: dict, configurations: dict, **kwargs) -> Utilities:
+    """Construct Utilities from an old-style ``general_conf`` dict.
+
+    Keeps test call-sites readable without duplicating the key mapping.
+    """
+    return Utilities(
+        configurations,
+        data_path=general_conf["basedir"],
+        datasets=general_conf["datasets"],
+        eval_metrics=general_conf["metrics"],
+        results_path=general_conf["output_folder"],
+        tuning_metric=general_conf.get("cv_metric", "neg_mean_absolute_error"),
+        cv=general_conf.get("hyperparam_cv_nfolds", 3),
+        n_jobs=general_conf.get("jobs", 1),
+        input_preprocessing=general_conf.get("input_preprocessing"),
+        **kwargs,
+    )
+
+
+@pytest.fixture
+def util(tmp_path):
+    """Minimal valid Utilities instance for testing internal helper methods."""
+    return _minimal_util(tmp_path)
 
 
 @pytest.fixture
@@ -73,10 +109,8 @@ def svm_conf():
 
 
 def test_run_experiment(tmp_path, experiment_conf, svm_conf):
-    """End-to-end test: run_experiment and write_report complete without error
-    and produce the expected output structure and metrics files.
-    """
-    util = Utilities(experiment_conf, svm_conf, verbose=False)
+    """run_experiment and write_report produce the expected on-disk layout."""
+    util = _from_general_conf(experiment_conf, svm_conf, verbose=False)
     util.run_experiment()
     util.write_report()
 
@@ -86,38 +120,26 @@ def test_run_experiment(tmp_path, experiment_conf, svm_conf):
     svm_dir = runs_dir / "SVM" / "balance"
     assert svm_dir.exists()
 
-    metrics_csv = svm_dir / "report.csv"
-    df = pd.read_csv(metrics_csv, index_col=0)
-    npt.assert_equal(df.shape[0], 2)
-    npt.assert_equal(df.shape[1], 12)
-    npt.assert_equal(all(df[c].dtype == np.float64 for c in df.columns), True)
+    df = pd.read_csv(svm_dir / "report.csv", index_col=0)
+    assert df.shape == (2, 12)
+    assert all(df[c].dtype == np.float64 for c in df.columns)
 
-    models = list((svm_dir / "models").iterdir())
-    npt.assert_equal(len(models), 2)
-
-    predictions = list((svm_dir / "predictions").iterdir())
-    npt.assert_equal(len(predictions), 4)
+    assert len(list((svm_dir / "models").iterdir())) == 2
+    assert len(list((svm_dir / "predictions").iterdir())) == 4
 
     train_summary = pd.read_csv(runs_dir / "train_summary.csv")
-    npt.assert_equal(train_summary.shape, (1, 15))
-    npt.assert_equal(
-        all(train_summary[c].dtype == np.float64 for c in train_summary.columns[2:-1]),
-        True,
+    assert train_summary.shape == (1, 15)
+    assert all(
+        train_summary[c].dtype == np.float64 for c in train_summary.columns[2:-1]
     )
 
     test_summary = pd.read_csv(runs_dir / "test_summary.csv")
-    npt.assert_equal(test_summary.shape, (1, 15))
-    npt.assert_equal(
-        all(test_summary[c].dtype == np.float64 for c in test_summary.columns[2:-1]),
-        True,
-    )
+    assert test_summary.shape == (1, 15)
+    assert all(test_summary[c].dtype == np.float64 for c in test_summary.columns[2:-1])
 
 
 def test_load_complete_dataset(tmp_path, util):
-    """Loading dataset composed of 5 partitions, each one of them composed of
-    a train and test file.
-
-    """
+    """Load a dataset of 5 partitions, each with a train and a test file."""
     dataset_path = tmp_path / "complete"
     dataset_path.mkdir()
 
@@ -127,16 +149,13 @@ def test_load_complete_dataset(tmp_path, util):
 
     partition_list = util._load_dataset(dataset_path)
 
-    # Check all partitions have been loaded
-    npt.assert_equal(len(partition_list), (len(list(dataset_path.iterdir())) / 2))
-    # Check if every partition has train and test inputs and outputs (4 diferent dictionaries)
-    npt.assert_equal(
-        all([len(partition[1]) == 4 for partition in partition_list]), True
-    )
+    # Every partition holds train and test inputs and outputs (4 entries).
+    assert len(partition_list) == len(list(dataset_path.iterdir())) / 2
+    assert all(len(partition[1]) == 4 for partition in partition_list)
 
 
 def test_load_partitionless_dataset(tmp_path, util):
-    """Loading dataset composed of only two csv files (train and test files)"""
+    """Load a dataset of a single train and test file."""
     dataset_path = tmp_path / "partitionless"
     dataset_path.mkdir()
 
@@ -145,14 +164,12 @@ def test_load_partitionless_dataset(tmp_path, util):
 
     partition_list = util._load_dataset(dataset_path)
 
-    npt.assert_equal(len(partition_list), 1)
-    npt.assert_equal(
-        all([len(partition[1]) == 4 for partition in partition_list]), True
-    )
+    assert len(partition_list) == 1
+    assert all(len(partition[1]) == 4 for partition in partition_list)
 
 
 def test_load_nontestfile_dataset(tmp_path, util):
-    """Loading dataset composed of five train files."""
+    """Load a dataset of five train files with no test files."""
     dataset_path = tmp_path / "nontestfile"
     dataset_path.mkdir()
 
@@ -161,17 +178,12 @@ def test_load_nontestfile_dataset(tmp_path, util):
 
     partition_list = util._load_dataset(dataset_path)
 
-    npt.assert_equal(len(partition_list), len(list(dataset_path.iterdir())))
-    npt.assert_equal(
-        all([len(partition[1]) == 2 for partition in partition_list]), True
-    )
+    assert len(partition_list) == len(list(dataset_path.iterdir()))
+    assert all(len(partition[1]) == 2 for partition in partition_list)
 
 
 def test_load_nontrainfile_dataset(tmp_path, util):
-    """Loading dataset with 2 partitions, one of them lacking its train file.
-    This should raise an exception.
-
-    """
+    """A partition lacking its train file raises RuntimeError."""
     dataset_path = tmp_path / "nontrainfile"
     dataset_path.mkdir()
 
@@ -182,25 +194,134 @@ def test_load_nontrainfile_dataset(tmp_path, util):
         util._load_dataset(dataset_path)
 
 
-def test_normalize_data(tmp_path, util):
-    # Test preparation
+def test_normalize_data(util):
+    """Min-max normalisation maps training features into [0, 1]."""
     X_train, X_test, _, _ = make_balance_scale_split()
 
-    # Test execution
     norm_X_train, _ = util._normalize_data(X_train, X_test)
 
-    # Test verification
-    result = (norm_X_train >= 0).all() and (norm_X_train <= 1).all()
-    npt.assert_equal(result, True)
+    assert (norm_X_train >= 0).all()
+    assert (norm_X_train <= 1).all()
 
 
 def test_standardize_data(util):
-    # Test preparation
+    """Standardisation gives training features zero mean and unit variance."""
     X_train, X_test, _, _ = make_balance_scale_split()
 
-    # Test execution
     std_X_train, _ = util._standardize_data(X_train, X_test)
 
-    # Test verification
     npt.assert_almost_equal(np.mean(std_X_train), 0)
     npt.assert_almost_equal(np.std(std_X_train), 1)
+
+
+def test_empty_configurations_raises(tmp_path):
+    """An empty configurations dict raises ValueError."""
+    with pytest.raises(ValueError, match="'configurations' must be a non-empty dict"):
+        Utilities(
+            {},
+            data_path=".",
+            datasets=["x"],
+            eval_metrics=["mean_absolute_error"],
+            results_path=str(tmp_path),
+        )
+
+
+def test_none_configurations_raises(tmp_path):
+    """None configurations is rejected by the non-empty check (ValueError)."""
+    with pytest.raises(ValueError, match="'configurations' must be a non-empty dict"):
+        Utilities(
+            None,  # type: ignore[arg-type]
+            data_path=".",
+            datasets=["x"],
+            eval_metrics=["mean_absolute_error"],
+            results_path=str(tmp_path),
+        )
+
+
+def test_empty_datasets_raises(tmp_path):
+    """An empty datasets list raises ValueError."""
+    with pytest.raises(ValueError, match="'datasets' must be a non-empty list"):
+        Utilities(
+            _MINIMAL_CONF,
+            data_path=".",
+            datasets=[],
+            eval_metrics=["mean_absolute_error"],
+            results_path=str(tmp_path),
+        )
+
+
+def test_empty_eval_metrics_raises(tmp_path):
+    """An empty eval_metrics list raises ValueError."""
+    with pytest.raises(ValueError, match="'eval_metrics' must be a non-empty list"):
+        Utilities(
+            _MINIMAL_CONF,
+            data_path=".",
+            datasets=["x"],
+            eval_metrics=[],
+            results_path=str(tmp_path),
+        )
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (None, None),
+        ("std", "std"),
+        ("norm", "norm"),
+        (" STD ", "std"),
+        ("NORM", "norm"),
+    ],
+)
+def test_input_preprocessing_accepted_and_normalized(tmp_path, raw, expected):
+    """Valid input_preprocessing values are accepted and lower-stripped."""
+    util = Utilities(
+        _MINIMAL_CONF,
+        data_path=".",
+        datasets=["x"],
+        eval_metrics=["mean_absolute_error"],
+        results_path=str(tmp_path),
+        input_preprocessing=raw,
+    )
+    assert util.input_preprocessing == expected
+
+
+@pytest.mark.parametrize("bad_value", ["minmax", ""])
+def test_input_preprocessing_invalid_raises(tmp_path, bad_value):
+    """Unrecognised input_preprocessing values raise ValueError."""
+    with pytest.raises(ValueError, match="'input_preprocessing' must be one of"):
+        Utilities(
+            _MINIMAL_CONF,
+            data_path=".",
+            datasets=["x"],
+            eval_metrics=["mean_absolute_error"],
+            results_path=str(tmp_path),
+            input_preprocessing=bad_value,
+        )
+
+
+@pytest.mark.parametrize("kwargs, expected", [({}, None), ({"random_state": 42}, 42)])
+def test_random_state_stored(tmp_path, kwargs, expected):
+    """random_state defaults to None and is stored as given on the instance."""
+    util = Utilities(
+        _MINIMAL_CONF,
+        data_path=".",
+        datasets=["x"],
+        eval_metrics=["mean_absolute_error"],
+        results_path=str(tmp_path),
+        **kwargs,
+    )
+    assert util.random_state == expected
+
+
+def test_configurations_is_deep_copied(tmp_path):
+    """Mutating the original configurations dict does not affect the stored copy."""
+    original = {"cfg": {"classifier": "SVC", "parameters": {"C": [1]}}}
+    util = Utilities(
+        original,
+        data_path=".",
+        datasets=["x"],
+        eval_metrics=["mean_absolute_error"],
+        results_path=str(tmp_path),
+    )
+    original["cfg"]["parameters"]["C"].append(10)
+    assert util.configurations["cfg"]["parameters"]["C"] == [1]

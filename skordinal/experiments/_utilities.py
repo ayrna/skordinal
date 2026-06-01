@@ -29,69 +29,155 @@ def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) ->
 class Utilities:
     """Run experiments over N datasets with M different configurations.
 
-    Configurations are composed of a classifier method and different parameters, where
-    it may be multiple values for every one of them.
+    Configurations are composed of a classifier method and different parameters,
+    where it may be multiple values for every one of them.
 
-    Running the main function of this class will perform cross-validation for each
-    partition per dataset-configuration pairs, obtaining the most optimal model, after
-    what will be used to infer the labels for the test sets.
+    Running the main function of this class will perform cross-validation for
+    each partition per dataset-configuration pair, obtaining the most optimal
+    model, which is then used to infer labels for the test sets.
 
     Parameters
     ----------
-    general_conf : dict
-        Dictionary containing values needed to run the experiment. It gives this class
-        information about where are located the different datasets, which one are going
-        to be tested, the metrics to use, etc.
-
     configurations : dict
-        Dictionary in which are stated the different classifiers to build methods upon
-        the selected datasets, as well as the different values for the hyper-parameters
-        used to optimize the model during cross-validation phase.
+        Mapping of configuration labels to their settings. Each entry must have
+        the form ``{label: {"classifier": str, "parameters": dict}}``, where
+        ``"classifier"`` is the registered name of the classification algorithm
+        and ``"parameters"`` is a dictionary of hyper-parameter grids (lists of
+        values to search over) or fixed values.
 
-    verbose : bool
-        Variable used for testing purposes. Silences all prints.
+    data_path : str or Path
+        Base directory that contains one sub-folder per dataset.
+
+    datasets : list of str
+        Names of the dataset sub-folders to run. Pass ``["all"]`` to expand
+        automatically to every directory found under ``data_path``.
+
+    eval_metrics : list of str
+        Metric names to compute for every partition (e.g.
+        ``["mean_absolute_error", "average_mean_absolute_error"]``).
+        Names must be recognised by ``skordinal.metrics.get_ordinal_scorer``.
+
+    results_path : str or Path
+        Directory where result files are written.
+
+    tuning_metric : str, default="neg_mean_absolute_error"
+        Metric used as the cross-validation scoring criterion when selecting the
+        best hyper-parameter combination. Must be recognised by
+        ``skordinal.metrics.get_ordinal_scorer``; validation is deferred to
+        runtime.
+
+    cv : int, default=3
+        Number of folds used in hyper-parameter cross-validation.
+
+    n_jobs : int, default=1
+        Number of parallel jobs forwarded to ``GridSearchCV``.
+
+    input_preprocessing : {"std", "norm"} or None, default=None
+        Optional feature preprocessing applied to every partition before
+        fitting: ``"norm"`` applies min-max normalisation and ``"std"`` applies
+        z-score standardisation. Both scalers are fitted on the training split
+        only, then applied to both train and test splits. ``None`` means no
+        preprocessing.
+
+    random_state : int or None, default=None
+        Seed used for two sources of randomness: the base estimator and the
+        cross-validation splitter (``StratifiedKFold``) used during
+        hyper-parameter search. When ``None``, both use their own default
+        random behaviour.
+
+    verbose : bool, default=True
+        If ``True``, progress messages are printed to stdout.
 
     Attributes
     ----------
     _results : Results
-        Class used to manage and store all information obtained during the run of an
-        experiment.
+        Manages and stores all information obtained during the experiment run.
+
+    Examples
+    --------
+    >>> from skordinal.experiments import Utilities  # doctest: +SKIP
+    >>> u = Utilities(  # doctest: +SKIP
+    ...     configurations={"SVM": {"classifier": "svc", "parameters": {"C": [1]}}},
+    ...     data_path="/data/ordinal",
+    ...     datasets=["balance-scale"],
+    ...     eval_metrics=["mean_absolute_error"],
+    ...     results_path="/tmp/results",
+    ... )
+    >>> u.run_experiment()  # doctest: +SKIP
 
     """
 
     def __init__(
         self,
-        general_conf: dict[str, Any],
         configurations: dict[str, Any],
+        *,
+        data_path: str | Path,
+        datasets: list[str],
+        eval_metrics: list[str],
+        results_path: str | Path,
+        tuning_metric: str = "neg_mean_absolute_error",
+        cv: int = 3,
+        n_jobs: int = 1,
+        input_preprocessing: str | None = None,
+        random_state: int | None = None,
         verbose: bool = True,
     ) -> None:
-        self.general_conf = deepcopy(general_conf)
+        if not configurations:
+            raise ValueError(
+                "'configurations' must be a non-empty dict; got an empty mapping."
+            )
+        if not datasets:
+            raise ValueError(
+                "'datasets' must be a non-empty list; got an empty sequence."
+            )
+        if not eval_metrics:
+            raise ValueError(
+                "'eval_metrics' must be a non-empty list; got an empty sequence."
+            )
+
+        _allowed_preproc = {"std", "norm"}
+        if input_preprocessing is not None:
+            _normalized = str(input_preprocessing).strip().lower()
+            if _normalized not in _allowed_preproc:
+                raise ValueError(
+                    f"'input_preprocessing' must be one of {None, 'std', 'norm'}; "
+                    f"got '{input_preprocessing}'."
+                )
+            input_preprocessing = _normalized
+
         self.configurations = deepcopy(configurations)
+        self.data_path: str | Path = data_path
+        self.datasets: list[str] = list(datasets)
+        self.eval_metrics: list[str] = list(eval_metrics)
+        self.results_path: str | Path = results_path
+        self.tuning_metric = tuning_metric
+        self.cv = cv
+        self.n_jobs = n_jobs
+        self.input_preprocessing = input_preprocessing
+        self.random_state = random_state
         self.verbose = verbose
 
     def run_experiment(self) -> None:
         """Run an experiment. Main method of this framework.
 
-        Loads all datasets, which can be fragmented in partitions. Builds a model per
-        partition, using cross-validation to find the optimal values among the
+        Loads all datasets, which can be fragmented in partitions. Builds a model
+        per partition, using cross-validation to find the optimal values among the
         hyper-parameters to compare from.
 
-        Uses the built model to get train and test metrics, storing all the information
-        into a Results object.
+        Uses the built model to get train and test metrics, storing all the
+        information into a Results object.
 
         Raises
         ------
         ValueError
-            If the dataset list is inconsistent.
+            If the dataset list is inconsistent, or a dataset path does not
+            exist.
 
-        AttributeError
-            If the input preprocessing is unknown.
-
-        TypeError
-            If the parameters for base_classifier must be list.
+        RuntimeError
+            If a partition is found without its train file.
 
         """
-        self._results = Results(Path(self.general_conf["output_folder"]))
+        self._results = Results(Path(self.results_path))
 
         self._check_dataset_list()
 
@@ -101,9 +187,9 @@ class Utilities:
             print("###############################")
 
         # Iterating over Datasets
-        for x in self.general_conf["datasets"]:
+        for x in self.datasets:
             dataset_name = x.strip()
-            dataset_path = Path(self.general_conf["basedir"]) / dataset_name
+            dataset_path = Path(self.data_path) / dataset_name
 
             dataset = self._load_dataset(dataset_path)
 
@@ -121,25 +207,18 @@ class Utilities:
                     if self.verbose:
                         print("  Running Partition", part_idx)
 
-                    # Normalization or Standardization of the partition if requested
-                    _preproc = (
-                        self.general_conf.get("input_preprocessing", "").strip().lower()
-                    )
-                    if _preproc == "norm":
+                    # Normalisation or standardisation of the partition if requested
+                    if self.input_preprocessing == "norm":
                         partition["train_inputs"], partition["test_inputs"] = (
                             self._normalize_data(
                                 partition["train_inputs"], partition["test_inputs"]
                             )
                         )
-                    elif _preproc == "std":
+                    elif self.input_preprocessing == "std":
                         partition["train_inputs"], partition["test_inputs"] = (
                             self._standardize_data(
                                 partition["train_inputs"], partition["test_inputs"]
                             )
-                        )
-                    elif _preproc != "":
-                        raise AttributeError(
-                            "Input preprocessing named '%s' unknown" % _preproc
                         )
 
                     optimal_estimator = self._get_optimal_estimator(
@@ -166,7 +245,7 @@ class Utilities:
                     # Obtaining train and test metrics values.
                     train_metrics = OrderedDict()
                     test_metrics = OrderedDict()
-                    for metric_name in self.general_conf["metrics"]:
+                    for metric_name in self.eval_metrics:
                         # Get train scores
                         train_score = _compute_metric(
                             metric_name,
@@ -241,8 +320,9 @@ class Utilities:
         Returns
         -------
         partition_list : list of tuples
-            List of partitions found inside a dataset folder. Each partition is stored
-            into a dictionary, disjoining train and test inputs and outputs.
+            List of partitions found inside a dataset folder. Each partition is
+            stored into a dictionary, disjoining train and test inputs and
+            outputs.
 
         Raises
         ------
@@ -333,12 +413,13 @@ class Utilities:
             If the dataset list is inconsistent or contains non-string values.
 
         """
-        base_path = Path(self.general_conf["basedir"])
-        dataset_list = self.general_conf["datasets"]
+        base_path = Path(self.data_path)
 
         # Check if home path is shortened
         if str(base_path).startswith("~"):
             base_path = Path.home() / str(base_path)[1:]
+
+        dataset_list = self.datasets
 
         # Check if 'all' is the only value, and if it is, expand it
         if len(dataset_list) == 1 and dataset_list[0] == "all":
@@ -347,8 +428,8 @@ class Utilities:
         elif not all(isinstance(item, str) for item in dataset_list):
             raise ValueError("Dataset list can only contain strings")
 
-        self.general_conf["basedir"] = str(base_path)
-        self.general_conf["datasets"] = dataset_list
+        self.data_path = str(base_path)
+        self.datasets = dataset_list
 
     def _normalize_data(
         self, train_data: np.ndarray, test_data: np.ndarray
@@ -416,12 +497,12 @@ class Utilities:
         """Perform cross-validation over one dataset and configuration.
 
         Each configuration consists of one classifier and none, one or multiple
-        hyper-parameters, that, in turn, can contain one or multiple values used to
-        optimize the resulting model.
+        hyper-parameters, that, in turn, can contain one or multiple values used
+        to optimize the resulting model.
 
-        At the end of cross-validation phase, the model with the specific combination of
-        values from the hyper-parameters that achieved the best metrics from all the
-        combinations will remain.
+        At the end of cross-validation phase, the model with the specific
+        combination of values from the hyper-parameters that achieved the best
+        metrics from all the combinations will remain.
 
         Parameters
         ----------
@@ -435,28 +516,28 @@ class Utilities:
             Name of the classification algorithm being employed.
 
         parameters : dict
-            Dictionary containing parameters to optimize as keys, and the list of
-            values that we want to compare as values.
+            Dictionary containing parameters to optimize as keys, and the list
+            of values that we want to compare as values.
 
         Returns
         -------
-        optimal: GridSearchCV object or classifier object
+        optimal : GridSearchCV object or classifier object
             An already fitted model of the given classifier, with the best found
-            parameters after cross-validation. If cross-validation is not needed, it will
-            return the classifier model already trained.
+            parameters after cross-validation. If cross-validation is not needed,
+            it will return the classifier model already trained.
 
         Raises
         ------
-        AttributeError
-            If the metric name is not found or cv_metric is not a string.
+        ValueError
+            If the classifier name is unknown or a hyper-parameter is invalid.
 
         """
         estimator = load_classifier(
             classifier_name=classifier_name,
-            random_state=int(cast(tuple, np.random.get_state())[1][0]),
-            n_jobs=self.general_conf.get("jobs", 1),
-            cv_n_folds=self.general_conf.get("hyperparam_cv_nfolds", 3),
-            cv_metric=self.general_conf.get("cv_metric", "mae"),
+            random_state=self.random_state,
+            n_jobs=self.n_jobs,
+            cv_n_folds=self.cv,
+            cv_metric=self.tuning_metric,
             param_grid=parameters,
         )
 
