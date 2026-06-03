@@ -25,6 +25,93 @@ def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) ->
     return scorer._score_func(y_true, y_pred, **scorer._kwargs)
 
 
+def _read_file(filename: Path) -> tuple[np.ndarray, np.ndarray]:
+    """Read a CSV partition file into ``(inputs, outputs)`` arrays."""
+    # Detect the separator automatically.
+    f = pd.read_csv(filename, header=None, engine="python")
+
+    inputs = f.values[:, 0:(-1)]
+    outputs = f.values[:, (-1)]
+
+    return inputs, outputs
+
+
+def _check_dataset_list(
+    data_path: str | Path, datasets: list[str]
+) -> tuple[str | Path, list[str]]:
+    """Resolve a dataset list, expanding ``["all"]`` and validating entries.
+
+    Expands a home-shorthand ``data_path`` and raises ``ValueError`` if the
+    list contains non-string entries.
+    """
+    base_path = Path(data_path)
+
+    # Check if home path is shortened
+    if str(base_path).startswith("~"):
+        base_path = Path.home() / str(base_path)[1:]
+
+    dataset_list = datasets
+
+    # Check if 'all' is the only value, and if it is, expand it
+    if len(dataset_list) == 1 and dataset_list[0] == "all":
+        dataset_list = [item.name for item in base_path.iterdir() if item.is_dir()]
+
+    elif not all(isinstance(item, str) for item in dataset_list):
+        raise ValueError("Dataset list can only contain strings")
+
+    return str(base_path), dataset_list
+
+
+def _load_dataset(dataset_path: Path) -> list[tuple[str, dict[str, Any]]]:
+    """Load a dataset folder into a sorted list of ``(index, partition)`` tuples.
+
+    Each partition dict disjoins train/test inputs and outputs. Raises
+    ``ValueError`` if the folder is missing and ``RuntimeError`` if a partition
+    has no train file.
+    """
+
+    def get_partition_index(filename: str) -> str:
+        # Extract the index between the last "_" and ".csv".
+        return filename.rsplit("_", 1)[-1].replace(".csv", "")
+
+    try:
+        partition_list: dict[str, dict[str, Any]] = {
+            get_partition_index(filename.name): {}
+            for filename in dataset_path.iterdir()
+            if filename.name.startswith("train_")
+        }
+
+        # Load train and test arrays for each partition.
+        for filename in dataset_path.iterdir():
+            if filename.name.startswith("train_"):
+                idx = get_partition_index(filename.name)
+                train_inputs, train_outputs = _read_file(filename)
+                partition_list[idx]["train_inputs"] = train_inputs
+                partition_list[idx]["train_outputs"] = train_outputs
+
+            elif filename.name.startswith("test_"):
+                idx = get_partition_index(filename.name)
+                test_inputs, test_outputs = _read_file(filename)
+                partition_list[idx]["test_inputs"] = test_inputs
+                partition_list[idx]["test_outputs"] = test_outputs
+
+    except OSError:
+        raise ValueError(f"No such file or directory: '{dataset_path}'")
+
+    except KeyError:
+        raise RuntimeError(
+            f"Found partition without train files: partition {filename.name}"
+        )
+
+    # Sort partitions into a list of (index, partition) tuples.
+    sorted_list: list[tuple[str, dict[str, Any]]] = sorted(
+        partition_list.items(),
+        key=lambda t: int(t[0]) if t[0].lstrip("-").isdigit() else t[0],
+    )
+
+    return sorted_list
+
+
 class Utilities:
     """Run experiments over N datasets with M different configurations.
 
@@ -178,7 +265,9 @@ class Utilities:
         """
         self._results = Results(Path(self.results_path))
 
-        self._check_dataset_list()
+        self.data_path, self.datasets = _check_dataset_list(
+            self.data_path, self.datasets
+        )
 
         if self.verbose:
             print("\n###############################")
@@ -190,7 +279,7 @@ class Utilities:
             dataset_name = x.strip()
             dataset_path = Path(self.data_path) / dataset_name
 
-            dataset = self._load_dataset(dataset_path)
+            dataset = _load_dataset(dataset_path)
 
             if self.verbose:
                 print("\nRunning", dataset_name, "dataset")
@@ -378,128 +467,6 @@ class Utilities:
             train_true_y=y_train,
             test_true_y=y_test,
         )
-
-    def _load_dataset(self, dataset_path: Path) -> list[tuple[str, dict[str, Any]]]:
-        """Load all dataset's files, divided into train and test.
-
-        Parameters
-        ----------
-        dataset_path : Path
-            Path to dataset folder.
-
-        Returns
-        -------
-        partition_list : list of tuples
-            List of partitions found inside a dataset folder. Each partition is
-            stored into a dictionary, disjoining train and test inputs and
-            outputs.
-
-        Raises
-        ------
-        ValueError
-            If the dataset path does not exist.
-
-        RuntimeError
-            If a partition is found without train files.
-
-        """
-
-        def get_partition_index(filename: str) -> str:
-            # Extracts the index between the last "_" and ".csv"
-            return filename.rsplit("_", 1)[-1].replace(".csv", "")
-
-        try:
-            partition_list: dict[str, dict[str, Any]] = {
-                get_partition_index(filename.name): {}
-                for filename in dataset_path.iterdir()
-                if filename.name.startswith("train_")
-            }
-
-            # Loading each dataset
-            for filename in dataset_path.iterdir():
-                if filename.name.startswith("train_"):
-                    idx = get_partition_index(filename.name)
-                    train_inputs, train_outputs = self._read_file(filename)
-                    partition_list[idx]["train_inputs"] = train_inputs
-                    partition_list[idx]["train_outputs"] = train_outputs
-
-                elif filename.name.startswith("test_"):
-                    idx = get_partition_index(filename.name)
-                    test_inputs, test_outputs = self._read_file(filename)
-                    partition_list[idx]["test_inputs"] = test_inputs
-                    partition_list[idx]["test_outputs"] = test_outputs
-
-        except OSError:
-            raise ValueError(f"No such file or directory: '{dataset_path}'")
-
-        except KeyError:
-            raise RuntimeError(
-                f"Found partition without train files: partition {filename.name}"
-            )
-
-        # Saving partitions as a sorted list of (index, partition) tuples
-        sorted_list: list[tuple[str, dict[str, Any]]] = sorted(
-            partition_list.items(),
-            key=lambda t: int(t[0]) if t[0].lstrip("-").isdigit() else t[0],
-        )
-
-        return sorted_list
-
-    def _read_file(self, filename: Path) -> tuple[np.ndarray, np.ndarray]:
-        """Read a CSV containing partitions, or full datasets.
-
-        Train and test files must be previously divided for the experiment to run.
-
-        Parameters
-        ----------
-        filename : str or Path
-            Full path to train or test file.
-
-        Returns
-        -------
-        inputs : {array-like, sparse-matrix} of shape (n_samples, n_features)
-            Vector of sample's features.
-
-        outputs : array-like of shape (n_samples)
-            Target vector relative to inputs.
-
-        """
-        # Separator is automatically found
-        f = pd.read_csv(filename, header=None, engine="python")
-
-        inputs = f.values[:, 0:(-1)]
-        outputs = f.values[:, (-1)]
-
-        return inputs, outputs
-
-    def _check_dataset_list(self) -> None:
-        """Check if there is some inconsistency in the dataset list.
-
-        It also simplifies running all datasets inside one folder.
-
-        Raises
-        ------
-        ValueError
-            If the dataset list is inconsistent or contains non-string values.
-
-        """
-        base_path = Path(self.data_path)
-
-        # Check if home path is shortened
-        if str(base_path).startswith("~"):
-            base_path = Path.home() / str(base_path)[1:]
-
-        dataset_list = self.datasets
-
-        # Check if 'all' is the only value, and if it is, expand it
-        if len(dataset_list) == 1 and dataset_list[0] == "all":
-            dataset_list = [item.name for item in base_path.iterdir() if item.is_dir()]
-
-        elif not all(isinstance(item, str) for item in dataset_list):
-            raise ValueError("Dataset list can only contain strings")
-
-        self.data_path = str(base_path)
-        self.datasets = dataset_list
 
     def write_report(self) -> None:
         """Save summarized information about experiment through Results class."""

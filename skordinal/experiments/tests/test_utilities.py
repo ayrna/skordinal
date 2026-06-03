@@ -9,25 +9,10 @@ import pandas as pd
 import pytest
 
 from skordinal.experiments import ExperimentResult, Utilities
+from skordinal.experiments._utilities import _load_dataset
 
 _MINIMAL_CONF = {"cfg": {"classifier": "SVC", "parameters": {}}}
 _CONF_CV: dict = {"classifier": "SVC", "parameters": {"C": [0.1, 1.0]}}
-
-
-def _minimal_util(results_path: Path) -> Utilities:
-    """Return a Utilities instance with stub args sufficient to pass validation.
-
-    Used by tests that only exercise helper methods (_load_dataset,
-    _read_file) and therefore do not need real dataset paths or metric
-    names beyond the minimum to construct.
-    """
-    return Utilities(
-        _MINIMAL_CONF,
-        data_path=".",
-        datasets=["x"],
-        eval_metrics=["mean_absolute_error"],
-        results_path=str(results_path),
-    )
 
 
 def create_csv(path, filename):
@@ -62,12 +47,6 @@ def _from_general_conf(general_conf: dict, configurations: dict, **kwargs) -> Ut
         input_preprocessing=general_conf.get("input_preprocessing"),
         **kwargs,
     )
-
-
-@pytest.fixture
-def util(tmp_path):
-    """Minimal valid Utilities instance for testing internal helper methods."""
-    return _minimal_util(tmp_path)
 
 
 @pytest.fixture
@@ -139,7 +118,7 @@ def test_run_experiment(tmp_path, experiment_conf, svm_conf):
     assert all(test_summary[c].dtype == np.float64 for c in test_summary.columns[2:-1])
 
 
-def test_load_complete_dataset(tmp_path, util):
+def test_load_complete_dataset(tmp_path):
     """Load a dataset of 5 partitions, each with a train and a test file."""
     dataset_path = tmp_path / "complete"
     dataset_path.mkdir()
@@ -148,14 +127,14 @@ def test_load_complete_dataset(tmp_path, util):
         create_csv(dataset_path, f"train_complete.{i}")
         create_csv(dataset_path, f"test_complete.{i}")
 
-    partition_list = util._load_dataset(dataset_path)
+    partition_list = _load_dataset(dataset_path)
 
     # Every partition holds train and test inputs and outputs (4 entries).
     assert len(partition_list) == len(list(dataset_path.iterdir())) / 2
     assert all(len(partition[1]) == 4 for partition in partition_list)
 
 
-def test_load_partitionless_dataset(tmp_path, util):
+def test_load_partitionless_dataset(tmp_path):
     """Load a dataset of a single train and test file."""
     dataset_path = tmp_path / "partitionless"
     dataset_path.mkdir()
@@ -163,13 +142,13 @@ def test_load_partitionless_dataset(tmp_path, util):
     create_csv(dataset_path, "train_partitionless.csv")
     create_csv(dataset_path, "test_partitionless.csv")
 
-    partition_list = util._load_dataset(dataset_path)
+    partition_list = _load_dataset(dataset_path)
 
     assert len(partition_list) == 1
     assert all(len(partition[1]) == 4 for partition in partition_list)
 
 
-def test_load_nontestfile_dataset(tmp_path, util):
+def test_load_nontestfile_dataset(tmp_path):
     """Load a dataset of five train files with no test files."""
     dataset_path = tmp_path / "nontestfile"
     dataset_path.mkdir()
@@ -177,13 +156,13 @@ def test_load_nontestfile_dataset(tmp_path, util):
     for i in range(5):
         create_csv(dataset_path, f"train_nontestfile.{i}")
 
-    partition_list = util._load_dataset(dataset_path)
+    partition_list = _load_dataset(dataset_path)
 
     assert len(partition_list) == len(list(dataset_path.iterdir()))
     assert all(len(partition[1]) == 2 for partition in partition_list)
 
 
-def test_load_nontrainfile_dataset(tmp_path, util):
+def test_load_nontrainfile_dataset(tmp_path):
     """A partition lacking its train file raises RuntimeError."""
     dataset_path = tmp_path / "nontrainfile"
     dataset_path.mkdir()
@@ -192,7 +171,7 @@ def test_load_nontrainfile_dataset(tmp_path, util):
         create_csv(dataset_path, f"test_nontrainfile.{i}")
 
     with pytest.raises(RuntimeError):
-        util._load_dataset(dataset_path)
+        _load_dataset(dataset_path)
 
 
 def test_empty_configurations_raises(tmp_path):
