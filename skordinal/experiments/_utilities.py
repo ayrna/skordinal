@@ -11,7 +11,6 @@ from typing import Any, cast
 import numpy as np
 import pandas as pd
 from sklearn import preprocessing
-from sklearn.base import BaseEstimator
 from sklearn.model_selection import GridSearchCV
 
 from skordinal.model_selection import load_classifier
@@ -186,7 +185,7 @@ class Utilities:
             print("\tRunning Experiment")
             print("###############################")
 
-        # Iterating over Datasets
+        # Iterate over datasets.
         for x in self.datasets:
             dataset_name = x.strip()
             dataset_path = Path(self.data_path) / dataset_name
@@ -197,117 +196,188 @@ class Utilities:
                 print("\nRunning", dataset_name, "dataset")
                 print("--------------------------")
 
-            # Iterating over Configurations
+            # Iterate over configurations.
             for conf_name, configuration in self.configurations.items():
                 if self.verbose:
                     print("Running", conf_name, "...")
 
-                # Iterating over partitions
+                # Iterate over partitions.
                 for part_idx, partition in dataset:
                     if self.verbose:
                         print("  Running Partition", part_idx)
 
-                    # Normalisation or standardisation of the partition if requested
-                    if self.input_preprocessing == "norm":
-                        partition["train_inputs"], partition["test_inputs"] = (
-                            self._normalize_data(
-                                partition["train_inputs"], partition["test_inputs"]
-                            )
-                        )
-                    elif self.input_preprocessing == "std":
-                        partition["train_inputs"], partition["test_inputs"] = (
-                            self._standardize_data(
-                                partition["train_inputs"], partition["test_inputs"]
-                            )
-                        )
-
-                    optimal_estimator = self._get_optimal_estimator(
+                    result = self._run_single(
                         partition["train_inputs"],
                         partition["train_outputs"],
-                        configuration["classifier"],
-                        configuration["parameters"],
+                        partition.get("test_inputs"),
+                        partition.get("test_outputs"),
+                        configuration,
+                        dataset_name=dataset_name,
+                        conf_name=conf_name,
+                        resample_id=part_idx,
                     )
+                    self._results.save(result)
 
-                    # Getting train and test predictions
-                    train_predicted_y = optimal_estimator.predict(
-                        partition["train_inputs"]
-                    )
+    def _run_single(
+        self,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_test: np.ndarray | None,
+        y_test: np.ndarray | None,
+        configuration: dict[str, Any],
+        *,
+        dataset_name: str,
+        conf_name: str,
+        resample_id: str,
+    ) -> ExperimentResult:
+        """Run one classifier configuration on a single train/test partition.
 
-                    test_predicted_y = None
-                    elapsed = np.nan
-                    if "test_outputs" in partition:
-                        start = time()
-                        test_predicted_y = np.asarray(
-                            optimal_estimator.predict(partition["test_inputs"])
-                        )
-                        elapsed = time() - start
+        This is the single-partition execution unit. It applies optional
+        preprocessing, selects and fits the best estimator, predicts on train
+        and (when present) test splits, computes all evaluation metrics and
+        timing keys, and returns an :class:`ExperimentResult`. It does **not**
+        persist anything to disk; the caller is responsible for calling
+        ``self._results.save(result)`` after this method returns.
 
-                    # Obtaining train and test metrics values.
-                    train_metrics = OrderedDict()
-                    test_metrics = OrderedDict()
-                    for metric_name in self.eval_metrics:
-                        # Get train scores
-                        train_score = _compute_metric(
-                            metric_name,
-                            partition["train_outputs"],
-                            train_predicted_y,
-                        )
-                        train_metrics[metric_name.strip() + "_train"] = train_score
+        Parameters
+        ----------
+        X_train : ndarray of shape (n_train_samples, n_features)
+            Training feature matrix.
 
-                        # Get test scores
-                        test_metrics[metric_name.strip() + "_test"] = np.nan
-                        if "test_outputs" in partition:
-                            assert test_predicted_y is not None
-                            test_score = _compute_metric(
-                                metric_name, partition["test_outputs"], test_predicted_y
-                            )
-                            test_metrics[metric_name.strip() + "_test"] = test_score
+        y_train : ndarray of shape (n_train_samples,)
+            Training labels.
 
-                    # Cross-validation was performed to tune hyper-parameters
-                    if isinstance(optimal_estimator, GridSearchCV):
-                        train_metrics["cv_time_train"] = optimal_estimator.cv_results_[
-                            "mean_fit_time"
-                        ].mean()
-                        test_metrics["cv_time_test"] = optimal_estimator.cv_results_[
-                            "mean_score_time"
-                        ].mean()
-                        train_metrics["time_train"] = optimal_estimator.refit_time_
-                        test_metrics["time_test"] = elapsed
+        X_test : ndarray of shape (n_test_samples, n_features) or None
+            Test feature matrix. When ``None`` no test metrics are computed.
 
-                    else:
-                        optimal_estimator.best_params_ = configuration["parameters"]
-                        optimal_estimator.best_estimator_ = optimal_estimator
+        y_test : ndarray of shape (n_test_samples,) or None
+            Test labels. When ``None`` no test metrics are computed.
 
-                        train_metrics["cv_time_train"] = np.nan
-                        test_metrics["cv_time_test"] = np.nan
-                        train_metrics["time_train"] = optimal_estimator.refit_time_
-                        test_metrics["time_test"] = elapsed
+        configuration : dict
+            Single configuration entry with the form
+            ``{"classifier": str, "parameters": dict}``.
 
-                    y_proba = None
-                    if "test_outputs" in partition and hasattr(
-                        optimal_estimator.best_estimator_, "predict_proba"
-                    ):
-                        y_proba = optimal_estimator.best_estimator_.predict_proba(
-                            partition["test_inputs"]
-                        )
+        dataset_name : str
+            Name of the dataset, forwarded to the returned
+            :class:`ExperimentResult`.
 
-                    # Saving the results for this partition
-                    self._results.save(
-                        ExperimentResult(
-                            dataset_name=dataset_name,
-                            classifier_name=conf_name,
-                            resample_id=part_idx,
-                            train_predicted_y=train_predicted_y,
-                            test_predicted_y=test_predicted_y,
-                            y_proba=y_proba,
-                            train_metrics=train_metrics,
-                            test_metrics=test_metrics,
-                            best_params=optimal_estimator.best_params_,
-                            best_model=optimal_estimator.best_estimator_,
-                            train_true_y=partition["train_outputs"],
-                            test_true_y=partition.get("test_outputs"),
-                        )
-                    )
+        conf_name : str
+            Configuration label, used as ``classifier_name`` in the returned
+            :class:`ExperimentResult`.
+
+        resample_id : str
+            Partition index string, forwarded to the returned
+            :class:`ExperimentResult`.
+
+        Returns
+        -------
+        ExperimentResult
+            Fully populated result for this partition. No side effects.
+
+        """
+        # Apply preprocessing on local copies so the caller's arrays are not mutated.
+        train_inputs: np.ndarray = X_train
+        test_inputs: np.ndarray | None = X_test
+
+        if self.input_preprocessing == "norm":
+            scaler = preprocessing.MinMaxScaler().fit(train_inputs)
+            train_inputs = scaler.transform(train_inputs)
+            test_inputs = scaler.transform(cast(np.ndarray, X_test))
+        elif self.input_preprocessing == "std":
+            scaler = preprocessing.StandardScaler().fit(train_inputs)
+            train_inputs = scaler.transform(train_inputs)
+            test_inputs = scaler.transform(cast(np.ndarray, X_test))
+
+        # Select and fit the best estimator via GridSearchCV or direct fit.
+        optimal_estimator: Any = load_classifier(
+            classifier_name=configuration["classifier"],
+            random_state=self.random_state,
+            n_jobs=self.n_jobs,
+            cv_n_folds=self.cv,
+            cv_metric=self.tuning_metric,
+            param_grid=configuration["parameters"],
+        )
+
+        _fit_start = time()
+        optimal_estimator.fit(train_inputs, y_train)
+        _fit_elapsed = time() - _fit_start
+
+        if not isinstance(optimal_estimator, GridSearchCV):
+            optimal_estimator.refit_time_ = _fit_elapsed
+            optimal_estimator.best_params_ = configuration["parameters"]
+            optimal_estimator.best_estimator_ = optimal_estimator
+
+        # Predict on the training split.
+        train_predicted_y = optimal_estimator.predict(train_inputs)
+
+        # Predict on the test split when it is present.
+        test_predicted_y = None
+        elapsed = np.nan
+        if y_test is not None:
+            assert test_inputs is not None
+            start = time()
+            test_predicted_y = np.asarray(optimal_estimator.predict(test_inputs))
+            elapsed = time() - start
+
+        # Compute evaluation metrics for both splits.
+        train_metrics: OrderedDict[str, Any] = OrderedDict()
+        test_metrics: OrderedDict[str, Any] = OrderedDict()
+        for metric_name in self.eval_metrics:
+            train_score = _compute_metric(
+                metric_name,
+                y_train,
+                train_predicted_y,
+            )
+            train_metrics[metric_name.strip() + "_train"] = train_score
+
+            test_metrics[metric_name.strip() + "_test"] = np.nan
+            if y_test is not None:
+                assert test_predicted_y is not None
+                test_score = _compute_metric(metric_name, y_test, test_predicted_y)
+                test_metrics[metric_name.strip() + "_test"] = test_score
+
+        # Assemble timing keys (GridSearchCV vs direct-fit branches).
+        if isinstance(optimal_estimator, GridSearchCV):
+            train_metrics["cv_time_train"] = optimal_estimator.cv_results_[
+                "mean_fit_time"
+            ].mean()
+            test_metrics["cv_time_test"] = optimal_estimator.cv_results_[
+                "mean_score_time"
+            ].mean()
+            train_metrics["time_train"] = optimal_estimator.refit_time_
+            test_metrics["time_test"] = elapsed
+        else:
+            optimal_estimator.best_params_ = configuration["parameters"]
+            optimal_estimator.best_estimator_ = optimal_estimator
+
+            train_metrics["cv_time_train"] = np.nan
+            test_metrics["cv_time_test"] = np.nan
+            train_metrics["time_train"] = optimal_estimator.refit_time_
+            test_metrics["time_test"] = elapsed
+
+        # Compute class probabilities when available.
+        y_proba = None
+        if y_test is not None and hasattr(
+            optimal_estimator.best_estimator_, "predict_proba"
+        ):
+            assert test_inputs is not None
+            y_proba = optimal_estimator.best_estimator_.predict_proba(test_inputs)
+
+        # Build and return the ExperimentResult; no persistence here.
+        return ExperimentResult(
+            dataset_name=dataset_name,
+            classifier_name=conf_name,
+            resample_id=resample_id,
+            train_predicted_y=train_predicted_y,
+            test_predicted_y=test_predicted_y,
+            y_proba=y_proba,
+            train_metrics=train_metrics,
+            test_metrics=test_metrics,
+            best_params=optimal_estimator.best_params_,
+            best_model=optimal_estimator.best_estimator_,
+            train_true_y=y_train,
+            test_true_y=y_test,
+        )
 
     def _load_dataset(self, dataset_path: Path) -> list[tuple[str, dict[str, Any]]]:
         """Load all dataset's files, divided into train and test.
@@ -430,127 +500,6 @@ class Utilities:
 
         self.data_path = str(base_path)
         self.datasets = dataset_list
-
-    def _normalize_data(
-        self, train_data: np.ndarray, test_data: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Normalize the data.
-
-        Test data normalization will be based on train data.
-
-        Parameters
-        ----------
-        train_data : 2d array
-            Contain the train data features.
-
-        test_data : 2d array
-            Contain the test data features.
-
-        Returns
-        -------
-        train_normalized : np.ndarray
-            Normalized training data.
-
-        test_normalized : np.ndarray
-            Normalized test data.
-
-        """
-        mm_scaler = preprocessing.MinMaxScaler().fit(train_data)
-
-        return mm_scaler.transform(train_data), mm_scaler.transform(test_data)
-
-    def _standardize_data(
-        self, train_data: np.ndarray, test_data: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Standardize the data.
-
-        Test data standardization will be based on train data.
-
-        Parameters
-        ----------
-        train_data : 2d array
-            Contain the train data features.
-
-        test_data : 2d array
-            Contain the test data features.
-
-        Returns
-        -------
-        train_standardized : np.ndarray
-            Standardized training data.
-
-        test_standardized : np.ndarray
-            Standardized test data.
-
-        """
-        std_scaler = preprocessing.StandardScaler().fit(train_data)
-
-        return std_scaler.transform(train_data), std_scaler.transform(test_data)
-
-    def _get_optimal_estimator(
-        self,
-        train_inputs: np.ndarray,
-        train_outputs: np.ndarray,
-        classifier_name: str,
-        parameters: dict[str, Any],
-    ) -> BaseEstimator | GridSearchCV:
-        """Perform cross-validation over one dataset and configuration.
-
-        Each configuration consists of one classifier and none, one or multiple
-        hyper-parameters, that, in turn, can contain one or multiple values used
-        to optimize the resulting model.
-
-        At the end of cross-validation phase, the model with the specific
-        combination of values from the hyper-parameters that achieved the best
-        metrics from all the combinations will remain.
-
-        Parameters
-        ----------
-        train_inputs : {array-like, sparse-matrix} of shape (n_samples, n_features)
-            Vector of features for each sample for this dataset.
-
-        train_outputs : array-like of shape (n_samples)
-            Target vector relative to train_inputs.
-
-        classifier_name : str
-            Name of the classification algorithm being employed.
-
-        parameters : dict
-            Dictionary containing parameters to optimize as keys, and the list
-            of values that we want to compare as values.
-
-        Returns
-        -------
-        optimal : GridSearchCV object or classifier object
-            An already fitted model of the given classifier, with the best found
-            parameters after cross-validation. If cross-validation is not needed,
-            it will return the classifier model already trained.
-
-        Raises
-        ------
-        ValueError
-            If the classifier name is unknown or a hyper-parameter is invalid.
-
-        """
-        estimator = load_classifier(
-            classifier_name=classifier_name,
-            random_state=self.random_state,
-            n_jobs=self.n_jobs,
-            cv_n_folds=self.cv,
-            cv_metric=self.tuning_metric,
-            param_grid=parameters,
-        )
-
-        start = time()
-        estimator.fit(train_inputs, train_outputs)
-        elapsed = time() - start
-
-        if not isinstance(estimator, GridSearchCV):
-            estimator.refit_time_ = elapsed
-            estimator.best_params_ = parameters
-            estimator.best_estimator_ = estimator
-
-        return estimator
 
     def write_report(self) -> None:
         """Save summarized information about experiment through Results class."""
