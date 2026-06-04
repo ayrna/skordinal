@@ -65,7 +65,7 @@ All dependencies are managed through `pyproject.toml` and include:
 Test your installation with the provided example:
 
 ```bash
-python config.py skordinal/configurations/full_functionality_test.json
+python config.py examples/recipes/full_functionality_test.json
 ```
 
 ## Quick Start
