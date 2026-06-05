@@ -1,4 +1,4 @@
-"""Tests for the ordinal encoding utilities."""
+"""Tests for the ordinal coding utilities."""
 
 import numpy as np
 import numpy.testing as npt

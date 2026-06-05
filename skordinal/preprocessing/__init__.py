@@ -1,6 +1,6 @@
 """Ordinal preprocessing utilities."""
 
-from ._encodings import (
+from ._coding import (
     binary_cumulative_to_ordinal,
     build_coding_matrix,
     ordinal_to_binary_cumulative,

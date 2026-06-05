@@ -1,4 +1,4 @@
-"""Ordinal encoding utilities."""
+"""Ordinal coding utilities."""
 
 from __future__ import annotations
 
