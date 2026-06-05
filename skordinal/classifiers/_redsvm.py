@@ -43,7 +43,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
     degree : int, default=3
         Set degree in kernel function.
 
-    gamma : {'scale', 'auto'} or float, default=1.0
+    gamma : {'scale', 'auto'} or float, default='auto'
         Kernel coefficient determining the influence of individual training samples:
         - 'scale': 1 / (n_features * X.var())
         - 'auto': 1 / n_features
@@ -163,7 +163,8 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         if self.gamma == "auto":
             gamma_value = 1.0 / X.shape[1]
         elif self.gamma == "scale":
-            gamma_value = 1.0 / (X.shape[1] * X.var())
+            x_var = X.var()
+            gamma_value = 1.0 / (X.shape[1] * x_var) if x_var != 0.0 else 1.0
 
         # Map kernel type
         kernel_type_mapping = {

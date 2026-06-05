@@ -1,6 +1,7 @@
 """Tests for the REDSVM classifier."""
 
 import inspect
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -203,3 +204,13 @@ def test_redsvm_label_roundtrip(labels):
 
     assert np.array_equal(classifier.classes_, np.unique(labels_array))
     assert set(classifier.predict(X)).issubset(set(np.unique(labels_array)))
+
+
+def test_redsvm_gamma_scale_zero_variance(X, y):
+    """Test that gamma='scale' handles zero-variance input without dividing by zero."""
+    X_constant = np.ones_like(X)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        classifier = REDSVM(gamma="scale", kernel="rbf").fit(X_constant, y)
+
+    assert set(classifier.predict(X_constant)).issubset(set(classifier.classes_))
