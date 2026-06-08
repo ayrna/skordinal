@@ -2,27 +2,15 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
-from time import time
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from sklearn import preprocessing
-from sklearn.model_selection import GridSearchCV
 
-from skordinal.model_selection import load_classifier
-
-from ._results import ExperimentResult, Results
-
-
-def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    from skordinal.metrics import get_ordinal_scorer
-
-    scorer = cast(Any, get_ordinal_scorer(metric_name.strip()))
-    return scorer._score_func(y_true, y_pred, **scorer._kwargs)
+from ._experiment import Experiment
+from ._results import Results
 
 
 def _read_file(filename: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -290,183 +278,31 @@ class Utilities:
                 if self.verbose:
                     print("Running", conf_name, "...")
 
+                experiment = Experiment(
+                    configuration,
+                    eval_metrics=self.eval_metrics,
+                    tuning_metric=self.tuning_metric,
+                    cv=self.cv,
+                    n_jobs=self.n_jobs,
+                    input_preprocessing=self.input_preprocessing,
+                    random_state=self.random_state,
+                )
+
                 # Iterate over partitions.
                 for part_idx, partition in dataset:
                     if self.verbose:
                         print("  Running Partition", part_idx)
 
-                    result = self._run_single(
+                    result = experiment.run(
                         partition["train_inputs"],
                         partition["train_outputs"],
                         partition.get("test_inputs"),
                         partition.get("test_outputs"),
-                        configuration,
                         dataset_name=dataset_name,
-                        conf_name=conf_name,
+                        classifier_name=conf_name,
                         resample_id=part_idx,
                     )
                     self._results.save(result)
-
-    def _run_single(
-        self,
-        X_train: np.ndarray,
-        y_train: np.ndarray,
-        X_test: np.ndarray | None,
-        y_test: np.ndarray | None,
-        configuration: dict[str, Any],
-        *,
-        dataset_name: str,
-        conf_name: str,
-        resample_id: str,
-    ) -> ExperimentResult:
-        """Run one classifier configuration on a single train/test partition.
-
-        This is the single-partition execution unit. It applies optional
-        preprocessing, selects and fits the best estimator, predicts on train
-        and (when present) test splits, computes all evaluation metrics and
-        timing keys, and returns an :class:`ExperimentResult`. It does **not**
-        persist anything to disk; the caller is responsible for calling
-        ``self._results.save(result)`` after this method returns.
-
-        Parameters
-        ----------
-        X_train : ndarray of shape (n_train_samples, n_features)
-            Training feature matrix.
-
-        y_train : ndarray of shape (n_train_samples,)
-            Training labels.
-
-        X_test : ndarray of shape (n_test_samples, n_features) or None
-            Test feature matrix. When ``None`` no test metrics are computed.
-
-        y_test : ndarray of shape (n_test_samples,) or None
-            Test labels. When ``None`` no test metrics are computed.
-
-        configuration : dict
-            Single configuration entry with the form
-            ``{"classifier": str, "parameters": dict}``.
-
-        dataset_name : str
-            Name of the dataset, forwarded to the returned
-            :class:`ExperimentResult`.
-
-        conf_name : str
-            Configuration label, used as ``classifier_name`` in the returned
-            :class:`ExperimentResult`.
-
-        resample_id : str
-            Partition index string, forwarded to the returned
-            :class:`ExperimentResult`.
-
-        Returns
-        -------
-        ExperimentResult
-            Fully populated result for this partition. No side effects.
-
-        """
-        # Apply preprocessing on local copies so the caller's arrays are not mutated.
-        train_inputs: np.ndarray = X_train
-        test_inputs: np.ndarray | None = X_test
-
-        if self.input_preprocessing == "norm":
-            scaler = preprocessing.MinMaxScaler().fit(train_inputs)
-            train_inputs = scaler.transform(train_inputs)
-            test_inputs = scaler.transform(cast(np.ndarray, X_test))
-        elif self.input_preprocessing == "std":
-            scaler = preprocessing.StandardScaler().fit(train_inputs)
-            train_inputs = scaler.transform(train_inputs)
-            test_inputs = scaler.transform(cast(np.ndarray, X_test))
-
-        # Select and fit the best estimator via GridSearchCV or direct fit.
-        optimal_estimator: Any = load_classifier(
-            classifier_name=configuration["classifier"],
-            random_state=self.random_state,
-            n_jobs=self.n_jobs,
-            cv_n_folds=self.cv,
-            cv_metric=self.tuning_metric,
-            param_grid=configuration["parameters"],
-        )
-
-        _fit_start = time()
-        optimal_estimator.fit(train_inputs, y_train)
-        _fit_elapsed = time() - _fit_start
-
-        if not isinstance(optimal_estimator, GridSearchCV):
-            optimal_estimator.refit_time_ = _fit_elapsed
-            optimal_estimator.best_params_ = configuration["parameters"]
-            optimal_estimator.best_estimator_ = optimal_estimator
-
-        # Predict on the training split.
-        train_predicted_y = optimal_estimator.predict(train_inputs)
-
-        # Predict on the test split when it is present.
-        test_predicted_y = None
-        elapsed = np.nan
-        if y_test is not None:
-            assert test_inputs is not None
-            start = time()
-            test_predicted_y = np.asarray(optimal_estimator.predict(test_inputs))
-            elapsed = time() - start
-
-        # Compute evaluation metrics for both splits.
-        train_metrics: OrderedDict[str, Any] = OrderedDict()
-        test_metrics: OrderedDict[str, Any] = OrderedDict()
-        for metric_name in self.eval_metrics:
-            train_score = _compute_metric(
-                metric_name,
-                y_train,
-                train_predicted_y,
-            )
-            train_metrics[metric_name.strip() + "_train"] = train_score
-
-            test_metrics[metric_name.strip() + "_test"] = np.nan
-            if y_test is not None:
-                assert test_predicted_y is not None
-                test_score = _compute_metric(metric_name, y_test, test_predicted_y)
-                test_metrics[metric_name.strip() + "_test"] = test_score
-
-        # Assemble timing keys (GridSearchCV vs direct-fit branches).
-        if isinstance(optimal_estimator, GridSearchCV):
-            train_metrics["cv_time_train"] = optimal_estimator.cv_results_[
-                "mean_fit_time"
-            ].mean()
-            test_metrics["cv_time_test"] = optimal_estimator.cv_results_[
-                "mean_score_time"
-            ].mean()
-            train_metrics["time_train"] = optimal_estimator.refit_time_
-            test_metrics["time_test"] = elapsed
-        else:
-            optimal_estimator.best_params_ = configuration["parameters"]
-            optimal_estimator.best_estimator_ = optimal_estimator
-
-            train_metrics["cv_time_train"] = np.nan
-            test_metrics["cv_time_test"] = np.nan
-            train_metrics["time_train"] = optimal_estimator.refit_time_
-            test_metrics["time_test"] = elapsed
-
-        # Compute class probabilities when available.
-        y_proba = None
-        if y_test is not None and hasattr(
-            optimal_estimator.best_estimator_, "predict_proba"
-        ):
-            assert test_inputs is not None
-            y_proba = optimal_estimator.best_estimator_.predict_proba(test_inputs)
-
-        # Build and return the ExperimentResult; no persistence here.
-        return ExperimentResult(
-            dataset_name=dataset_name,
-            classifier_name=conf_name,
-            resample_id=resample_id,
-            train_predicted_y=train_predicted_y,
-            test_predicted_y=test_predicted_y,
-            y_proba=y_proba,
-            train_metrics=train_metrics,
-            test_metrics=test_metrics,
-            best_params=optimal_estimator.best_params_,
-            best_model=optimal_estimator.best_estimator_,
-            train_true_y=y_train,
-            test_true_y=y_test,
-        )
 
     def write_report(self) -> None:
         """Save summarized information about experiment through Results class."""
