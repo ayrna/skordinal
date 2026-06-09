@@ -3,5 +3,5 @@ show_missing = True
 
 [run]
 branch = True
-source = orca_python
+source = skordinal
 parallel = True
