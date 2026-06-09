@@ -1,4 +1,4 @@
-"""Tests for the experiment utilities module."""
+"""Tests for the benchmark runner module."""
 
 from pathlib import Path
 
@@ -6,8 +6,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from skordinal.experiments import Utilities
-from skordinal.experiments._utilities import _load_dataset
+from skordinal.experiments import Benchmark
+from skordinal.experiments._benchmark import _load_dataset
 
 _MINIMAL_CONF = {"cfg": {"classifier": "SVC", "parameters": {}}}
 
@@ -27,12 +27,12 @@ def _write_partition_csv(directory, filename, n_per_class=10):
     np.savetxt(directory / filename, data, delimiter=",", fmt="%d")
 
 
-def _from_general_conf(general_conf: dict, configurations: dict, **kwargs) -> Utilities:
-    """Construct Utilities from an old-style ``general_conf`` dict.
+def _from_general_conf(general_conf: dict, configurations: dict, **kwargs) -> Benchmark:
+    """Construct Benchmark from an old-style ``general_conf`` dict.
 
     Keeps test call-sites readable without duplicating the key mapping.
     """
-    return Utilities(
+    return Benchmark(
         configurations,
         data_path=general_conf["basedir"],
         datasets=general_conf["datasets"],
@@ -85,11 +85,11 @@ def svm_conf():
     }
 
 
-def test_run_experiment(tmp_path, experiment_conf, svm_conf):
-    """run_experiment and write_report produce the expected on-disk layout."""
-    util = _from_general_conf(experiment_conf, svm_conf, verbose=False)
-    util.run_experiment()
-    util.write_report()
+def test_run_and_summarize(tmp_path, experiment_conf, svm_conf):
+    """run and summarize produce the expected on-disk layout."""
+    benchmark = _from_general_conf(experiment_conf, svm_conf, verbose=False)
+    benchmark.run()
+    benchmark.summarize()
 
     runs_dir = Path(experiment_conf["output_folder"])
     assert runs_dir.exists()
@@ -174,7 +174,7 @@ def test_load_nontrainfile_dataset(tmp_path):
 def test_empty_configurations_raises(tmp_path):
     """An empty configurations dict raises ValueError."""
     with pytest.raises(ValueError, match="'configurations' must be a non-empty dict"):
-        Utilities(
+        Benchmark(
             {},
             data_path=".",
             datasets=["x"],
@@ -186,7 +186,7 @@ def test_empty_configurations_raises(tmp_path):
 def test_none_configurations_raises(tmp_path):
     """None configurations is rejected by the non-empty check (ValueError)."""
     with pytest.raises(ValueError, match="'configurations' must be a non-empty dict"):
-        Utilities(
+        Benchmark(
             None,  # type: ignore[arg-type]
             data_path=".",
             datasets=["x"],
@@ -198,7 +198,7 @@ def test_none_configurations_raises(tmp_path):
 def test_empty_datasets_raises(tmp_path):
     """An empty datasets list raises ValueError."""
     with pytest.raises(ValueError, match="'datasets' must be a non-empty list"):
-        Utilities(
+        Benchmark(
             _MINIMAL_CONF,
             data_path=".",
             datasets=[],
@@ -210,7 +210,7 @@ def test_empty_datasets_raises(tmp_path):
 def test_empty_eval_metrics_raises(tmp_path):
     """An empty eval_metrics list raises ValueError."""
     with pytest.raises(ValueError, match="'eval_metrics' must be a non-empty list"):
-        Utilities(
+        Benchmark(
             _MINIMAL_CONF,
             data_path=".",
             datasets=["x"],
@@ -231,7 +231,7 @@ def test_empty_eval_metrics_raises(tmp_path):
 )
 def test_input_preprocessing_accepted_and_normalized(tmp_path, raw, expected):
     """Valid input_preprocessing values are accepted and lower-stripped."""
-    util = Utilities(
+    benchmark = Benchmark(
         _MINIMAL_CONF,
         data_path=".",
         datasets=["x"],
@@ -239,14 +239,14 @@ def test_input_preprocessing_accepted_and_normalized(tmp_path, raw, expected):
         results_path=str(tmp_path),
         input_preprocessing=raw,
     )
-    assert util.input_preprocessing == expected
+    assert benchmark.input_preprocessing == expected
 
 
 @pytest.mark.parametrize("bad_value", ["minmax", ""])
 def test_input_preprocessing_invalid_raises(tmp_path, bad_value):
     """Unrecognised input_preprocessing values raise ValueError."""
     with pytest.raises(ValueError, match="'input_preprocessing' must be one of"):
-        Utilities(
+        Benchmark(
             _MINIMAL_CONF,
             data_path=".",
             datasets=["x"],
@@ -259,7 +259,7 @@ def test_input_preprocessing_invalid_raises(tmp_path, bad_value):
 @pytest.mark.parametrize("kwargs, expected", [({}, None), ({"random_state": 42}, 42)])
 def test_random_state_stored(tmp_path, kwargs, expected):
     """random_state defaults to None and is stored as given on the instance."""
-    util = Utilities(
+    benchmark = Benchmark(
         _MINIMAL_CONF,
         data_path=".",
         datasets=["x"],
@@ -267,13 +267,13 @@ def test_random_state_stored(tmp_path, kwargs, expected):
         results_path=str(tmp_path),
         **kwargs,
     )
-    assert util.random_state == expected
+    assert benchmark.random_state == expected
 
 
 def test_configurations_is_deep_copied(tmp_path):
     """Mutating the original configurations dict does not affect the stored copy."""
     original = {"cfg": {"classifier": "SVC", "parameters": {"C": [1]}}}
-    util = Utilities(
+    benchmark = Benchmark(
         original,
         data_path=".",
         datasets=["x"],
@@ -281,4 +281,4 @@ def test_configurations_is_deep_copied(tmp_path):
         results_path=str(tmp_path),
     )
     original["cfg"]["parameters"]["C"].append(10)
-    assert util.configurations["cfg"]["parameters"]["C"] == [1]
+    assert benchmark.configurations["cfg"]["parameters"]["C"] == [1]

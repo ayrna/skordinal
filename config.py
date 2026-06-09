@@ -2,7 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
-from skordinal.experiments import Utilities
+from skordinal.experiments import Benchmark
 
 
 def main(general_conf, configurations):
@@ -18,7 +18,7 @@ def main(general_conf, configurations):
             + "For more information about using this framework, please refer to the README."
         )
 
-    interface = Utilities(
+    benchmark = Benchmark(
         configurations,
         data_path=general_conf["basedir"],
         datasets=general_conf["datasets"],
@@ -30,8 +30,8 @@ def main(general_conf, configurations):
         input_preprocessing=general_conf.get("input_preprocessing"),
         random_state=general_conf.get("random_state"),
     )
-    interface.run_experiment()
-    interface.write_report()
+    benchmark.run()
+    benchmark.summarize()
 
 
 if __name__ == "__main__":

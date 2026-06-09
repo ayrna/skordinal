@@ -1,4 +1,4 @@
-"""Utility class for running experiments."""
+"""Benchmark runner for ordinal classification experiments."""
 
 from __future__ import annotations
 
@@ -100,15 +100,14 @@ def _load_dataset(dataset_path: Path) -> list[tuple[str, dict[str, Any]]]:
     return sorted_list
 
 
-class Utilities:
-    """Run experiments over N datasets with M different configurations.
+class Benchmark:
+    """Run a benchmark of M configurations across N datasets and their partitions.
 
-    Configurations are composed of a classifier method and different parameters,
-    where it may be multiple values for every one of them.
-
-    Running the main function of this class will perform cross-validation for
-    each partition per dataset-configuration pair, obtaining the most optimal
-    model, which is then used to infer labels for the test sets.
+    Each configuration pairs a classifier method with one or more hyper-parameter
+    values. Calling :meth:`run` performs cross-validation for every partition of
+    each dataset-configuration pair, fits the selected model, predicts the test
+    labels, and stores all metrics in a :class:`Results` object. :meth:`summarize`
+    then writes the aggregated train and test summaries.
 
     Parameters
     ----------
@@ -169,15 +168,16 @@ class Utilities:
 
     Examples
     --------
-    >>> from skordinal.experiments import Utilities  # doctest: +SKIP
-    >>> u = Utilities(  # doctest: +SKIP
+    >>> from skordinal.experiments import Benchmark  # doctest: +SKIP
+    >>> benchmark = Benchmark(  # doctest: +SKIP
     ...     configurations={"SVM": {"classifier": "svc", "parameters": {"C": [1]}}},
     ...     data_path="/data/ordinal",
     ...     datasets=["balance-scale"],
     ...     eval_metrics=["mean_absolute_error"],
     ...     results_path="/tmp/results",
     ... )
-    >>> u.run_experiment()  # doctest: +SKIP
+    >>> benchmark.run()  # doctest: +SKIP
+    >>> benchmark.summarize()  # doctest: +SKIP
 
     """
 
@@ -231,8 +231,8 @@ class Utilities:
         self.random_state = random_state
         self.verbose = verbose
 
-    def run_experiment(self) -> None:
-        """Run an experiment. Main method of this framework.
+    def run(self) -> None:
+        """Run the benchmark over every dataset, configuration and partition.
 
         Loads all datasets, which can be fragmented in partitions. Builds a model
         per partition, using cross-validation to find the optimal values among the
@@ -259,7 +259,7 @@ class Utilities:
 
         if self.verbose:
             print("\n###############################")
-            print("\tRunning Experiment")
+            print("\tRunning Benchmark")
             print("###############################")
 
         # Iterate over datasets.
@@ -304,10 +304,10 @@ class Utilities:
                     )
                     self._results.save(result)
 
-    def write_report(self) -> None:
-        """Save summarized information about experiment through Results class."""
+    def summarize(self) -> None:
+        """Write the aggregated train and test summaries via the Results object."""
         if self.verbose:
-            print("\nSaving Results...")
+            print("\nSaving summary...")
 
         for split in ("train", "test"):
             try:
