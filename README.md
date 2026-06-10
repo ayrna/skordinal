@@ -65,7 +65,7 @@ All dependencies are managed through `pyproject.toml` and include:
 Test your installation with the provided example:
 
 ```bash
-python config.py examples/recipes/full_functionality_test.json
+python config.py examples/recipes/full_demo.json
 ```
 
 ## Quick Start
@@ -78,10 +78,10 @@ skordinal includes sample datasets with pre-partitioned train/test splits using 
 {
     "general_conf": {
         "basedir": "skordinal/datasets/data",
-        "datasets": ["balance-scale", "contact-lenses", "tae"],
+        "datasets": ["balance_scale", "era", "esl"],
         "hyperparam_cv_nfolds": 3,
         "output_folder": "results/",
-        "metrics": ["accuracy_score", "neg_mean_absolute_error", "neg_average_mean_absolute_error"],
+        "metrics": ["accuracy_score", "mean_absolute_error", "average_mean_absolute_error"],
         "cv_metric": "neg_mean_absolute_error"
     },
     "configurations": {
@@ -101,7 +101,7 @@ skordinal includes sample datasets with pre-partitioned train/test splits using 
                 "parameters": {
                     "C": [0.01, 0.1, 1, 10],
                     "gamma": [0.01, 0.1, 1, 10],
-                    "probability": ["True"]
+                    "probability": [true]
                 }
             }
         }

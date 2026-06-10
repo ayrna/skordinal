@@ -1,19 +1,12 @@
 {
     "general_conf": {
         "basedir": "skordinal/datasets/data",
-        "datasets": [
-            "balance-scale",
-            "car",
-            "contact-lenses",
-            "ERA",
-            "tae",
-            "winequality-red"
-        ],
+        "datasets": ["balance_scale", "era", "esl"],
         "hyperparam_cv_nfolds": 3,
-        "jobs": 10,
+        "jobs": 1,
         "input_preprocessing": "std",
-        "output_folder": "my_runs/",
-        "metrics": ["accuracy", "mean_absolute_error", "average_mean_absolute_error", "mean_zero_one_error"],
+        "output_folder": "results/",
+        "metrics": ["accuracy_score", "mean_absolute_error", "average_mean_absolute_error", "mean_zero_one_error"],
         "cv_metric": "neg_mean_absolute_error"
     },
     "configurations": {
@@ -33,7 +26,7 @@
                 "parameters": {
                     "C": [0.01, 0.1, 1, 10],
                     "gamma": [0.01, 0.1, 1, 10],
-                    "probability": ["True"]
+                    "probability": [true]
                 }
             }
         },
@@ -44,11 +37,8 @@
                 "decision_method": "exponential_loss",
                 "base_classifier": "LogisticRegression",
                 "parameters": {
-                    "solver": ["liblinear"],
-                    "C": [0.01, 0.1, 1, 10],
-                    "penalty": ["l1", "l2"]
+                    "C": [0.01, 0.1, 1, 10]
                 }
-
             }
         },
         "REDSVM": {

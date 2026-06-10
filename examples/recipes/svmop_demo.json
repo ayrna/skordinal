@@ -1,11 +1,12 @@
 {
     "general_conf": {
         "basedir": "skordinal/datasets/data",
-        "datasets": ["balance-scale"],
+        "datasets": ["balance_scale"],
         "hyperparam_cv_nfolds": 3,
-        "jobs": 10,
-        "output_folder": "my_runs/",
-        "metrics": ["accuracy", "mean_absolute_error", "mean_zero_one_error"],
+        "jobs": 1,
+        "input_preprocessing": "std",
+        "output_folder": "results/",
+        "metrics": ["accuracy_score", "mean_absolute_error", "mean_zero_one_error"],
         "cv_metric": "neg_mean_absolute_error"
     },
     "configurations": {
@@ -18,7 +19,7 @@
                 "parameters": {
                     "C": [0.1, 1, 10],
                     "gamma": [0.1, 1, 10],
-                    "probability": ["True"]
+                    "probability": [true]
                 }
             }
         }
