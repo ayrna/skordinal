@@ -65,7 +65,7 @@ All dependencies are managed through `pyproject.toml` and include:
 Test your installation with the provided example:
 
 ```bash
-python config.py examples/recipes/full_demo.json
+python config.py examples/recipes/full_demo.py
 ```
 
 ## Quick Start
@@ -74,23 +74,27 @@ skordinal includes sample datasets with pre-partitioned train/test splits using 
 
 **Basic experiment configuration:**
 
-```json
-{
+A recipe is a Python file that defines a top-level `RECIPE` dict with two
+sections: `general_conf` (run-wide settings) and `configurations` (classifier
+definitions).
+
+```python
+RECIPE = {
     "general_conf": {
         "basedir": "skordinal/datasets/data",
         "datasets": ["balance_scale", "era", "esl"],
         "hyperparam_cv_nfolds": 3,
         "output_folder": "results/",
         "metrics": ["accuracy_score", "mean_absolute_error", "average_mean_absolute_error"],
-        "cv_metric": "neg_mean_absolute_error"
+        "cv_metric": "neg_mean_absolute_error",
     },
     "configurations": {
         "SVM": {
             "classifier": "SVC",
             "parameters": {
                 "C": [0.001, 0.1, 1, 10, 100],
-                "gamma": [0.1, 1, 10]
-            }
+                "gamma": [0.1, 1, 10],
+            },
         },
         "SVMOP": {
             "classifier": "OrdinalDecomposition",
@@ -101,24 +105,24 @@ skordinal includes sample datasets with pre-partitioned train/test splits using 
                 "parameters": {
                     "C": [0.01, 0.1, 1, 10],
                     "gamma": [0.01, 0.1, 1, 10],
-                    "probability": [true]
-                }
-            }
-        }
-    }
+                    "probability": [True],
+                },
+            },
+        },
+    },
 }
 ```
 
 **Run the experiment:**
 ```bash
-python config.py my_experiment.json
+python config.py my_experiment.py
 ```
 
 Results are saved in `results/` folder with performance metrics for each dataset-classifier combination. The framework automatically performs cross-validation, hyperparameter tuning, and evaluation on test sets.
 
 ## Configuration Files
 
-Experiments are defined using JSON configuration files with two main sections: general_conf for experiment settings and configurations for classifier definitions.
+Experiments are defined using Python recipe files (a module exposing a top-level `RECIPE` dict) with two main sections: general_conf for experiment settings and configurations for classifier definitions.
 
 ### general-conf
 
@@ -149,7 +153,7 @@ Defines classifiers and their hyperparameters for GridSearchCV. Each configurati
 ### Basic Usage
 
 ```bash
-python config.py experiment_file.json
+python config.py experiment_file.py
 ```
 
 ### Example Output
