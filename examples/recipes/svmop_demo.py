@@ -1,4 +1,6 @@
-{
+"""SVMOP ordered-partitions SVC decomposition on balance_scale."""
+
+RECIPE = {
     "general_conf": {
         "basedir": "skordinal/datasets/data",
         "datasets": ["balance_scale"],
@@ -6,8 +8,12 @@
         "jobs": 1,
         "input_preprocessing": "std",
         "output_folder": "results/",
-        "metrics": ["accuracy_score", "mean_absolute_error", "mean_zero_one_error"],
-        "cv_metric": "neg_mean_absolute_error"
+        "metrics": [
+            "accuracy_score",
+            "mean_absolute_error",
+            "mean_zero_one_error",
+        ],
+        "cv_metric": "neg_mean_absolute_error",
     },
     "configurations": {
         "SVMOP": {
@@ -19,9 +25,9 @@
                 "parameters": {
                     "C": [0.1, 1, 10],
                     "gamma": [0.1, 1, 10],
-                    "probability": [true]
-                }
-            }
-        }
-    }
+                    "probability": [True],
+                },
+            },
+        },
+    },
 }

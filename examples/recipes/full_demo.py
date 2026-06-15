@@ -1,4 +1,6 @@
-{
+"""Several ordinal classifiers and a nominal baseline across three datasets."""
+
+RECIPE = {
     "general_conf": {
         "basedir": "skordinal/datasets/data",
         "datasets": ["balance_scale", "era", "esl"],
@@ -6,16 +8,21 @@
         "jobs": 1,
         "input_preprocessing": "std",
         "output_folder": "results/",
-        "metrics": ["accuracy_score", "mean_absolute_error", "average_mean_absolute_error", "mean_zero_one_error"],
-        "cv_metric": "neg_mean_absolute_error"
+        "metrics": [
+            "accuracy_score",
+            "mean_absolute_error",
+            "average_mean_absolute_error",
+            "mean_zero_one_error",
+        ],
+        "cv_metric": "neg_mean_absolute_error",
     },
     "configurations": {
         "SVM": {
             "classifier": "SVC",
             "parameters": {
                 "C": [0.001, 0.1, 1, 10, 100],
-                "gamma": [0.1, 1, 10]
-            }
+                "gamma": [0.1, 1, 10],
+            },
         },
         "SVMOP": {
             "classifier": "OrdinalDecomposition",
@@ -26,9 +33,9 @@
                 "parameters": {
                     "C": [0.01, 0.1, 1, 10],
                     "gamma": [0.01, 0.1, 1, 10],
-                    "probability": [true]
-                }
-            }
+                    "probability": [True],
+                },
+            },
         },
         "LR": {
             "classifier": "OrdinalDecomposition",
@@ -37,9 +44,9 @@
                 "decision_method": "exponential_loss",
                 "base_classifier": "LogisticRegression",
                 "parameters": {
-                    "C": [0.01, 0.1, 1, 10]
-                }
-            }
+                    "C": [0.01, 0.1, 1, 10],
+                },
+            },
         },
         "REDSVM": {
             "classifier": "REDSVM",
@@ -50,8 +57,8 @@
                 "coef0": 0,
                 "C": 1,
                 "tol": 0.001,
-                "shrinking": true
-            }
+                "shrinking": True,
+            },
         },
         "SVOREX": {
             "classifier": "SVOREX",
@@ -59,8 +66,8 @@
                 "kernel": "rbf",
                 "C": [0.1, 1, 10],
                 "gamma": [0.1, 1, 10],
-                "tol": 0.001
-            }
-        }
-    }
+                "tol": 0.001,
+            },
+        },
+    },
 }
