@@ -1,221 +1,86 @@
 """Tests for the benchmark runner module."""
 
-from pathlib import Path
+import json
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from skordinal.experiments import Benchmark
-from skordinal.experiments._benchmark import _load_dataset
 
-_MINIMAL_CONF = {"cfg": {"classifier": "SVC", "parameters": {}}}
+_SVC_CONF: dict = {"SVM": {"classifier": "SVC", "parameters": {"C": [1]}}}
+_MINIMAL_CONF: dict = {"cfg": {"classifier": "SVC", "parameters": {}}}
+_BUNDLED_DS = "balance_scale"
+
+_INVALID_CONSTRUCTOR_CASES = [
+    pytest.param(
+        {},
+        [_BUNDLED_DS],
+        ["mean_absolute_error"],
+        "non-empty",
+        id="empty-configurations",
+    ),
+    pytest.param(
+        _MINIMAL_CONF,
+        [],
+        ["mean_absolute_error"],
+        "non-empty",
+        id="empty-datasets",
+    ),
+    pytest.param(
+        _MINIMAL_CONF,
+        [_BUNDLED_DS],
+        [],
+        "non-empty",
+        id="empty-eval-metrics",
+    ),
+]
 
 
-def create_csv(path, filename):
-    """Create a csv file with sample data."""
-    sample_data = "1,2,3,0\n4,5,6,1"
-    (path / filename).write_text(sample_data)
-
-
-def _write_partition_csv(directory, filename, n_per_class=10):
-    rng = np.random.default_rng(0)
-    n_rows = n_per_class * 3
-    features = rng.integers(1, 6, size=(n_rows, 4))
-    labels = np.repeat([0, 1, 2], n_per_class).reshape(-1, 1)
-    data = np.hstack([features, labels])
-    np.savetxt(directory / filename, data, delimiter=",", fmt="%d")
-
-
-def _from_general_conf(general_conf: dict, configurations: dict, **kwargs) -> Benchmark:
-    """Construct Benchmark from an old-style ``general_conf`` dict.
-
-    Keeps test call-sites readable without duplicating the key mapping.
-    """
-    return Benchmark(
-        configurations,
-        data_path=general_conf["basedir"],
-        datasets=general_conf["datasets"],
-        eval_metrics=general_conf["metrics"],
-        results_path=general_conf["output_folder"],
-        tuning_metric=general_conf.get("cv_metric", "neg_mean_absolute_error"),
-        cv=general_conf.get("hyperparam_cv_nfolds", 3),
-        n_jobs=general_conf.get("jobs", 1),
-        input_preprocessing=general_conf.get("input_preprocessing"),
-        **kwargs,
+@pytest.fixture
+def csv_ds_dir(tmp_path):
+    """Write a small 3-class CSV plus a 2-entry masks file under tmp_path."""
+    rng = np.random.default_rng(7)
+    n = 60
+    X = rng.standard_normal((n, 4))
+    y = np.repeat([0, 1, 2], n // 3)
+    rows = np.hstack([X, y.reshape(-1, 1)])
+    np.savetxt(tmp_path / "smallds.csv", rows, delimiter=",", fmt="%.6f")
+    mask0 = [True] * (n // 2) + [False] * (n // 2)
+    mask1 = [False] * (n // 2) + [True] * (n // 2)
+    (tmp_path / "smallds.masks.json").write_text(
+        json.dumps([mask0, mask1]), encoding="utf-8"
     )
+    return tmp_path
 
 
-@pytest.fixture
-def partition_dataset(tmp_path):
-    dataset_dir = tmp_path / "data" / "balance"
-    dataset_dir.mkdir(parents=True)
-    for i in range(2):
-        _write_partition_csv(dataset_dir, f"train_balance_{i}.csv")
-        _write_partition_csv(dataset_dir, f"test_balance_{i}.csv")
-    return tmp_path / "data"
-
-
-@pytest.fixture
-def experiment_conf(tmp_path, partition_dataset):
-    return {
-        "basedir": partition_dataset,
-        "datasets": ["balance"],
-        "input_preprocessing": "std",
-        "hyperparam_cv_nfolds": 3,
-        "jobs": 1,
-        "output_folder": str(tmp_path / "runs"),
-        "metrics": [
-            "accuracy_score",
-            "mean_absolute_error",
-            "average_mean_absolute_error",
-            "mean_zero_one_error",
-        ],
-        "cv_metric": "mean_absolute_error",
-    }
-
-
-@pytest.fixture
-def svm_conf():
-    return {
-        "SVM": {
-            "classifier": "SVC",
-            "parameters": {"C": [0.1, 1.0], "gamma": [0.1]},
-        },
-    }
-
-
-def test_run_and_summarize(tmp_path, experiment_conf, svm_conf):
-    """run and summarize produce the expected on-disk layout."""
-    benchmark = _from_general_conf(experiment_conf, svm_conf, verbose=False)
-    benchmark.run()
-    benchmark.summarize()
-
-    runs_dir = Path(experiment_conf["output_folder"])
-    assert runs_dir.exists()
-
-    svm_dir = runs_dir / "SVM" / "balance"
-    assert svm_dir.exists()
-
-    df = pd.read_csv(svm_dir / "report.csv", index_col=0)
-    assert df.shape == (2, 12)
-    assert all(df[c].dtype == np.float64 for c in df.columns)
-
-    assert len(list((svm_dir / "models").iterdir())) == 2
-    assert len(list((svm_dir / "predictions").iterdir())) == 4
-
-    train_summary = pd.read_csv(runs_dir / "train_summary.csv")
-    assert train_summary.shape == (1, 15)
-    assert all(
-        train_summary[c].dtype == np.float64 for c in train_summary.columns[2:-1]
-    )
-
-    test_summary = pd.read_csv(runs_dir / "test_summary.csv")
-    assert test_summary.shape == (1, 15)
-    assert all(test_summary[c].dtype == np.float64 for c in test_summary.columns[2:-1])
-
-
-def test_load_complete_dataset(tmp_path):
-    """Load a dataset of 5 partitions, each with a train and a test file."""
-    dataset_path = tmp_path / "complete"
-    dataset_path.mkdir()
-
-    for i in range(5):
-        create_csv(dataset_path, f"train_complete.{i}")
-        create_csv(dataset_path, f"test_complete.{i}")
-
-    partition_list = _load_dataset(dataset_path)
-
-    # Every partition holds train and test inputs and outputs (4 entries).
-    assert len(partition_list) == len(list(dataset_path.iterdir())) / 2
-    assert all(len(partition[1]) == 4 for partition in partition_list)
-
-
-def test_load_partitionless_dataset(tmp_path):
-    """Load a dataset of a single train and test file."""
-    dataset_path = tmp_path / "partitionless"
-    dataset_path.mkdir()
-
-    create_csv(dataset_path, "train_partitionless.csv")
-    create_csv(dataset_path, "test_partitionless.csv")
-
-    partition_list = _load_dataset(dataset_path)
-
-    assert len(partition_list) == 1
-    assert all(len(partition[1]) == 4 for partition in partition_list)
-
-
-def test_load_nontestfile_dataset(tmp_path):
-    """Load a dataset of five train files with no test files."""
-    dataset_path = tmp_path / "nontestfile"
-    dataset_path.mkdir()
-
-    for i in range(5):
-        create_csv(dataset_path, f"train_nontestfile.{i}")
-
-    partition_list = _load_dataset(dataset_path)
-
-    assert len(partition_list) == len(list(dataset_path.iterdir()))
-    assert all(len(partition[1]) == 2 for partition in partition_list)
-
-
-def test_load_nontrainfile_dataset(tmp_path):
-    """A partition lacking its train file raises RuntimeError."""
-    dataset_path = tmp_path / "nontrainfile"
-    dataset_path.mkdir()
-
-    for i in range(2):
-        create_csv(dataset_path, f"test_nontrainfile.{i}")
-
-    with pytest.raises(RuntimeError):
-        _load_dataset(dataset_path)
-
-
-def test_empty_configurations_raises(tmp_path):
-    """An empty configurations dict raises ValueError."""
-    with pytest.raises(ValueError, match="'configurations' must be a non-empty dict"):
+@pytest.mark.parametrize(
+    "configurations, datasets, eval_metrics, match",
+    _INVALID_CONSTRUCTOR_CASES,
+)
+def test_benchmark_constructor_validation(
+    tmp_path, configurations, datasets, eval_metrics, match
+):
+    """Constructor raises ValueError for each category of invalid argument."""
+    with pytest.raises(ValueError, match=match):
         Benchmark(
-            {},
-            data_path=".",
-            datasets=["x"],
-            eval_metrics=["mean_absolute_error"],
-            results_path=str(tmp_path),
+            configurations,
+            datasets=datasets,
+            eval_metrics=eval_metrics,
+            results_path=tmp_path,
         )
 
 
-def test_none_configurations_raises(tmp_path):
-    """None configurations is rejected by the non-empty check (ValueError)."""
-    with pytest.raises(ValueError, match="'configurations' must be a non-empty dict"):
-        Benchmark(
-            None,  # type: ignore[arg-type]
-            data_path=".",
-            datasets=["x"],
-            eval_metrics=["mean_absolute_error"],
-            results_path=str(tmp_path),
-        )
-
-
-def test_empty_datasets_raises(tmp_path):
-    """An empty datasets list raises ValueError."""
-    with pytest.raises(ValueError, match="'datasets' must be a non-empty list"):
+@pytest.mark.parametrize("bad_value", ["minmax", ""])
+def test_input_preprocessing_invalid_raises(tmp_path, bad_value):
+    """Unrecognised input_preprocessing values raise ValueError."""
+    with pytest.raises(ValueError, match="'input_preprocessing' must be one of"):
         Benchmark(
             _MINIMAL_CONF,
-            data_path=".",
-            datasets=[],
+            datasets=[_BUNDLED_DS],
             eval_metrics=["mean_absolute_error"],
-            results_path=str(tmp_path),
-        )
-
-
-def test_empty_eval_metrics_raises(tmp_path):
-    """An empty eval_metrics list raises ValueError."""
-    with pytest.raises(ValueError, match="'eval_metrics' must be a non-empty list"):
-        Benchmark(
-            _MINIMAL_CONF,
-            data_path=".",
-            datasets=["x"],
-            eval_metrics=[],
-            results_path=str(tmp_path),
+            results_path=tmp_path,
+            input_preprocessing=bad_value,
         )
 
 
@@ -229,56 +94,258 @@ def test_empty_eval_metrics_raises(tmp_path):
         ("NORM", "norm"),
     ],
 )
-def test_input_preprocessing_accepted_and_normalized(tmp_path, raw, expected):
+def test_input_preprocessing_accepted_and_normalised(tmp_path, raw, expected):
     """Valid input_preprocessing values are accepted and lower-stripped."""
-    benchmark = Benchmark(
+    b = Benchmark(
         _MINIMAL_CONF,
-        data_path=".",
-        datasets=["x"],
+        datasets=[_BUNDLED_DS],
         eval_metrics=["mean_absolute_error"],
-        results_path=str(tmp_path),
+        results_path=tmp_path,
         input_preprocessing=raw,
     )
-    assert benchmark.input_preprocessing == expected
+    assert b.input_preprocessing == expected
 
 
-@pytest.mark.parametrize("bad_value", ["minmax", ""])
-def test_input_preprocessing_invalid_raises(tmp_path, bad_value):
-    """Unrecognised input_preprocessing values raise ValueError."""
-    with pytest.raises(ValueError, match="'input_preprocessing' must be one of"):
-        Benchmark(
-            _MINIMAL_CONF,
-            data_path=".",
-            datasets=["x"],
-            eval_metrics=["mean_absolute_error"],
-            results_path=str(tmp_path),
-            input_preprocessing=bad_value,
-        )
-
-
-@pytest.mark.parametrize("kwargs, expected", [({}, None), ({"random_state": 42}, 42)])
-def test_random_state_stored(tmp_path, kwargs, expected):
-    """random_state defaults to None and is stored as given on the instance."""
-    benchmark = Benchmark(
-        _MINIMAL_CONF,
-        data_path=".",
-        datasets=["x"],
-        eval_metrics=["mean_absolute_error"],
-        results_path=str(tmp_path),
-        **kwargs,
-    )
-    assert benchmark.random_state == expected
-
-
-def test_configurations_is_deep_copied(tmp_path):
+def test_configurations_deep_copied(tmp_path):
     """Mutating the original configurations dict does not affect the stored copy."""
     original = {"cfg": {"classifier": "SVC", "parameters": {"C": [1]}}}
-    benchmark = Benchmark(
+    b = Benchmark(
         original,
-        data_path=".",
-        datasets=["x"],
+        datasets=[_BUNDLED_DS],
         eval_metrics=["mean_absolute_error"],
-        results_path=str(tmp_path),
+        results_path=tmp_path,
     )
     original["cfg"]["parameters"]["C"].append(10)
-    assert benchmark.configurations["cfg"]["parameters"]["C"] == [1]
+    assert b.configurations["cfg"]["parameters"]["C"] == [1]
+
+
+def test_data_home_str_stays_str(tmp_path):
+    """A str data_home is stored verbatim, not converted to Path."""
+    b = Benchmark(
+        _MINIMAL_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path,
+        data_home=str(tmp_path),
+    )
+    assert isinstance(b.data_home, str)
+    assert b.data_home == str(tmp_path)
+
+
+def test_data_home_none_stays_none(tmp_path):
+    """data_home=None is stored as None."""
+    b = Benchmark(
+        _MINIMAL_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path,
+    )
+    assert b.data_home is None
+
+
+def test_resamples_stored_verbatim(tmp_path):
+    """resamples is stored as-is (int, not coerced)."""
+    b = Benchmark(
+        _MINIMAL_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path,
+        resamples=7,
+    )
+    assert b.resamples == 7
+
+
+def test_protocol_attrs_stored(tmp_path):
+    """cv, tuning_metric, eval_metrics, random_state, n_jobs, verbose are stored."""
+    b = Benchmark(
+        _MINIMAL_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error", "accuracy_score"],
+        results_path=tmp_path,
+        resamples=3,
+        cv=4,
+        tuning_metric="accuracy_score",
+        n_jobs=2,
+        random_state=99,
+        verbose=False,
+    )
+    assert b.cv == 4
+    assert b.tuning_metric == "accuracy_score"
+    assert b.eval_metrics == ["mean_absolute_error", "accuracy_score"]
+    assert b.n_jobs == 2
+    assert b.random_state == 99
+    assert b.verbose is False
+
+
+def test_run_and_summarize_bundled_dataset(tmp_path):
+    """run() + summarize() over a bundled dataset write the expected on-disk layout."""
+    results_dir = tmp_path / "runs"
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=results_dir,
+        resamples=3,
+        cv=2,
+        verbose=False,
+        random_state=0,
+    )
+    b.run()
+    b.summarize()
+
+    pair_dir = results_dir / "SVM" / _BUNDLED_DS
+    assert pair_dir.is_dir()
+
+    # report.csv uses resample_id as its index; one row per resample
+    df = pd.read_csv(pair_dir / "report.csv", index_col=0)
+    assert df.shape[0] == 3
+
+    assert (pair_dir / "params.json").is_file()
+
+    pred_dir = pair_dir / "predictions"
+    train_preds = sorted(pred_dir.glob("train_*.csv"))
+    test_preds = sorted(pred_dir.glob("test_*.csv"))
+    assert len(train_preds) == 3
+    assert len(test_preds) == 3
+
+    # resample_id stems on prediction filenames are ints (0, 1, 2)
+    ids_from_files = sorted(int(f.stem.split("_")[1]) for f in train_preds)
+    assert ids_from_files == [0, 1, 2]
+
+    # report.csv must contain one <metric>_train and one <metric>_test column
+    assert "mean_absolute_error_train" in df.columns
+    assert "mean_absolute_error_test" in df.columns
+
+    assert (results_dir / "train_summary.csv").is_file()
+    assert (results_dir / "test_summary.csv").is_file()
+
+    # test_summary.csv must be well-formed with the expected aggregated columns
+    summary = pd.read_csv(results_dir / "test_summary.csv")
+    assert "SVM" in summary["classifier"].values
+    assert "mean_absolute_error_test_mean" in summary.columns
+    assert "n_completed" in summary.columns
+
+
+def test_run_resamples_count_matches_requested(tmp_path):
+    """run() with resamples=N produces exactly N rows in report.csv."""
+    results_dir = tmp_path / "out"
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=results_dir,
+        resamples=4,
+        cv=2,
+        verbose=False,
+        random_state=1,
+    )
+    b.run()
+
+    df = pd.read_csv(results_dir / "SVM" / _BUNDLED_DS / "report.csv", index_col=0)
+    assert df.shape[0] == 4
+
+
+def test_run_mask_path_correct_partition_count(tmp_path, csv_ds_dir):
+    """run() with a masks file consumes exactly the mask-defined number of partitions."""
+    results_dir = tmp_path / "mask_runs"
+    b = Benchmark(
+        _SVC_CONF,
+        data_home=csv_ds_dir,
+        datasets=["smallds"],
+        eval_metrics=["mean_absolute_error"],
+        results_path=results_dir,
+        resamples=2,
+        cv=2,
+        verbose=False,
+        random_state=0,
+    )
+    b.run()
+
+    df = pd.read_csv(results_dir / "SVM" / "smallds" / "report.csv", index_col=0)
+    assert df.shape[0] == 2
+
+
+def test_run_mask_path_train_test_sizes_match_masks(tmp_path, csv_ds_dir):
+    """Prediction file row counts match the mask-defined train/test sizes."""
+    results_dir = tmp_path / "mask_runs2"
+    b = Benchmark(
+        _SVC_CONF,
+        data_home=csv_ds_dir,
+        datasets=["smallds"],
+        eval_metrics=["mean_absolute_error"],
+        results_path=results_dir,
+        resamples=2,
+        cv=2,
+        verbose=False,
+        random_state=0,
+    )
+    b.run()
+
+    pred_dir = results_dir / "SVM" / "smallds" / "predictions"
+    # Each mask splits n=60 half-and-half: 30 train / 30 test
+    train_0 = pd.read_csv(pred_dir / "train_0.csv")
+    test_0 = pd.read_csv(pred_dir / "test_0.csv")
+    assert len(train_0) == 30
+    assert len(test_0) == 30
+
+
+def test_run_resamples_below_two_raises(tmp_path):
+    """resamples=1 on the CV-fallback path raises ValueError at run time."""
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path,
+        resamples=1,
+        cv=2,
+        verbose=False,
+    )
+    with pytest.raises(ValueError, match="resamples must be >= 2"):
+        b.run()
+
+
+def test_run_unresolvable_dataset_raises(tmp_path):
+    """run() propagates FileNotFoundError for an unknown dataset name."""
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=["this_dataset_does_not_exist_xyz"],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path,
+        resamples=3,
+        cv=2,
+        verbose=False,
+    )
+    with pytest.raises(FileNotFoundError):
+        b.run()
+
+
+def test_run_returns_none(tmp_path):
+    """run() returns None."""
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path / "out",
+        resamples=2,
+        cv=2,
+        verbose=False,
+        random_state=0,
+    )
+    assert b.run() is None
+
+
+def test_verbose_false_no_stdout(tmp_path, capsys):
+    """verbose=False produces no stdout output during run()."""
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path / "out",
+        resamples=2,
+        cv=2,
+        verbose=False,
+        random_state=0,
+    )
+    b.run()
+    captured = capsys.readouterr()
+    assert captured.out == ""

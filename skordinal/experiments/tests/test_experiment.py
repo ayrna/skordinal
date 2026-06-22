@@ -49,7 +49,7 @@ def _call_run(experiment, X_train, y_train, X_test, y_test):
         y_test,
         dataset_name="ds",
         classifier_name="cfg",
-        resample_id="0",
+        resample_id=0,
     )
 
 
@@ -122,12 +122,12 @@ def test_run_identity_passthrough(split_with_test):
         y_test,
         dataset_name="my_dataset",
         classifier_name="my_conf",
-        resample_id="42",
+        resample_id=42,
     )
 
     assert result.dataset_name == "my_dataset"
     assert result.classifier_name == "my_conf"
-    assert result.resample_id == "42"
+    assert result.resample_id == 42
 
 
 @pytest.mark.parametrize("has_test", [True, False])

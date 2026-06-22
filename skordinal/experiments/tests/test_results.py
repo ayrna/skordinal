@@ -14,7 +14,7 @@ from skordinal.experiments import ExperimentResult, Results
 
 
 def _make_result(
-    partition: str,
+    partition: int,
     dataset: str,
     configuration: str,
     best_params: dict,
@@ -77,7 +77,7 @@ def test_save(tmp_path):
     results = Results(tmp_path)
 
     result_0 = _make_result(
-        partition="0",
+        partition=0,
         dataset="toy",
         configuration="conf_1",
         best_params={"C": 0.1, "gamma": 1},
@@ -90,7 +90,7 @@ def test_save(tmp_path):
     results.save(result_0)
 
     result_1 = _make_result(
-        partition="1",
+        partition=1,
         dataset="toy",
         configuration="conf_1",
         best_params={"C": 1, "gamma": 1},
@@ -132,7 +132,7 @@ def test_save_with_true_labels(tmp_path):
     train_true = np.array([1, 2, 3, 1, 2])
     test_true = np.array([1, 2, 3])
     result = _make_result(
-        partition="0",
+        partition=0,
         dataset="toy",
         configuration="clf",
         best_params={},
@@ -159,7 +159,7 @@ def test_save_with_true_labels(tmp_path):
 def test_save_model_false(tmp_path):
     """save_model=False must not create a models/ folder."""
     result = _make_result(
-        partition="0",
+        partition=0,
         dataset="toy",
         configuration="conf_1",
         best_params={"C": 1},
@@ -181,7 +181,7 @@ def test_save_proba_not_written_to_disk(tmp_path):
     result = ExperimentResult(
         dataset_name="toy",
         classifier_name="conf_1",
-        resample_id="0",
+        resample_id=0,
         train_predicted_y=np.array([1, 2]),
         test_predicted_y=np.array([1, 2]),
         y_proba=y_proba,
@@ -201,7 +201,7 @@ def test_save_no_test_partition(tmp_path):
     result = ExperimentResult(
         dataset_name="toy",
         classifier_name="clf",
-        resample_id="0",
+        resample_id=0,
         train_predicted_y=np.array([1, 2, 3]),
         test_predicted_y=None,
         y_proba=None,
@@ -223,7 +223,7 @@ def test_save_multiple_partitions_and_params_upsert(tmp_path):
     for i in range(3):
         r.save(
             _make_result(
-                partition=str(i),
+                partition=i,
                 dataset="ds",
                 configuration="clf",
                 best_params={},
@@ -247,11 +247,11 @@ def test_save_multiple_partitions_and_params_upsert(tmp_path):
         test_predicted_y=np.array([1]),
     )
     r.save(
-        _make_result(partition="0", best_params={"C": 0.1}, **base_result),
+        _make_result(partition=0, best_params={"C": 0.1}, **base_result),
         save_model=False,
     )
     r.save(
-        _make_result(partition="0", best_params={"C": 1.0}, **base_result),
+        _make_result(partition=0, best_params={"C": 1.0}, **base_result),
         save_model=False,
     )
 
@@ -278,7 +278,7 @@ def test_exists(tmp_path):
 
     r.save(
         _make_result(
-            partition="0",
+            partition=0,
             dataset="toy",
             configuration="SVC",
             best_params={},

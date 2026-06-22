@@ -71,10 +71,11 @@ def main(general_conf: dict[str, Any], configurations: dict[str, Any]) -> None:
 
     benchmark = Benchmark(
         configurations,
-        data_path=general_conf["basedir"],
+        data_home=general_conf["basedir"],
         datasets=general_conf["datasets"],
         eval_metrics=general_conf["metrics"],
         results_path=general_conf["output_folder"],
+        resamples=general_conf.get("resamples", 30),
         tuning_metric=general_conf.get("cv_metric", "neg_mean_absolute_error"),
         cv=general_conf.get("hyperparam_cv_nfolds", 3),
         n_jobs=general_conf.get("jobs", 1),

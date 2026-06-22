@@ -28,11 +28,10 @@ class Experiment:
 
     Wraps one configuration (a classifier name and its hyper-parameter grid)
     together with the cross-validation and preprocessing settings shared across
-    partitions. Calling :meth:`run` applies optional preprocessing, selects and
-    fits the best estimator via
-    :func:`~skordinal.model_selection.load_classifier`, predicts on the train
+    partitions. Calling ``run`` applies optional preprocessing, selects and
+    fits the best estimator via ``load_classifier``, predicts on the train
     and (when present) test splits, computes all evaluation metrics and timing
-    keys, and returns an :class:`ExperimentResult`. Nothing is written to disk.
+    keys, and returns an ``ExperimentResult``. Nothing is written to disk.
 
     Parameters
     ----------
@@ -84,7 +83,7 @@ class Experiment:
     ...     X_train, y_train, X_test, y_test,
     ...     dataset_name="balance-scale",
     ...     classifier_name="SVM",
-    ...     resample_id="0",
+    ...     resample_id=0,
     ... )
 
     """
@@ -132,14 +131,14 @@ class Experiment:
         *,
         dataset_name: str,
         classifier_name: str,
-        resample_id: str,
+        resample_id: int,
     ) -> ExperimentResult:
         """Run the configuration on a single train/test partition.
 
         Applies optional preprocessing, selects and fits the best estimator,
         predicts on train and (when present) test splits, computes all
         evaluation metrics and timing keys, and returns an
-        :class:`ExperimentResult`. It does **not** persist anything to disk; the
+        ``ExperimentResult``. It does not persist anything to disk; the
         caller is responsible for saving the result.
 
         Parameters
@@ -158,15 +157,14 @@ class Experiment:
 
         dataset_name : str
             Name of the dataset, forwarded to the returned
-            :class:`ExperimentResult`.
+            ``ExperimentResult``.
 
         classifier_name : str
             Configuration label, used as ``classifier_name`` in the returned
-            :class:`ExperimentResult`.
+            ``ExperimentResult``.
 
-        resample_id : str
-            Partition index string, forwarded to the returned
-            :class:`ExperimentResult`.
+        resample_id : int
+            Partition index, forwarded to the returned ``ExperimentResult``.
 
         Returns
         -------

@@ -34,7 +34,7 @@ class ExperimentResult:
     classifier_name : str
         Name of the classifier configuration.
 
-    resample_id : str
+    resample_id : int
         Partition identifier.
 
     train_predicted_y : ndarray of shape (n_train_samples,)
@@ -72,7 +72,7 @@ class ExperimentResult:
 
     dataset_name: str
     classifier_name: str
-    resample_id: str
+    resample_id: int
     train_predicted_y: np.ndarray
     test_predicted_y: np.ndarray | None
     y_proba: np.ndarray | None
