@@ -1,28 +1,27 @@
 """REDSVM SVM-based ordinal classifier on balance_scale."""
 
+from skordinal.classifiers import REDSVM
+from skordinal.experiments import ModelConfig
+
 RECIPE = {
-    "general_conf": {
-        "basedir": "skordinal/datasets/data",
-        "datasets": ["balance_scale"],
-        "hyperparam_cv_nfolds": 3,
-        "jobs": 1,
-        "input_preprocessing": "std",
-        "output_folder": "results/",
-        "metrics": [
-            "accuracy_score",
-            "mean_absolute_error",
-            "mean_zero_one_error",
-        ],
-        "cv_metric": "neg_mean_absolute_error",
-    },
-    "configurations": {
-        "REDSVM": {
-            "classifier": "REDSVM",
-            "parameters": {
-                "kernel": "rbf",
+    "datasets": ["balance_scale"],
+    "cv": 3,
+    "n_jobs": 1,
+    "input_preprocessing": "std",
+    "results_path": "results/",
+    "eval_metrics": [
+        "accuracy_score",
+        "mean_absolute_error",
+        "mean_zero_one_error",
+    ],
+    "tuning_metric": "neg_mean_absolute_error",
+    "models": {
+        "REDSVM": ModelConfig(
+            REDSVM(kernel="rbf"),
+            param_grid={
                 "C": [0.001, 0.01, 0.1, 1, 10, 100, 1000],
                 "gamma": [0.001, 0.01, 0.1, 1, 10, 100, 1000],
             },
-        },
+        ),
     },
 }

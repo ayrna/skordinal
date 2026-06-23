@@ -133,7 +133,6 @@ git-only = [
     ".codecov.yml",
     ".coveragerc",
     ".gitignore",
-    "config.py",
     "doc/**",
     "examples/**",
     "skordinal/**/tests/**",
