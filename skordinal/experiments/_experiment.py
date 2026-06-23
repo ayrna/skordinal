@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from copy import deepcopy
 from time import time
 from typing import Any, cast
 
 import numpy as np
 from sklearn import preprocessing
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
-from skordinal.model_selection import load_classifier
+from skordinal.metrics import get_ordinal_scorer
 
+from ._model_config import ModelConfig
 from ._results import ExperimentResult
 
 
 def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    from skordinal.metrics import get_ordinal_scorer
-
+    """Compute a single ordinal metric by name."""
     scorer = cast(Any, get_ordinal_scorer(metric_name.strip()))
     return scorer._score_func(y_true, y_pred, **scorer._kwargs)
 
@@ -26,30 +25,29 @@ def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) ->
 class Experiment:
     """Run a single classifier configuration on one train/test partition.
 
-    Wraps one configuration (a classifier name and its hyper-parameter grid)
-    together with the cross-validation and preprocessing settings shared across
-    partitions. Calling ``run`` applies optional preprocessing, selects and
-    fits the best estimator via ``load_classifier``, predicts on the train
-    and (when present) test splits, computes all evaluation metrics and timing
-    keys, and returns an ``ExperimentResult``. Nothing is written to disk.
+    Wraps one ``ModelConfig`` together with the cross-validation and
+    preprocessing settings shared across partitions. Calling ``run`` applies
+    optional preprocessing, selects and fits the best estimator, predicts on
+    the train and (when present) test splits, computes all evaluation metrics
+    and timing keys, and returns an ``ExperimentResult``. Nothing is written
+    to disk.
 
     Parameters
     ----------
-    configuration : dict
-        Single configuration entry with the form
-        ``{"classifier": str, "parameters": dict}``, where ``"classifier"`` is
-        the registered name of the classification algorithm and ``"parameters"``
-        is a dictionary of hyper-parameter grids (lists of values to search
-        over) or fixed values. A deep copy is taken at construction time.
+    model : ModelConfig
+        Bound estimator and optional hyper-parameter grid describing what to
+        run. When ``model.needs_search`` is ``True`` a ``GridSearchCV`` is
+        constructed; otherwise the estimator is fitted directly using any
+        fixed parameters from ``model.fixed_params()``.
 
     eval_metrics : list of str
         Metric names to compute for every partition (e.g.
-        ``["mean_absolute_error", "average_mean_absolute_error"]``). Names must
-        be recognised by ``skordinal.metrics.get_ordinal_scorer``.
+        ``["mean_absolute_error", "average_mean_absolute_error"]``). Names
+        must be recognised by ``skordinal.metrics.get_ordinal_scorer``.
 
     tuning_metric : str, default="neg_mean_absolute_error"
-        Metric used as the cross-validation scoring criterion when selecting the
-        best hyper-parameter combination. Must be recognised by
+        Metric used as the cross-validation scoring criterion when selecting
+        the best hyper-parameter combination. Must be recognised by
         ``skordinal.metrics.get_ordinal_scorer``; validation is deferred to
         runtime.
 
@@ -74,9 +72,10 @@ class Experiment:
 
     Examples
     --------
-    >>> from skordinal.experiments import Experiment  # doctest: +SKIP
+    >>> from sklearn.svm import SVC
+    >>> from skordinal.experiments import Experiment, ModelConfig  # doctest: +SKIP
     >>> exp = Experiment(  # doctest: +SKIP
-    ...     {"classifier": "svc", "parameters": {"C": [1]}},
+    ...     ModelConfig(SVC(), param_grid={"C": [0.1, 1.0]}),
     ...     eval_metrics=["mean_absolute_error"],
     ... )
     >>> result = exp.run(  # doctest: +SKIP
@@ -90,7 +89,7 @@ class Experiment:
 
     def __init__(
         self,
-        configuration: dict[str, Any],
+        model: ModelConfig,
         *,
         eval_metrics: list[str],
         tuning_metric: str = "neg_mean_absolute_error",
@@ -99,6 +98,10 @@ class Experiment:
         input_preprocessing: str | None = None,
         random_state: int | None = None,
     ) -> None:
+        if not isinstance(model, ModelConfig):
+            raise TypeError(
+                f"'model' must be a ModelConfig instance; got {type(model).__name__!r}."
+            )
         if not eval_metrics:
             raise ValueError(
                 "'eval_metrics' must be a non-empty list; got an empty sequence."
@@ -114,7 +117,7 @@ class Experiment:
                 )
             input_preprocessing = _normalized
 
-        self.configuration = deepcopy(configuration)
+        self.model = model
         self.eval_metrics: list[str] = list(eval_metrics)
         self.tuning_metric = tuning_metric
         self.cv = cv
@@ -186,14 +189,28 @@ class Experiment:
             test_inputs = scaler.transform(cast(np.ndarray, X_test))
 
         # Select and fit the best estimator via GridSearchCV or direct fit.
-        optimal_estimator: Any = load_classifier(
-            classifier_name=self.configuration["classifier"],
-            random_state=self.random_state,
-            n_jobs=self.n_jobs,
-            cv_n_folds=self.cv,
-            cv_metric=self.tuning_metric,
-            param_grid=self.configuration["parameters"],
-        )
+        base = self.model.build(self.random_state)
+        if self.model.needs_search:
+            scorer = (
+                get_ordinal_scorer(self.tuning_metric)
+                if isinstance(self.tuning_metric, str)
+                else self.tuning_metric
+            )
+            splitter = StratifiedKFold(
+                n_splits=self.cv, shuffle=True, random_state=self.random_state
+            )
+            optimal_estimator: Any = GridSearchCV(
+                base,
+                param_grid=self.model.param_grid,
+                scoring=scorer,
+                n_jobs=self.n_jobs,
+                cv=splitter,
+                error_score="raise",
+            )
+        else:
+            if self.model.param_grid:
+                base.set_params(**self.model.fixed_params())
+            optimal_estimator = base
 
         _fit_start = time()
         optimal_estimator.fit(train_inputs, y_train)
@@ -201,7 +218,7 @@ class Experiment:
 
         if not isinstance(optimal_estimator, GridSearchCV):
             optimal_estimator.refit_time_ = _fit_elapsed
-            optimal_estimator.best_params_ = self.configuration["parameters"]
+            optimal_estimator.best_params_ = self.model.fixed_params()
             optimal_estimator.best_estimator_ = optimal_estimator
 
         # Predict on the training split.
@@ -244,7 +261,7 @@ class Experiment:
             train_metrics["time_train"] = optimal_estimator.refit_time_
             test_metrics["time_test"] = elapsed
         else:
-            optimal_estimator.best_params_ = self.configuration["parameters"]
+            optimal_estimator.best_params_ = self.model.fixed_params()
             optimal_estimator.best_estimator_ = optimal_estimator
 
             train_metrics["cv_time_train"] = np.nan

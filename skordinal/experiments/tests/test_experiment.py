@@ -5,11 +5,12 @@ import math
 import numpy as np
 import numpy.testing as npt
 import pytest
+from sklearn.svm import SVC
 
-from skordinal.experiments import Experiment, ExperimentResult
+from skordinal.experiments import Experiment, ExperimentResult, ModelConfig
 
-_MINIMAL_CONF: dict = {"classifier": "SVC", "parameters": {}}
-_CONF_CV: dict = {"classifier": "SVC", "parameters": {"C": [0.1, 1.0]}}
+_MINIMAL_CONF: ModelConfig = ModelConfig(SVC())
+_CONF_CV: ModelConfig = ModelConfig(SVC(), param_grid={"C": [0.1, 1.0]})
 
 
 @pytest.fixture
@@ -32,12 +33,12 @@ def split_train_only():
     return X_train, y_train, None, None
 
 
-def _make_experiment(configuration=None, **kwargs):
+def _make_experiment(model=None, **kwargs):
     """Build an Experiment with default eval_metrics for run() seam tests."""
-    if configuration is None:
-        configuration = _MINIMAL_CONF
+    if model is None:
+        model = _MINIMAL_CONF
     kwargs.setdefault("eval_metrics", ["mean_absolute_error"])
-    return Experiment(configuration, **kwargs)
+    return Experiment(model, **kwargs)
 
 
 def _call_run(experiment, X_train, y_train, X_test, y_test):
@@ -56,7 +57,7 @@ def _call_run(experiment, X_train, y_train, X_test, y_test):
 def test_empty_eval_metrics_raises():
     """An empty eval_metrics list raises ValueError."""
     with pytest.raises(ValueError, match="'eval_metrics' must be a non-empty list"):
-        Experiment(_MINIMAL_CONF, eval_metrics=[])
+        Experiment(ModelConfig(SVC()), eval_metrics=[])
 
 
 @pytest.mark.parametrize(
@@ -93,14 +94,6 @@ def test_random_state_stored(kwargs, expected):
     """random_state defaults to None and is stored as given on the instance."""
     exp = Experiment(_MINIMAL_CONF, eval_metrics=["mean_absolute_error"], **kwargs)
     assert exp.random_state == expected
-
-
-def test_configuration_is_deep_copied():
-    """Mutating the original configuration dict does not affect the stored copy."""
-    original = {"classifier": "SVC", "parameters": {"C": [1]}}
-    exp = Experiment(original, eval_metrics=["mean_absolute_error"])
-    original["parameters"]["C"].append(10)
-    assert exp.configuration["parameters"]["C"] == [1]
 
 
 def test_run_returns_experiment_result(split_with_test):
@@ -156,7 +149,7 @@ def test_run_timing_no_cv(split_with_test):
     assert math.isnan(result.test_metrics["cv_time_test"])
     assert math.isfinite(result.train_metrics["time_train"])
     assert math.isfinite(result.test_metrics["time_test"])
-    assert result.best_params == _MINIMAL_CONF["parameters"]
+    assert result.best_params == {}
 
 
 def test_run_timing_with_cv(split_with_test):
@@ -169,7 +162,7 @@ def test_run_timing_with_cv(split_with_test):
     assert math.isfinite(result.test_metrics["cv_time_test"])
     assert math.isfinite(result.train_metrics["time_train"])
     assert math.isfinite(result.test_metrics["time_test"])
-    assert result.best_params.get("C") in _CONF_CV["parameters"]["C"]
+    assert result.best_params.get("C") in _CONF_CV.param_grid["C"]
 
 
 @pytest.mark.parametrize("preprocessing", ["std", "norm"])
@@ -216,7 +209,7 @@ def test_run_y_proba_absent_without_predict_proba(split_with_test):
 def test_run_y_proba_present_with_predict_proba(split_with_test):
     """y_proba is populated when the estimator supports predict_proba."""
     X_train, y_train, X_test, y_test = split_with_test
-    conf = {"classifier": "SVC", "parameters": {"probability": [True]}}
+    conf = ModelConfig(SVC(), param_grid={"probability": [True]})
     result = _call_run(_make_experiment(conf), X_train, y_train, X_test, y_test)
 
     assert result.y_proba is not None

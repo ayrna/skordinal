@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
 from skordinal.datasets import load_partitions
 
 from ._experiment import Experiment
+from ._model_config import ModelConfig
 from ._results import Results
 
 
@@ -23,12 +22,10 @@ class Benchmark:
 
     Parameters
     ----------
-    configurations : dict
-        Mapping of configuration labels to their settings. Each entry must have
-        the form ``{label: {"classifier": str, "parameters": dict}}``, where
-        ``"classifier"`` is the registered name of the classification algorithm
-        and ``"parameters"`` is a dictionary of hyper-parameter grids (lists of
-        values to search over) or fixed values.
+    models : dict of str to ModelConfig
+        Mapping of configuration labels to their ``ModelConfig`` instances.
+        Each value must be a ``ModelConfig`` binding an estimator to an
+        optional hyper-parameter grid.
 
     data_home : str, Path, or None, default=None
         Optional base directory used to locate dataset files. When ``None``,
@@ -87,9 +84,10 @@ class Benchmark:
 
     Examples
     --------
-    >>> from skordinal.experiments import Benchmark  # doctest: +SKIP
+    >>> from sklearn.svm import SVC
+    >>> from skordinal.experiments import Benchmark, ModelConfig  # doctest: +SKIP
     >>> benchmark = Benchmark(  # doctest: +SKIP
-    ...     configurations={"SVM": {"classifier": "svc", "parameters": {"C": [1]}}},
+    ...     models={"SVM": ModelConfig(SVC(), param_grid={"C": [0.1, 1.0]})},
     ...     data_home="/data/ordinal",
     ...     datasets=["balance_scale"],
     ...     eval_metrics=["mean_absolute_error"],
@@ -103,7 +101,7 @@ class Benchmark:
 
     def __init__(
         self,
-        configurations: dict[str, Any],
+        models: dict[str, ModelConfig],
         *,
         data_home: str | Path | None = None,
         datasets: list[str],
@@ -117,9 +115,13 @@ class Benchmark:
         random_state: int | None = None,
         verbose: bool = True,
     ) -> None:
-        if not configurations:
-            raise ValueError(
-                "'configurations' must be a non-empty dict; got an empty mapping."
+        if not models:
+            raise ValueError("'models' must be a non-empty dict; got an empty mapping.")
+        _bad = [k for k, v in models.items() if not isinstance(v, ModelConfig)]
+        if _bad:
+            raise TypeError(
+                f"All values in 'models' must be ModelConfig instances; "
+                f"got non-ModelConfig value(s) for key(s): {_bad}."
             )
         if not datasets:
             raise ValueError(
@@ -140,7 +142,7 @@ class Benchmark:
                 )
             input_preprocessing = _normalized
 
-        self.configurations = deepcopy(configurations)
+        self.models: dict[str, ModelConfig] = dict(models)
         self.data_home: str | Path | None = data_home
         self.datasets: list[str] = list(datasets)
         self.eval_metrics: list[str] = list(eval_metrics)
@@ -186,12 +188,12 @@ class Benchmark:
                 print("--------------------------")
 
             # Iterate over configurations
-            for conf_name, configuration in self.configurations.items():
+            for label, model in self.models.items():
                 if self.verbose:
-                    print("Running", conf_name, "...")
+                    print("Running", label, "...")
 
                 experiment = Experiment(
-                    configuration,
+                    model,
                     eval_metrics=self.eval_metrics,
                     tuning_metric=self.tuning_metric,
                     cv=self.cv,
@@ -216,7 +218,7 @@ class Benchmark:
                         b.data_test,
                         b.target_test,
                         dataset_name=dataset_name,
-                        classifier_name=conf_name,
+                        classifier_name=label,
                         resample_id=b.resample_id,
                     )
                     self._results.save(result)

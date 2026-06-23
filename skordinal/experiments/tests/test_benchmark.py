@@ -5,11 +5,12 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.svm import SVC
 
-from skordinal.experiments import Benchmark
+from skordinal.experiments import Benchmark, ModelConfig
 
-_SVC_CONF: dict = {"SVM": {"classifier": "SVC", "parameters": {"C": [1]}}}
-_MINIMAL_CONF: dict = {"cfg": {"classifier": "SVC", "parameters": {}}}
+_SVC_CONF: dict[str, ModelConfig] = {"SVM": ModelConfig(SVC(), param_grid={"C": [1]})}
+_MINIMAL_CONF: dict[str, ModelConfig] = {"cfg": ModelConfig(SVC())}
 _BUNDLED_DS = "balance_scale"
 
 _INVALID_CONSTRUCTOR_CASES = [
@@ -104,19 +105,6 @@ def test_input_preprocessing_accepted_and_normalised(tmp_path, raw, expected):
         input_preprocessing=raw,
     )
     assert b.input_preprocessing == expected
-
-
-def test_configurations_deep_copied(tmp_path):
-    """Mutating the original configurations dict does not affect the stored copy."""
-    original = {"cfg": {"classifier": "SVC", "parameters": {"C": [1]}}}
-    b = Benchmark(
-        original,
-        datasets=[_BUNDLED_DS],
-        eval_metrics=["mean_absolute_error"],
-        results_path=tmp_path,
-    )
-    original["cfg"]["parameters"]["C"].append(10)
-    assert b.configurations["cfg"]["parameters"]["C"] == [1]
 
 
 def test_data_home_str_stays_str(tmp_path):
