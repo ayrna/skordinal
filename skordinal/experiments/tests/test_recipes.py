@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from sklearn.svm import SVC
 
-from skordinal.experiments import ModelConfig, load_recipe, validate_recipe
+from skordinal.experiments import Benchmark, ModelConfig, load_recipe, validate_recipe
 
 _MINIMAL_MODELS: dict[str, ModelConfig] = {"svc": ModelConfig(SVC())}
 _MINIMAL_RECIPE: dict = {
@@ -188,3 +188,56 @@ def test_load_recipe_with_extra_fields_returns_all_keys(tmp_path):
 
     assert "resamples" in recipe
     assert recipe["resamples"] == 2
+
+
+_FROM_RECIPE_TMPL = """\
+from sklearn.svm import SVC
+from skordinal.experiments import ModelConfig
+
+RECIPE = {{
+    "models": {{"svc": ModelConfig(SVC())}},
+    "datasets": ["balance_scale"],
+    "eval_metrics": ["mean_absolute_error"],
+    "results_path": "{results_path}",
+    "resamples": 2,
+    "verbose": False,
+}}
+"""
+
+
+def test_from_recipe_attributes_match_recipe(tmp_path):
+    """``Benchmark.from_recipe`` returns a ``Benchmark`` whose attributes reflect the recipe."""
+    results_dir = tmp_path / "out"
+    recipe_src = _FROM_RECIPE_TMPL.format(results_path=str(results_dir))
+    p = _write(tmp_path, recipe_src)
+
+    b = Benchmark.from_recipe(p)
+
+    assert isinstance(b, Benchmark)
+    assert b.datasets == ["balance_scale"]
+    assert b.eval_metrics == ["mean_absolute_error"]
+    assert b.resamples == 2
+    assert b.verbose is False
+    assert "svc" in b.models
+    for key, cfg in b.models.items():
+        assert isinstance(cfg, ModelConfig), (
+            f"b.models[{key!r}] is {type(cfg)!r}, not ModelConfig"
+        )
+
+
+def test_from_recipe_override_wins_over_recipe(tmp_path):
+    """Keyword overrides passed to ``from_recipe`` take precedence over recipe values."""
+    recipe_src = _FROM_RECIPE_TMPL.format(results_path=str(tmp_path / "default_out"))
+    p = _write(tmp_path, recipe_src)
+
+    override_path = tmp_path / "override_out"
+    b = Benchmark.from_recipe(p, results_path=override_path, resamples=7)
+
+    assert Path(b.results_path) == override_path
+    assert b.resamples == 7
+
+
+def test_from_recipe_missing_file_raises(tmp_path):
+    """``Benchmark.from_recipe`` propagates ``FileNotFoundError`` for bad paths."""
+    with pytest.raises(FileNotFoundError):
+        Benchmark.from_recipe(tmp_path / "ghost_recipe.py")

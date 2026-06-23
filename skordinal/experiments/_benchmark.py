@@ -8,6 +8,7 @@ from skordinal.datasets import load_partitions
 
 from ._experiment import Experiment
 from ._model_config import ModelConfig
+from ._recipes import load_recipe
 from ._results import Results
 
 
@@ -154,6 +155,53 @@ class Benchmark:
         self.input_preprocessing = input_preprocessing
         self.random_state = random_state
         self.verbose = verbose
+
+    @classmethod
+    def from_recipe(
+        cls,
+        recipe_path: str | Path,
+        **overrides: object,
+    ) -> "Benchmark":
+        """Construct a ``Benchmark`` from a recipe ``.py`` file.
+
+        A recipe file must define a top-level ``RECIPE`` dict whose keys
+        mirror the ``Benchmark`` constructor: ``models`` becomes the
+        positional argument and the remaining keys are forwarded as keyword
+        arguments.  Any ``**overrides`` are merged after loading, so they
+        win over recipe values.
+
+        Parameters
+        ----------
+        recipe_path : str or Path
+            Filesystem path to the recipe file.
+
+        **overrides : object
+            Keyword arguments that override keys in the loaded recipe.
+
+        Returns
+        -------
+        benchmark : Benchmark
+            A fully configured ``Benchmark`` instance ready to call
+            ``run`` on.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the recipe file does not exist.
+
+        AttributeError
+            If the recipe file does not define a top-level ``RECIPE`` dict.
+
+        TypeError
+            If the recipe fails structural type validation.
+
+        ValueError
+            If the recipe fails structural constraint validation.
+        """
+        recipe = dict(load_recipe(recipe_path))
+        recipe.update(overrides)
+        models = recipe.pop("models")
+        return cls(models, **recipe)
 
     def run(self) -> None:
         """Run the benchmark over every dataset, configuration and resample.
