@@ -18,8 +18,8 @@
     - [Testing Installation](#testing-installation)
 - [Quick Start](#quick-start)
 - [Configuration Files](#configuration-files)
-    - [general-conf](#general-conf)
-    - [configurations](#configurations)
+    - [settings](#settings)
+    - [models](#models)
 - [Running Experiments](#running-experiments)
     - [Basic Usage](#basic-usage)
     - [Example Output](#example-output)
@@ -65,7 +65,7 @@ All dependencies are managed through `pyproject.toml` and include:
 Test your installation with the provided example:
 
 ```bash
-python config.py examples/recipes/full_demo.py
+python examples/run_recipe.py examples/recipes/full_demo.py
 ```
 
 ## Quick Start
@@ -74,86 +74,106 @@ skordinal includes sample datasets with pre-partitioned train/test splits using 
 
 **Basic experiment configuration:**
 
-A recipe is a Python file that defines a top-level `RECIPE` dict with two
-sections: `general_conf` (run-wide settings) and `configurations` (classifier
-definitions).
+A recipe is a Python file that defines a top-level `RECIPE` dict whose keys
+map directly to `Benchmark` constructor parameters. The required keys are
+`models`, `datasets`, `eval_metrics`, and `results_path`; all other keys are
+optional and fall back to the `Benchmark` defaults.
 
 ```python
+from sklearn.svm import SVC
+
+from skordinal.classifiers import OrdinalDecomposition
+from skordinal.experiments import ModelConfig
+
 RECIPE = {
-    "general_conf": {
-        "basedir": "skordinal/datasets/data",
-        "datasets": ["balance_scale", "era", "esl"],
-        "hyperparam_cv_nfolds": 3,
-        "output_folder": "results/",
-        "metrics": ["accuracy_score", "mean_absolute_error", "average_mean_absolute_error"],
-        "cv_metric": "neg_mean_absolute_error",
-    },
-    "configurations": {
-        "SVM": {
-            "classifier": "SVC",
-            "parameters": {
-                "C": [0.001, 0.1, 1, 10, 100],
-                "gamma": [0.1, 1, 10],
+    "datasets": ["balance_scale", "era", "esl"],
+    "cv": 3,
+    "n_jobs": 1,
+    "input_preprocessing": "std",
+    "results_path": "results/",
+    "eval_metrics": [
+        "accuracy_score",
+        "mean_absolute_error",
+        "average_mean_absolute_error",
+        "mean_zero_one_error",
+    ],
+    "tuning_metric": "neg_mean_absolute_error",
+    "models": {
+        "SVM": ModelConfig(
+            SVC(),
+            param_grid={"C": [0.001, 0.1, 1, 10, 100], "gamma": [0.1, 1, 10]},
+        ),
+        "SVMOP": ModelConfig(
+            OrdinalDecomposition(
+                dtype="ordered_partitions",
+                decision_method="frank_hall",
+                base_classifier=SVC(probability=True),
+            ),
+            param_grid={
+                "base_classifier__C": [0.01, 0.1, 1, 10],
+                "base_classifier__gamma": [0.01, 0.1, 1, 10],
             },
-        },
-        "SVMOP": {
-            "classifier": "OrdinalDecomposition",
-            "parameters": {
-                "dtype": "ordered_partitions",
-                "decision_method": "frank_hall",
-                "base_classifier": "SVC",
-                "parameters": {
-                    "C": [0.01, 0.1, 1, 10],
-                    "gamma": [0.01, 0.1, 1, 10],
-                    "probability": [True],
-                },
-            },
-        },
+        ),
     },
 }
 ```
 
 **Run the experiment:**
 ```bash
-python config.py my_experiment.py
+python examples/run_recipe.py my_experiment.py
 ```
 
 Results are saved in `results/` folder with performance metrics for each dataset-classifier combination. The framework automatically performs cross-validation, hyperparameter tuning, and evaluation on test sets.
 
 ## Configuration Files
 
-Experiments are defined using Python recipe files (a module exposing a top-level `RECIPE` dict) with two main sections: general_conf for experiment settings and configurations for classifier definitions.
+Experiments are defined as Python recipe files — a module that exposes a
+top-level `RECIPE` dict. Every key in `RECIPE` corresponds to a `Benchmark`
+constructor parameter. Recipes can be run from the command line or loaded
+programmatically via `Benchmark.from_recipe("path/to/recipe.py")`.
 
-### general-conf
+### settings
 
-Controls global experiment parameters.
+These keys control how the benchmark is executed.
 
-**Required parameters:**
-- **`basedir`**: folder containing all dataset subfolders, it doesn't allow more than one folder at a time. It can be indicated using a full path, or a relative one to the framework folder.
-- **`datasets`**: name of datasets that will be experimented with. A subfolder with the same name must exist inside `basedir`.
+**Required:**
+- **`datasets`**: list of dataset names. A loader or subfolder with each name
+  must be available under `data_home`.
+- **`eval_metrics`**: list of metric names computed on train and test for every
+  partition.
+- **`results_path`**: folder where result files are written.
 
-**Optional parameters:**
+**Optional:**
+- **`tuning_metric`** (default `"neg_mean_absolute_error"`): scoring criterion
+  passed to `GridSearchCV` to select the best hyperparameters.
+- **`cv`** (default `3`): number of cross-validation folds.
+- **`n_jobs`** (default `1`): parallel jobs for `GridSearchCV`.
+- **`input_preprocessing`** (default `None`): `"std"` for standardisation,
+  `"norm"` for normalisation, `None` for no scaling.
+- **`resamples`** (default `30`): number of train/test resamples per dataset.
+- **`data_home`** (default `None`): base directory for dataset files; `None`
+  uses the bundled datasets.
+- **`random_state`** (default `None`): integer seed for reproducibility.
+- **`verbose`** (default `True`): print progress during the run.
 
-- **`hyperparam_cv_nfolds`**: number of folds used while cross-validating.
-- **`jobs`**: number of jobs used for GridSearchCV during cross-validation.
-- **`input_preprocessing`**: data preprocessing (`"std"` for standardization, `"norm"` for normalization, `""` for none)
-- **`output_folder`**: name of the folder where all experiment results will be stored.
-- **`metrics`**: name of the accuracy metrics to measure the train and test performance of the classifier.
-- **`cv_metric`**: error measure used for GridSearchCV to find the best set of hyper-parameters.
+### models
 
-### configurations
+**Required.** A dict mapping a label (`str`) to a `ModelConfig` instance.
+`ModelConfig` binds a scikit-learn-compatible estimator to an optional
+`param_grid`.
 
-Defines classifiers and their hyperparameters for GridSearchCV. Each configuration has a name and consists of:
-
-- **`classifier`**: scikit-learn or built-in skordinal classifier
-- **`parameters`**: hyperparameters for grid search (nested for ensemble methods)
+- **`ModelConfig(estimator, param_grid=None)`**: wraps any estimator that
+  implements the scikit-learn estimator interface. `param_grid` is a dict of
+  hyperparameter name → list of values for `GridSearchCV`. For pipeline-style
+  estimators (e.g. `OrdinalDecomposition`) use the double-underscore syntax
+  (`"base_classifier__C"`) to target nested parameters.
 
 ## Running Experiments
 
 ### Basic Usage
 
 ```bash
-python config.py experiment_file.py
+python examples/run_recipe.py experiment_file.py
 ```
 
 ### Example Output
