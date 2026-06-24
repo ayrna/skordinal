@@ -1,6 +1,7 @@
 """Experiments orchestration module."""
 
 from ._benchmark import Benchmark
+from ._evaluation import save_summary, summarize, tabulate_results
 from ._experiment import Experiment
 from ._model_config import ModelConfig
 from ._recipes import load_recipe, validate_recipe
@@ -13,5 +14,8 @@ __all__ = [
     "ModelConfig",
     "Results",
     "load_recipe",
+    "save_summary",
+    "summarize",
+    "tabulate_results",
     "validate_recipe",
 ]

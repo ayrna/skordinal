@@ -6,6 +6,7 @@ from pathlib import Path
 
 from skordinal.datasets import load_partitions
 
+from ._evaluation import save_summary
 from ._experiment import Experiment
 from ._model_config import ModelConfig
 from ._recipes import load_recipe
@@ -272,12 +273,12 @@ class Benchmark:
                     self._results.save(result)
 
     def summarize(self) -> None:
-        """Write the aggregated train and test summaries via the Results object."""
+        """Write the train and test summaries to the results folder."""
         if self.verbose:
             print("\nSaving summary...")
 
         for split in ("train", "test"):
             try:
-                self._results.save_summary(split=split)
+                save_summary(self.results_path, split=split)
             except ValueError:
                 pass

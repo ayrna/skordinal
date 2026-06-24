@@ -1,13 +1,11 @@
 """Tests for the Results class."""
 
 import json
-from pathlib import Path
 
 import joblib
 import numpy as np
 import numpy.testing as npt
 import pandas as pd
-import pytest
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
@@ -44,7 +42,7 @@ def _make_result(
     )
 
 
-def _make_pair_csv(base: Path, classifier: str, dataset: str, rows: list[dict]) -> Path:
+def _make_pair_csv(base, classifier, dataset, rows):
     """Write a minimal report.csv under base/classifier/dataset/."""
     pair_dir = base / classifier / dataset
     pair_dir.mkdir(parents=True, exist_ok=True)
@@ -52,23 +50,6 @@ def _make_pair_csv(base: Path, classifier: str, dataset: str, rows: list[dict]) 
     csv_path = pair_dir / "report.csv"
     df.to_csv(csv_path)
     return csv_path
-
-
-@pytest.fixture
-def two_pair_results(tmp_path):
-    """Two classifiers x two datasets with 2 partitions each."""
-    for clf in ("A", "B"):
-        for ds in ("d1", "d2"):
-            _make_pair_csv(
-                tmp_path,
-                clf,
-                ds,
-                [
-                    {"mae_train": 0.2, "mae_test": 0.3},
-                    {"mae_train": 0.4, "mae_test": 0.5},
-                ],
-            )
-    return Results(tmp_path)
 
 
 def test_save(tmp_path):
@@ -291,86 +272,3 @@ def test_exists(tmp_path):
     )
     assert r.exists("SVC", "toy", "0") is True
     assert r.exists("SVC", "toy", "1") is False
-
-
-def test_summarize(two_pair_results, tmp_path):
-    """summarize() returns a MultiIndex DataFrame; split filtering works; mean/std values are correct."""
-    # split="test" returns MultiIndex DataFrame with correct shape
-    df_test = two_pair_results.summarize(split="test")
-    assert isinstance(df_test.index, pd.MultiIndex)
-    assert isinstance(df_test.columns, pd.MultiIndex)
-    assert df_test.shape == (4, 3)
-
-    # split="train" includes only _train columns
-    df_train = two_pair_results.summarize(split="train")
-    metric_cols = [c for c in df_train.columns if c[0] != "n_completed"]
-    assert all(c[0].endswith("_train") for c in metric_cols)
-
-    # split="both" includes both _test and _train columns
-    df_both = two_pair_results.summarize(split="both")
-    metric_cols_both = [c[0] for c in df_both.columns if c[0] != "n_completed"]
-    assert any(c.endswith("_test") for c in metric_cols_both)
-    assert any(c.endswith("_train") for c in metric_cols_both)
-
-    # mean and std are computed correctly from 2 partitions
-    _make_pair_csv(
-        tmp_path / "mean_check", "clf", "ds", [{"mae_test": 0.2}, {"mae_test": 0.4}]
-    )
-    df_vals = Results(tmp_path / "mean_check").summarize(split="test")
-    assert df_vals.loc[("clf", "ds"), ("mae_test", "mean")] == pytest.approx(0.3)
-    assert df_vals.loc[("clf", "ds"), ("mae_test", "std")] == pytest.approx(
-        0.1414, rel=1e-3
-    )
-    assert df_vals.loc[("clf", "ds"), ("n_completed", "")] == 2
-
-
-def test_summarize_labels_filter(two_pair_results):
-    """summarize(labels=[...]) restricts results to the given classifiers."""
-    df = two_pair_results.summarize(labels=["A"])
-    assert all(clf == "A" for clf, _ in df.index)
-
-
-def test_summarize_labels_string_raises(two_pair_results):
-    """Passing a bare string to labels raises TypeError."""
-    with pytest.raises(TypeError, match="iterable"):
-        two_pair_results.summarize(labels="A")
-
-
-def test_summarize_invalid_split(two_pair_results):
-    with pytest.raises(ValueError, match="split must be"):
-        two_pair_results.summarize(split="bad")
-
-
-def test_tabulate(two_pair_results):
-    """tabulate() returns a pivot DataFrame; missing metric yields n/a; invalid split raises."""
-    df = two_pair_results.tabulate(metric="mae", split="test")
-    assert isinstance(df, pd.DataFrame)
-    assert set(df.index) == {"A", "B"}
-    assert set(df.columns) == {"d1", "d2"}
-
-    df_missing = two_pair_results.tabulate(metric="nonexistent", split="test")
-    assert (df_missing == "n/a").all().all()
-
-    with pytest.raises(ValueError, match="split must be"):
-        two_pair_results.tabulate(split="both")
-
-
-def test_summarize_tabulate_empty_folder(tmp_path):
-    """Both summarize() and tabulate() return an empty DataFrame when the folder has no results."""
-    r = Results(tmp_path)
-    assert r.summarize().empty
-    assert r.tabulate().empty
-
-
-def test_save_summary_writes_csv(two_pair_results):
-    """save_summary() writes {split}_summary.csv and returns its path."""
-    path = two_pair_results.save_summary(split="test")
-    assert path.is_file()
-    assert path.name == "test_summary.csv"
-    df = pd.read_csv(path)
-    assert df.shape[0] == 4
-
-
-def test_save_summary_empty_raises(tmp_path):
-    with pytest.raises(ValueError, match="No results"):
-        Results(tmp_path).save_summary()
