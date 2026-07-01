@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -57,8 +57,8 @@ jobs:
       matrix:
         python-version: ["310", "311", "312", "313", "314"]
     steps:
-      - uses: actions/checkout@v6
-      - uses: pypa/cibuildwheel@v3.4.1
+      - uses: actions/checkout@v7
+      - uses: pypa/cibuildwheel@v4.1.0
         env:
           CIBW_BUILD: cp${{ matrix.python-version }}-manylinux_x86_64
           CIBW_SKIP: "*-musllinux_*"

@@ -28,7 +28,7 @@ jobs:
             python-version: "3.12"
             numpy-constraint: ">=2.0,<3"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
@@ -48,7 +48,7 @@ jobs:
         run: pytest -m "not network" --cov=skordinal --cov-report=xml
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.xml
           disable_search: true
