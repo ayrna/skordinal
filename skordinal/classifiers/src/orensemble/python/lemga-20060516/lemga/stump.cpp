@@ -52,9 +52,11 @@ REAL Stump::train_1d (const std::vector<REAL>& x, const std::vector<REAL>& yw)
     UINT n = xy.size();
     xy[xy.begin()->first-2] = 1;    // insert a "very small" x
     assert(xy.size() == n+1);
-    for (MI p, pn = xy.begin(); p = pn++, p != xy.end();)
+    for (MI p = xy.begin(); p != xy.end();)
         if (p->second > -INFINITESIMAL && p->second < INFINITESIMAL)
-            xy.erase(p);
+            p = xy.erase(p);
+        else
+            ++p;
 
     n = xy.size();
     xy[xy.rbegin()->first+2] = 1;   // a "very large" x
@@ -94,9 +96,11 @@ REAL Stump::train_1d (const std::vector<REAL>& x, const std::vector<REAL>& yw,
 #endif
     xy[xy.begin()->first-2] = 1;    // insert a "very small" x
     assert(xy.size() == n+1);
-    for (MI p, pn = xy.begin(); p = pn++, p != xy.end();)
+    for (MI p = xy.begin(); p != xy.end();)
         if (p->second > -INFINITESIMAL && p->second < INFINITESIMAL)
-            xy.erase(p);
+            p = xy.erase(p);
+        else
+            ++p;
 
 #ifndef NDEBUG
     // check whether a constant function is enough

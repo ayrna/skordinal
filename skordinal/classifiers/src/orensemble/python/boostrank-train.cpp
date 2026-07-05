@@ -40,9 +40,16 @@ PyObject *fit(PyObject *self, PyObject *args)
 
     lemga::AggRank *pbag = setUpModel(params);
 
+    if (NULL == pbag)
+    {
+        delete trd;
+        return NULL;
+    }
+
     pbag->set_train_data(trd);
     pbag->train();
 
     PyObject *ret = modelAndParamsToPython(pbag, params);
+    delete pbag;
     return ret;
 }

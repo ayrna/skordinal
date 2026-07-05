@@ -44,7 +44,7 @@ int parseArgumentsTrain(PyObject *args, PyObject **features, PyObject **labels, 
         params.n_rank = n_rank;
         params.n_iter = n_iter;
 
-        params.n_in = PyLong_AsUnsignedLong(PyLong_FromSsize_t(PyList_Size(PyList_GetItem(*features, 0))));
+        params.n_in = (UINT)PyList_Size(PyList_GetItem(*features, 0));
         params.n_out = 1;
         return 0;
     }
@@ -117,12 +117,13 @@ lemga::DataSet *loadData(PyObject *features, PyObject *labels, const boostrankPa
 {
     lemga::DataSet *pd = new lemga::DataSet();
 
-    ssize_t instance_number = PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(features))); /*features rows*/
-    ssize_t label_number = PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(labels)));
+    ssize_t instance_number = PyList_Size(features); /*features rows*/
+    ssize_t label_number = PyList_Size(labels);
 
     if (instance_number != label_number)
     {
         PyErr_SetString(PyExc_ValueError, "Number of labels is different to the number of instances");
+        delete pd;
         return NULL;
     }
 
@@ -131,9 +132,10 @@ lemga::DataSet *loadData(PyObject *features, PyObject *labels, const boostrankPa
         lemga::Input x(params.n_in);
         lemga::Output y(params.n_out);
 
-        if (PyLong_AsUnsignedLong(PyLong_FromSsize_t(PyList_Size(PyList_GetItem(features, i)))) < params.n_in)
+        if ((UINT)PyList_Size(PyList_GetItem(features, i)) < params.n_in)
         {
             PyErr_SetString(PyExc_ValueError, "Instance has less features than expected");
+            delete pd;
             return NULL;
         }
         for (UINT j = 0; j < params.n_in; ++j)
@@ -143,6 +145,7 @@ lemga::DataSet *loadData(PyObject *features, PyObject *labels, const boostrankPa
         if (out < 1)
         {
             PyErr_SetString(PyExc_ValueError, "Found invalid (0) label");
+            delete pd;
             return NULL;
         }
         y[0] = out;

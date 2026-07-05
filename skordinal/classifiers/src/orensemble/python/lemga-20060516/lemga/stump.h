@@ -23,7 +23,7 @@ class Stump : public LearnModel {
 
 public:
     explicit Stump (UINT n_in = 0)
-        : LearnModel(n_in, 1), idx(0), bd1(0), bd2(0), hard(true) {}
+        : LearnModel(n_in, 1), idx(0), bd1(0), bd2(0), dir(true), hard(true) {}
     explicit Stump (std::istream& is) { is >> *this; }
 
     virtual const id_t& id () const;

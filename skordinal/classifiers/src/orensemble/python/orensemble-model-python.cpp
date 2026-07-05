@@ -24,8 +24,12 @@ PyObject *paramsToPython(const boostrankParams &params)
 
 lemga::AggRank *pythonToModel(PyObject *modelPython)
 {
+    PyObject *bytes = PyUnicode_AsEncodedString(modelPython, "utf-8", "strict");
+    if (NULL == bytes)
+        return NULL;
     std::stringstream ss;
-    ss << PyBytes_AsString(PyUnicode_AsEncodedString(modelPython, "utf-8", "strict"));
+    ss << PyBytes_AsString(bytes);
+    Py_DECREF(bytes);
     return (lemga::AggRank *)Object::create(ss);
 }
 
@@ -73,8 +77,8 @@ boostrankModelParams *pythonToModelAndParams(PyObject *modelParamsPython)
     PyObject *pyParams = PyDict_GetItemString(modelParamsPython, "params");
 
     boostrankModelParams *ret = new boostrankModelParams();
-    ret->model = pythonToModel(pyModel);
-    ret->params = pythonToParams(pyParams);
+    ret->model = pyModel ? pythonToModel(pyModel) : NULL;
+    ret->params = pyParams ? pythonToParams(pyParams) : NULL;
 
     return ret;
 }

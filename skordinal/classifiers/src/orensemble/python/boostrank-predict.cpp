@@ -26,15 +26,16 @@ void setInvalidArgsErrorPred()
 lemga::DataSet *loadPredData(PyObject *features, const boostrankParams &params)
 {
     lemga::DataSet *pd = new lemga::DataSet();
-    ssize_t n_test = PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(features)));
+    ssize_t n_test = PyList_Size(features);
 
     for (ssize_t i = 0; i < n_test; ++i)
     {
         lemga::Input x(params.n_in);
         lemga::Output y(params.n_out);
-        if (PyLong_AsUnsignedLong(PyLong_FromSsize_t(PyList_Size(PyList_GetItem(features, i)))) < params.n_in)
+        if ((UINT)PyList_Size(PyList_GetItem(features, i)) < params.n_in)
         {
             PyErr_SetString(PyExc_ValueError, "Instance has less features than expected");
+            delete pd;
             return NULL;
         }
         for (UINT j = 0; j < params.n_in; ++j)
@@ -65,16 +66,18 @@ PyObject *predict(PyObject *self, PyObject *args)
         return NULL;
     }
     /* load test data */
-    lemga::pDataSet ted = loadPredData(features, params);
+    lemga::DataSet *td = loadPredData(features, params);
+    if (NULL == td)
+    {
+        delete pbag;
+        return NULL;
+    }
+    lemga::pDataSet ted = td;
 
-    UINT n_rank = pbag->get_n_rank();
     std::vector<lemga::Output> out(ted->size());
 
     for (UINT i = 0; i < ted->size(); ++i)
-    {
         out[i] = (*pbag)(ted->x(i), params.n_iter);
-        UINT pred = (UINT)(out[i][0]);
-    }
 
     // std::cout << "Absolute Error: " << ae << std::endl;
     // std::cout << "Classification Error: " << ce << std::endl;
@@ -90,6 +93,7 @@ PyObject *predict(PyObject *self, PyObject *args)
         Py_DECREF(list_el);
     }
 
+    delete pbag;
     return predictedLabels;
 }
 
@@ -103,8 +107,17 @@ int parseArgumentsPred(PyObject *args, PyObject **features, lemga::AggRank **mod
 
         boostrankModelParams *modelParams = pythonToModelAndParams(pyModelParams);
 
+        if (NULL == modelParams->model || NULL == modelParams->params)
+        {
+            delete modelParams->model;
+            delete modelParams->params;
+            delete modelParams;
+            return 1;
+        }
         params = *modelParams->params;
         *model = modelParams->model;
+        delete modelParams->params;
+        delete modelParams;
         return 0;
     }
 
