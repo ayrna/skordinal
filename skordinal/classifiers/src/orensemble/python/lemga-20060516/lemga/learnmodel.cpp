@@ -74,7 +74,7 @@ LearnModel::LearnModel (UINT n_in, UINT n_out)
 bool LearnModel::serialize (std::ostream& os,
                             ver_list& vl) const {
     SERIALIZE_PARENT(Object, os, vl, 1);
-    return (os << _n_in << ' ' << _n_out << '\n');
+    return (bool)(os << _n_in << ' ' << _n_out << '\n');
 }
 
 bool LearnModel::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
@@ -83,7 +83,7 @@ bool LearnModel::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
     _n_in = 0; _n_out = 0;
     ptd = 0; ptw = 0; n_samples = 0;
     if (v == 0) return true;
-    return (is >> _n_in >> _n_out);
+    return (bool)(is >> _n_in >> _n_out);
 }
 
 /** @param out is the output from the learned hypothesis.

@@ -15,7 +15,7 @@ namespace lemga {
 
 bool Stump::serialize (std::ostream& os, ver_list& vl) const {
     SERIALIZE_PARENT(LearnModel, os, vl, 2);
-    return (os << idx << ' ' << bd1 << ' ' << bd2 << ' '
+    return (bool)(os << idx << ' ' << bd1 << ' ' << bd2 << ' '
                << (dir? 'P':'N') << '\n');
 }
 

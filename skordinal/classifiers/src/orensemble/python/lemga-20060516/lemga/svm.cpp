@@ -196,7 +196,7 @@ bool SVM::serialize (std::ostream& os, ver_list& vl) const {
         if (!(os << coef[i] << '\n')) return false;
     }
     // the bias
-    return (os << coef0 << '\n');
+    return (bool)(os << coef0 << '\n');
 }
 
 bool SVM::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
@@ -227,7 +227,7 @@ bool SVM::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
         sv[i].swap(svi);
         if (!(is >> coef[i])) return false;
     }
-    return (is >> coef0);
+    return (bool)(is >> coef0);
 }
 
 SVM::SVM (UINT n_in) : LearnModel(n_in, 1), ker(0), regC(1), coef0(0) {

@@ -126,7 +126,7 @@ ext-modules = [
             "skordinal/classifiers/src/orensemble/python",
             "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga",
             "skordinal/classifiers/src/orensemble/python/libsvm-2.81",
-        ], extra-compile-args = ["-std=gnu++98", "-Wno-unused-result", "-Wno-deprecated-declarations", "-Wno-write-strings", "-fvisibility=hidden"]}
+        ], extra-compile-args = ["-Wno-unused-result", "-Wno-deprecated-declarations", "-Wno-write-strings", "-fvisibility=hidden"]}
 ]
 
 [tool.pytest.ini_options]

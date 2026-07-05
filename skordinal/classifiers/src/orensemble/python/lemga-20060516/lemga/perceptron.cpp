@@ -170,7 +170,7 @@ bool Perceptron::serialize (std::ostream& os, ver_list& vl) const {
     SERIALIZE_PARENT(LearnModel, os, vl, 1);
     for (UINT i = 0; i <= _n_in; ++i)
         if (!(os << wgt[i] << ' ')) return false;
-    return (os << '\n');
+    return (bool)(os << '\n');
 }
 
 bool Perceptron::unserialize (std::istream& is, ver_list& vl, const id_t& d) {

@@ -45,14 +45,14 @@ void SoftPerc::train() {
 bool SoftPerc::serialize (std::ostream& os, ver_list& vl) const {
     SERIALIZE_PARENT(Perceptron, os, vl, 1);
 
-    return (os << scale << '\n');
+    return (bool)(os << scale << '\n');
 }
 
 bool SoftPerc::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
     if (d != id() && d != NIL_ID) return false;
     UNSERIALIZE_PARENT(Perceptron, is, vl, 1, v);
 
-    return (is >> scale);
+    return (bool)(is >> scale);
 }
 
 } // namespace lemga

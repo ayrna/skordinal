@@ -17,7 +17,7 @@ namespace kernel {
 
 bool Kernel::serialize (std::ostream& os, ver_list& vl) const {
     SERIALIZE_PARENT(Object, os, vl, 1);
-    return os;
+    return (bool) os;
 }
 
 bool Kernel::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
@@ -29,7 +29,7 @@ bool Kernel::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
 
 bool Polynomial::serialize (std::ostream& os, ver_list& vl) const {
     SERIALIZE_PARENT(Kernel, os, vl, 1);
-    return (os << degree << ' ' << gamma << ' ' << coef0 << '\n');
+    return (bool)(os << degree << ' ' << gamma << ' ' << coef0 << '\n');
 }
 
 bool
@@ -42,7 +42,7 @@ Polynomial::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
 
 bool RBF::serialize (std::ostream& os, ver_list& vl) const {
     SERIALIZE_PARENT(Kernel, os, vl, 1);
-    return (os << gamma << '\n');
+    return (bool)(os << gamma << '\n');
 }
 
 bool RBF::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
@@ -54,7 +54,7 @@ bool RBF::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
 
 bool Sigmoid::serialize (std::ostream& os, ver_list& vl) const {
     SERIALIZE_PARENT(Kernel, os, vl, 1);
-    return (os << gamma << ' ' << coef0 << '\n');
+    return (bool)(os << gamma << ' ' << coef0 << '\n');
 }
 
 bool Sigmoid::unserialize (std::istream& is, ver_list& vl, const id_t& d) {
