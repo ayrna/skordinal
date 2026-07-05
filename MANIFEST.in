@@ -1,2 +1,3 @@
 recursive-include skordinal/classifiers/src/libsvmrank *.h *.hpp
+recursive-include skordinal/classifiers/src/orensemble *.h
 recursive-include skordinal/classifiers/src/svorex *.h
