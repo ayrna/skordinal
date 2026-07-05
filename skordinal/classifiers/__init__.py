@@ -3,6 +3,7 @@
 from ._cost_sensitive_wrapper import CostSensitiveWrapper
 from ._nnop import NNOP
 from ._nnpom import NNPOM
+from ._orboost import ORBoost
 from ._ordinal_decomposition import OrdinalDecomposition
 from ._redsvm import REDSVM
 from ._regressor_wrapper import RegressorWrapper
@@ -12,6 +13,7 @@ __all__ = [
     "CostSensitiveWrapper",
     "NNOP",
     "NNPOM",
+    "ORBoost",
     "OrdinalDecomposition",
     "REDSVM",
     "RegressorWrapper",
