@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <cmath>
+#include <cstring>
 #include "../../libsvm-2.81/svm.h"
 #include "svm.h"
 

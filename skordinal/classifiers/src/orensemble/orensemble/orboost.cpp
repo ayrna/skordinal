@@ -17,7 +17,7 @@ namespace lemga {
 
     set_dimensions(*ptd);
 
-    std::cerr << "Entering ORBoost Training" << std::endl;
+    //std::cerr << "Entering ORBoost Training" << std::endl;
 
 
     vREAL thres_now(n_rank+1);
