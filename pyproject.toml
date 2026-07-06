@@ -97,7 +97,36 @@ ext-modules = [
             "skordinal/classifiers/src/svorex/smo_model_python.c",
             "skordinal/classifiers/src/svorex/smo_loadproblem_python.c",
             "skordinal/classifiers/src/svorex/smo_routine_python.c",
-        ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off"], libraries = ["m"]}
+        ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off"], libraries = ["m"]},
+    {name = "skordinal.classifiers._orensemble", language = "c++", sources = [
+            "skordinal/classifiers/src/orensemble/python/orensemble-module.cpp",
+            "skordinal/classifiers/src/orensemble/python/orensemble-model-python.cpp",
+            "skordinal/classifiers/src/orensemble/python/boostrank-train.cpp",
+            "skordinal/classifiers/src/orensemble/python/boostrank-predict.cpp",
+            "skordinal/classifiers/src/orensemble/python/train-functions.cpp",
+            "skordinal/classifiers/src/orensemble/orensemble/aggrank.cpp",
+            "skordinal/classifiers/src/orensemble/orensemble/orboost.cpp",
+            "skordinal/classifiers/src/orensemble/orensemble/rankboost.cpp",
+            "skordinal/classifiers/src/orensemble/orensemble/softperc.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/aggregating.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/feedforwardnn.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/kernel.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/learnmodel.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/nnlayer.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/object.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/perceptron.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/stump.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/utility.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/svm.cpp",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/quickfun.c",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/random.c",
+            "skordinal/classifiers/src/orensemble/python/libsvm-2.81/svm.cpp",
+        ], include-dirs = [
+            "skordinal/classifiers/src/orensemble/orensemble",
+            "skordinal/classifiers/src/orensemble/python",
+            "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga",
+            "skordinal/classifiers/src/orensemble/python/libsvm-2.81",
+        ], extra-compile-args = ["-Wno-unused-result", "-Wno-deprecated-declarations", "-Wno-write-strings", "-fvisibility=hidden"]}
 ]
 
 [tool.pytest.ini_options]
@@ -149,4 +178,6 @@ git-only = [
     "skordinal/classifiers/src/svorex/Makefile",
     "skordinal/classifiers/src/svorex/README.svorex",
     "skordinal/classifiers/src/svorex/setup.py",
+    "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/LEMGA.dox",
+    "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/Makefile",
 ]
