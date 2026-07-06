@@ -6,9 +6,19 @@ import joblib
 import numpy as np
 import numpy.testing as npt
 import pandas as pd
+import pytest
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
+
+
+def _fitted_svc(classes=(1, 2, 3)):
+    """Return an SVC fitted so that ``classes_`` equals ``classes``."""
+    labels = np.asarray(classes)
+    rng = np.random.default_rng(0)
+    features = rng.standard_normal((labels.size * 4, 4))
+    targets = np.tile(labels, 4)
+    return SVC().fit(features, targets)
 
 
 def _make_result(
@@ -19,13 +29,19 @@ def _make_result(
     train_metrics: dict,
     test_metrics: dict,
     train_predicted_y: np.ndarray,
-    test_predicted_y: np.ndarray,
+    test_predicted_y: np.ndarray | None,
     estimator=None,
     train_true_y=None,
     test_true_y=None,
+    train_index=None,
+    test_index=None,
 ) -> ExperimentResult:
     if estimator is None:
-        estimator = SVC()
+        estimator = _fitted_svc()
+    if train_true_y is None:
+        train_true_y = train_predicted_y
+    if test_true_y is None and test_predicted_y is not None:
+        test_true_y = test_predicted_y
     return ExperimentResult(
         dataset_name=dataset,
         classifier_name=configuration,
@@ -39,6 +55,8 @@ def _make_result(
         best_model=estimator,
         train_true_y=train_true_y,
         test_true_y=test_true_y,
+        train_index=train_index,
+        test_index=test_index,
     )
 
 
@@ -53,8 +71,8 @@ def _make_pair_csv(base, classifier, dataset, rows):
 
 
 def test_save(tmp_path):
-    """Two partitions produce the expected on-disk layout: report.csv, params.json, models, predictions."""
-    estimator = SVC()
+    """Two partitions produce the full per-seed on-disk layout."""
+    estimator = _fitted_svc()
     results = Results(tmp_path)
 
     result_0 = _make_result(
@@ -98,47 +116,51 @@ def test_save(tmp_path):
     assert (models_dir / "1.joblib").is_file()
     assert isinstance(joblib.load(models_dir / "0.joblib"), SVC)
 
-    pred_dir = pair_dir / "predictions"
-    train_0 = pd.read_csv(pred_dir / "train_0.csv")
-    assert list(train_0.columns) == ["y_pred"]
-    npt.assert_array_equal(train_0["y_pred"].values, result_0.train_predicted_y)
+    # Check the old flat predictions/ directory is gone in the new layout
+    assert not (pair_dir / "predictions").exists()
 
-    test_0 = pd.read_csv(pred_dir / "test_0.csv")
-    assert list(test_0.columns) == ["y_pred"]
-    npt.assert_array_equal(test_0["y_pred"].values, result_0.test_predicted_y)
+    seed_dir = pair_dir / "predictions_by_seed" / "seed_0"
+    train_0 = pd.read_csv(seed_dir / "train_predictions.csv")
+    assert list(train_0.columns) == ["Pattern ID", "Target", "Prediction"]
+
+    test_0 = pd.read_csv(seed_dir / "test_predictions.csv")
+    assert list(test_0.columns) == ["Pattern ID", "Target", "Prediction"]
 
 
-def test_save_with_true_labels(tmp_path):
-    """When true labels are provided, y_true appears first in prediction CSVs."""
-    train_true = np.array([1, 2, 3, 1, 2])
-    test_true = np.array([1, 2, 3])
+def test_save_encodes_labels_zero_based(tmp_path):
+    """Target/Prediction are searchsorted indices into 1-based classes_."""
+    estimator = _fitted_svc()
+    npt.assert_array_equal(estimator.classes_, np.array([1, 2, 3]))
+
+    test_true = np.array([1, 2, 3, 1])
+    test_pred = np.array([2, 2, 3, 1])
     result = _make_result(
         partition=0,
         dataset="toy",
         configuration="clf",
         best_params={},
-        train_metrics={"acc_train": 0.8},
-        test_metrics={"acc_test": 0.7},
-        train_predicted_y=np.array([1, 2, 2, 1, 2]),
-        test_predicted_y=np.array([1, 2, 2]),
-        train_true_y=train_true,
+        train_metrics={"acc_train": 1.0},
+        test_metrics={"acc_test": 1.0},
+        train_predicted_y=np.array([2, 2, 3]),
+        test_predicted_y=test_pred,
+        estimator=estimator,
+        train_true_y=np.array([1, 2, 3]),
         test_true_y=test_true,
     )
     Results(tmp_path).save(result, save_model=False)
 
-    pred_dir = tmp_path / "clf" / "toy" / "predictions"
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    train_df = pd.read_csv(seed_dir / "train_predictions.csv")
+    npt.assert_array_equal(train_df["Target"].values, np.array([0, 1, 2]))
+    npt.assert_array_equal(train_df["Prediction"].values, np.array([1, 1, 2]))
 
-    train_df = pd.read_csv(pred_dir / "train_0.csv")
-    assert list(train_df.columns) == ["y_true", "y_pred"]
-    npt.assert_array_equal(train_df["y_true"].values, train_true)
-
-    test_df = pd.read_csv(pred_dir / "test_0.csv")
-    assert list(test_df.columns) == ["y_true", "y_pred"]
-    npt.assert_array_equal(test_df["y_true"].values, test_true)
+    test_df = pd.read_csv(seed_dir / "test_predictions.csv")
+    npt.assert_array_equal(test_df["Target"].values, np.array([0, 1, 2, 0]))
+    npt.assert_array_equal(test_df["Prediction"].values, np.array([1, 1, 2, 0]))
 
 
 def test_save_model_false(tmp_path):
-    """save_model=False must not create a models/ folder."""
+    """save_model=False writes the seed dir but no models/ folder."""
     result = _make_result(
         partition=0,
         dataset="toy",
@@ -153,53 +175,113 @@ def test_save_model_false(tmp_path):
 
     pair_dir = tmp_path / "conf_1" / "toy"
     assert not (pair_dir / "models").exists()
-    assert (pair_dir / "predictions").exists()
+    assert (pair_dir / "predictions_by_seed" / "seed_0").exists()
 
 
-def test_save_proba_not_written_to_disk(tmp_path):
-    """y_proba is stored in ExperimentResult but not written to disk."""
-    y_proba = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3]])
-    result = ExperimentResult(
-        dataset_name="toy",
-        classifier_name="conf_1",
-        resample_id=0,
-        train_predicted_y=np.array([1, 2]),
-        test_predicted_y=np.array([1, 2]),
-        y_proba=y_proba,
-        train_metrics={"ccr_train": 0.9},
-        test_metrics={"ccr_test": 0.8},
-        best_params={"C": 1},
-        best_model=SVC(),
-    )
-    Results(tmp_path).save(result, save_model=False)
-
-    pred_dir = tmp_path / "conf_1" / "toy" / "predictions"
-    assert list(pred_dir.glob("proba*")) == []
-
-
-def test_save_no_test_partition(tmp_path):
-    """When test_predicted_y is None, no test CSV is written."""
-    result = ExperimentResult(
+def test_save_requires_true_labels(tmp_path):
+    """save raises ValueError when a split lacks its true labels."""
+    base = dict(
         dataset_name="toy",
         classifier_name="clf",
         resample_id=0,
         train_predicted_y=np.array([1, 2, 3]),
-        test_predicted_y=None,
+        test_predicted_y=np.array([1, 2]),
         y_proba=None,
-        train_metrics={"ccr_train": 0.9},
+        train_metrics={},
         test_metrics={},
         best_params={},
-        best_model=SVC(),
+        best_model=_fitted_svc(),
+    )
+
+    no_train = ExperimentResult(**base, test_true_y=np.array([1, 2]))
+    with pytest.raises(ValueError, match="train_true_y"):
+        Results(tmp_path).save(no_train, save_model=False)
+
+    no_test = ExperimentResult(**base, train_true_y=np.array([1, 2, 3]))
+    with pytest.raises(ValueError, match="test_true_y"):
+        Results(tmp_path).save(no_test, save_model=False)
+
+
+@pytest.mark.parametrize(
+    "overrides, match",
+    [
+        ({"train_true_y": np.array([1, 2, 4])}, "'train' true labels"),
+        ({"test_true_y": np.array([1, 2, 4])}, "'test' true labels"),
+        ({"test_predicted_y": np.array([1, 2, 4])}, "'test' predicted labels"),
+    ],
+)
+def test_save_rejects_unknown_labels(tmp_path, overrides, match):
+    """A label absent from classes_ raises instead of mis-encoding."""
+    kwargs = dict(
+        partition=0,
+        dataset="toy",
+        configuration="clf",
+        best_params={},
+        train_metrics={"acc_train": 1.0},
+        test_metrics={"acc_test": 1.0},
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=np.array([1, 2, 3]),
+        train_true_y=np.array([1, 2, 3]),
+        test_true_y=np.array([1, 2, 3]),
+    )
+    kwargs.update(overrides)
+    with pytest.raises(ValueError, match=match):
+        Results(tmp_path).save(_make_result(**kwargs))
+    # Check the failed save left no model behind
+    assert not (tmp_path / "clf" / "toy" / "models" / "0.joblib").exists()
+
+
+def test_save_no_test_partition(tmp_path):
+    """When test_predicted_y is None, no test files are written."""
+    result = _make_result(
+        partition=0,
+        dataset="toy",
+        configuration="clf",
+        best_params={},
+        train_metrics={"ccr_train": 0.9},
+        test_metrics={},
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=None,
     )
     Results(tmp_path).save(result, save_model=False)
 
-    pred_dir = tmp_path / "clf" / "toy" / "predictions"
-    assert (pred_dir / "train_0.csv").is_file()
-    assert not (pred_dir / "test_0.csv").exists()
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    assert (seed_dir / "train_predictions.csv").is_file()
+    assert not (seed_dir / "test_predictions.csv").exists()
+
+
+@pytest.mark.parametrize("with_indices", [False, True])
+def test_save_pattern_id_fallback(tmp_path, with_indices):
+    """Pattern ID echoes the given indices and falls back to range(n)."""
+    train_index = np.array([10, 11, 12, 13]) if with_indices else None
+    test_index = np.array([40, 41]) if with_indices else None
+    Results(tmp_path).save(
+        _make_result(
+            partition=0,
+            dataset="toy",
+            configuration="clf",
+            best_params={},
+            train_metrics={"acc_train": 1.0},
+            test_metrics={"acc_test": 1.0},
+            train_predicted_y=np.array([1, 2, 3, 1]),
+            test_predicted_y=np.array([1, 2]),
+            train_index=train_index,
+            test_index=test_index,
+        ),
+        save_model=False,
+    )
+
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    train_df = pd.read_csv(seed_dir / "train_predictions.csv")
+    test_df = pd.read_csv(seed_dir / "test_predictions.csv")
+    expected_train = train_index if with_indices else np.arange(4)
+    expected_test = test_index if with_indices else np.arange(2)
+    npt.assert_array_equal(train_df["Pattern ID"].values, expected_train)
+    npt.assert_array_equal(test_df["Pattern ID"].values, expected_test)
 
 
 def test_save_multiple_partitions_and_params_upsert(tmp_path):
-    """Saving multiple partitions accumulates rows in report.csv; saving the same id twice overwrites its params entry."""
+    """Repeated saves accumulate report rows and upsert params.json."""
     r = Results(tmp_path)
     for i in range(3):
         r.save(

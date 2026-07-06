@@ -135,6 +135,8 @@ class Experiment:
         dataset_name: str,
         classifier_name: str,
         resample_id: int,
+        train_index: np.ndarray | None = None,
+        test_index: np.ndarray | None = None,
     ) -> ExperimentResult:
         """Run the configuration on a single train/test partition.
 
@@ -168,6 +170,16 @@ class Experiment:
 
         resample_id : int
             Partition index, forwarded to the returned ``ExperimentResult``.
+
+        train_index : ndarray of shape (n_train_samples,) or None, default=None
+            Zero-based positions of the training samples in the original
+            dataset array; forwarded to the returned ``ExperimentResult`` and
+            used as the ``Pattern ID`` column.
+
+        test_index : ndarray of shape (n_test_samples,) or None, default=None
+            Zero-based positions of the test samples in the original dataset
+            array; forwarded to the returned ``ExperimentResult`` and used as
+            the ``Pattern ID`` column.
 
         Returns
         -------
@@ -291,4 +303,6 @@ class Experiment:
             best_model=optimal_estimator.best_estimator_,
             train_true_y=y_train,
             test_true_y=y_test,
+            train_index=train_index,
+            test_index=test_index,
         )

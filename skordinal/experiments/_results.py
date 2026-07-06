@@ -52,12 +52,24 @@ class ExperimentResult:
         Fitted estimator selected during cross-validation or direct fit.
 
     train_true_y : ndarray of shape (n_train_samples,) or None, default=None
-        True class labels for the training partition. When provided, predictions
-        CSV files include a ``y_true`` column alongside ``y_pred``.
+        True class labels for the training partition, used to derive the
+        ``Target`` column of the training predictions file.
 
     test_true_y : ndarray of shape (n_test_samples,) or None, default=None
-        True class labels for the test partition. When provided, the test
-        predictions CSV file includes a ``y_true`` column alongside ``y_pred``.
+        True class labels for the test partition, used to derive the
+        ``Target`` column of the test predictions file.
+
+    train_index : ndarray of shape (n_train_samples,) or None, default=None
+        Zero-based positions of the training samples in the original,
+        unsplit dataset array. Written as the ``Pattern ID`` column of the
+        training predictions file. ``None`` falls back to a partition-local
+        ``range(n_train_samples)`` at write time.
+
+    test_index : ndarray of shape (n_test_samples,) or None, default=None
+        Zero-based positions of the test samples in the original, unsplit
+        dataset array. Written as the ``Pattern ID`` column of the test
+        predictions file. ``None`` falls back to a partition-local
+        ``range(n_test_samples)`` at write time.
 
     """
 
@@ -73,6 +85,38 @@ class ExperimentResult:
     best_model: BaseEstimator
     train_true_y: np.ndarray | None = None
     test_true_y: np.ndarray | None = None
+    train_index: np.ndarray | None = None
+    test_index: np.ndarray | None = None
+
+
+def _write_split_files(
+    seed_dir: Path,
+    split: str,
+    *,
+    index: np.ndarray | None,
+    true_y: np.ndarray,
+    predicted_y: np.ndarray,
+    classes: np.ndarray,
+) -> None:
+    """Encode one split's labels and write its predictions file."""
+    if not np.isin(true_y, classes).all():
+        raise ValueError(
+            f"'{split}' true labels contain classes unknown to the fitted model."
+        )
+    if not np.isin(predicted_y, classes).all():
+        raise ValueError(
+            f"'{split}' predicted labels contain classes unknown to the fitted model."
+        )
+    pattern_id = index if index is not None else np.arange(predicted_y.shape[0])
+    target = np.searchsorted(classes, true_y)
+    prediction = np.searchsorted(classes, predicted_y)
+
+    columns: dict[str, object] = {
+        "Pattern ID": pattern_id,
+        "Target": target,
+        "Prediction": prediction,
+    }
+    pd.DataFrame(columns).to_csv(seed_dir / f"{split}_predictions.csv", index=False)
 
 
 class Results:
@@ -99,14 +143,20 @@ class Results:
             <dataset_name>/
                 report.csv
                 params.json
-                predictions/
-                    train_<resample_id>.csv
-                    test_<resample_id>.csv
+                predictions_by_seed/
+                    seed_<resample_id>/
+                        train_predictions.csv
+                        test_predictions.csv
                 models/
                     <resample_id>.joblib
 
-    The root-level ``train_summary.csv`` and ``test_summary.csv`` files are
-    written by ``save_summary`` and are absent until it is called.
+    Each ``*_predictions.csv`` has columns ``Pattern ID``, ``Target`` and
+    ``Prediction``. ``Target`` and ``Prediction`` are zero-based class
+    indices into ``best_model.classes_``; ``Pattern ID`` is the sample's
+    position in the original dataset array, or its position within the
+    partition when no sample indices were recorded. The root-level
+    ``train_summary.csv`` and ``test_summary.csv`` files are written by
+    ``save_summary`` and are absent until it is called.
 
     """
 
@@ -119,7 +169,7 @@ class Results:
         *,
         save_model: bool = True,
     ) -> None:
-        """Store information obtained from the run of one partition.
+        """Write one partition's per-seed predictions, report row and model.
 
         Parameters
         ----------
@@ -131,6 +181,14 @@ class Results:
 
         Raises
         ------
+        ValueError
+            If ``result`` lacks the true labels required for the ``Target``
+            column (``train_true_y``, or ``test_true_y`` when test
+            predictions are present), or if a true or predicted label is
+            not one of ``best_model.classes_``. Files already written for a
+            preceding split are left in place; nothing else is recorded for
+            the partition.
+
         OSError
             If the folder cannot be created.
 
@@ -141,22 +199,46 @@ class Results:
         >>> results.save(result)  # doctest: +SKIP
 
         """
-        base_dir, models_dir, pred_dir = self._ensure_dirs(
-            result.classifier_name, result.dataset_name, save_model=save_model
+        if result.train_true_y is None:
+            raise ValueError(
+                "'result.train_true_y' is required to write the 'Target' "
+                "column of the training predictions file."
+            )
+        if result.test_predicted_y is not None and result.test_true_y is None:
+            raise ValueError(
+                "'result.test_true_y' is required to write the 'Target' "
+                "column of the test predictions file."
+            )
+
+        base_dir, models_dir, seed_dir = self._ensure_dirs(
+            result.classifier_name,
+            result.dataset_name,
+            result.resample_id,
+            save_model=save_model,
         )
 
-        # Write model and prediction CSVs
+        classes = np.asarray(result.best_model.classes_)
+        _write_split_files(
+            seed_dir,
+            "train",
+            index=result.train_index,
+            true_y=result.train_true_y,
+            predicted_y=result.train_predicted_y,
+            classes=classes,
+        )
+        if result.test_predicted_y is not None:
+            assert result.test_true_y is not None
+            _write_split_files(
+                seed_dir,
+                "test",
+                index=result.test_index,
+                true_y=result.test_true_y,
+                predicted_y=result.test_predicted_y,
+                classes=classes,
+            )
+
         if save_model:
             joblib.dump(result.best_model, models_dir / f"{result.resample_id}.joblib")
-        train_df = pd.DataFrame({"y_pred": result.train_predicted_y})
-        if result.train_true_y is not None:
-            train_df.insert(0, "y_true", result.train_true_y)
-        train_df.to_csv(pred_dir / f"train_{result.resample_id}.csv", index=False)
-        if result.test_predicted_y is not None:
-            test_df = pd.DataFrame({"y_pred": result.test_predicted_y})
-            if result.test_true_y is not None:
-                test_df.insert(0, "y_true", result.test_true_y)
-            test_df.to_csv(pred_dir / f"test_{result.resample_id}.csv", index=False)
 
         self._append_report_row(result, base_dir)
 
@@ -169,21 +251,26 @@ class Results:
         json_path.write_text(json.dumps(params, indent=2), encoding="utf-8")
 
     def _ensure_dirs(
-        self, classifier_name: str, dataset_name: str, *, save_model: bool
+        self,
+        classifier_name: str,
+        dataset_name: str,
+        resample_id: int,
+        *,
+        save_model: bool,
     ) -> tuple[Path, Path, Path]:
-        """Create required sub-directories and return ``(base_dir, models_dir, pred_dir)``."""
+        """Create required sub-directories and return their paths."""
         base = self._experiment_folder / classifier_name / dataset_name
-        pred_dir = base / "predictions"
+        seed_dir = base / "predictions_by_seed" / f"seed_{resample_id}"
         models_dir = base / "models"
         try:
-            pred_dir.mkdir(parents=True, exist_ok=True)
+            seed_dir.mkdir(parents=True, exist_ok=True)
             if save_model:
                 models_dir.mkdir(exist_ok=True)
         except OSError:
             raise OSError(
                 f"Could not create folder {base} (or subfolders) to store results."
             )
-        return base, models_dir, pred_dir
+        return base, models_dir, seed_dir
 
     def _append_report_row(self, result: ExperimentResult, base_dir: Path) -> None:
         """Append one metrics row to ``report.csv``."""

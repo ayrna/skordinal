@@ -123,6 +123,31 @@ def test_run_identity_passthrough(split_with_test):
     assert result.resample_id == 42
 
 
+def test_run_forwards_partition_indices(split_with_test):
+    """train_index/test_index round-trip onto the result; default None."""
+    X_train, y_train, X_test, y_test = split_with_test
+    train_index = np.arange(X_train.shape[0])
+    test_index = np.arange(X_test.shape[0])
+
+    result = _make_experiment().run(
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+        dataset_name="ds",
+        classifier_name="cfg",
+        resample_id=0,
+        train_index=train_index,
+        test_index=test_index,
+    )
+    npt.assert_array_equal(result.train_index, train_index)
+    npt.assert_array_equal(result.test_index, test_index)
+
+    default_result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
+    assert default_result.train_index is None
+    assert default_result.test_index is None
+
+
 @pytest.mark.parametrize("has_test", [True, False])
 def test_run_test_present_vs_absent(split_with_test, split_train_only, has_test):
     """With test data: test_predicted_y is an array and metrics are finite; without: None and NaN."""
