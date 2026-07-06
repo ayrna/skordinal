@@ -123,7 +123,38 @@ RECIPE = {
 python examples/run_recipe.py my_experiment.py
 ```
 
-Results are saved in `results/` folder with performance metrics for each dataset-classifier combination. The framework automatically performs cross-validation, hyperparameter tuning, and evaluation on test sets.
+Results are saved in the `results/` folder with performance metrics for each
+dataset-classifier combination. The framework automatically performs
+cross-validation, hyperparameter tuning, and evaluation on test sets.
+
+Each classifier-dataset pair gets its own directory holding a `report.csv`
+with per-resample metrics, a `hyperparameter_configuration.csv` recording the
+best hyperparameters chosen for each seed, and a `predictions_by_seed/`
+folder grouping the outputs of every resample:
+
+```text
+results/
+└── <classifier>/
+    └── <dataset>/
+        ├── report.csv
+        ├── hyperparameter_configuration.csv
+        └── predictions_by_seed/
+            └── seed_<N>/
+                ├── train_predictions.csv
+                ├── test_predictions.csv
+                ├── train_confusion_matrix.txt
+                └── test_confusion_matrix.txt
+```
+
+Each predictions CSV lists the `Pattern ID`, the zero-based `Target` class
+index, a `Prediction probabilities` column with the per-class probabilities
+(for estimators that support `predict_proba`), and the zero-based
+`Prediction` class index — the argmax of the probabilities when they are
+present, or the estimator's own prediction otherwise. Confusion matrices are
+written alongside as plain-text `.txt` files, the fitted estimator for each
+seed is stored under a `models/` subfolder, and aggregated
+`train_summary.csv` and `test_summary.csv` files are produced across all
+runs.
 
 ## Configuration Files
 
