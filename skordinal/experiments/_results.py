@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
+from sklearn.metrics import confusion_matrix
 
 
 @dataclass(frozen=True)
@@ -113,8 +115,9 @@ def _write_split_files(
     predicted_y: np.ndarray,
     proba: np.ndarray | None,
     classes: np.ndarray,
+    resample_id: int,
 ) -> None:
-    """Encode one split's labels and write its predictions file."""
+    """Encode one split's labels and write its per-seed output files."""
     if not np.isin(true_y, classes).all():
         raise ValueError(
             f"'{split}' true labels contain classes unknown to the fitted model."
@@ -141,6 +144,14 @@ def _write_split_files(
         prediction = np.searchsorted(classes, predicted_y)
     columns["Prediction"] = prediction
     pd.DataFrame(columns).to_csv(seed_dir / f"{split}_predictions.csv", index=False)
+
+    cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
+    body = np.array2string(
+        cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
+    )
+    (seed_dir / f"{split}_confusion_matrix.txt").write_text(
+        f"Seed {resample_id}\n{'=' * 21}\n{body}\n", encoding="utf-8"
+    )
 
 
 class Results:
@@ -171,6 +182,8 @@ class Results:
                     seed_<resample_id>/
                         train_predictions.csv
                         test_predictions.csv
+                        train_confusion_matrix.txt
+                        test_confusion_matrix.txt
                 models/
                     <resample_id>.joblib
 
@@ -182,7 +195,9 @@ class Results:
     original dataset array, or its position within the partition when no
     sample indices were recorded. When probabilities are present,
     ``Prediction`` is their argmax index, which may differ from the
-    estimator's own decision rule reflected in ``report.csv``. The root-level
+    estimator's own decision rule reflected in ``report.csv``. Each
+    ``*_confusion_matrix.txt`` holds the confusion matrix of the same
+    file's ``Target`` and ``Prediction`` columns. The root-level
     ``train_summary.csv`` and ``test_summary.csv`` files are written by
     ``save_summary`` and are absent until it is called.
 
@@ -197,7 +212,7 @@ class Results:
         *,
         save_model: bool = True,
     ) -> None:
-        """Write one partition's per-seed predictions, report row and model.
+        """Write per-seed predictions, confusion matrices, report and model.
 
         Parameters
         ----------
@@ -255,6 +270,7 @@ class Results:
             predicted_y=result.train_predicted_y,
             proba=result.train_y_proba,
             classes=classes,
+            resample_id=result.resample_id,
         )
         if result.test_predicted_y is not None:
             assert result.test_true_y is not None
@@ -266,6 +282,7 @@ class Results:
                 predicted_y=result.test_predicted_y,
                 proba=result.y_proba,
                 classes=classes,
+                resample_id=result.resample_id,
             )
 
         if save_model:

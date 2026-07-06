@@ -7,10 +7,11 @@ import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pytest
+from sklearn.metrics import confusion_matrix
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
-from skordinal.experiments._results import _format_proba_column
+from skordinal.experiments._results import _format_proba_column, _write_split_files
 
 
 def _fitted_svc(classes=(1, 2, 3), probability=False):
@@ -323,7 +324,72 @@ def test_save_no_test_partition(tmp_path):
 
     seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
     assert (seed_dir / "train_predictions.csv").is_file()
+    assert (seed_dir / "train_confusion_matrix.txt").is_file()
     assert not (seed_dir / "test_predictions.csv").exists()
+    assert not (seed_dir / "test_confusion_matrix.txt").exists()
+
+
+def test_save_writes_confusion_matrices(tmp_path):
+    """Each seed dir gets train and test confusion-matrix text files."""
+    estimator = _fitted_svc()
+    test_true = np.array([1, 1, 2, 2, 3, 3])
+    test_pred = np.array([1, 2, 2, 3, 3, 3])
+    result = _make_result(
+        partition=0,
+        dataset="toy",
+        configuration="clf",
+        best_params={},
+        train_metrics={"acc_train": 1.0},
+        test_metrics={"acc_test": 1.0},
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=test_pred,
+        estimator=estimator,
+        train_true_y=np.array([1, 2, 3]),
+        test_true_y=test_true,
+    )
+    Results(tmp_path).save(result, save_model=False)
+
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    for name in ("train_confusion_matrix.txt", "test_confusion_matrix.txt"):
+        lines = (seed_dir / name).read_text().split("\n")
+        assert lines[0] == "Seed 0"
+        assert lines[1] == "=" * 21
+
+    # Check the body matches the labelled confusion matrix of the saved CSV
+    q = estimator.classes_.size
+    test_df = pd.read_csv(seed_dir / "test_predictions.csv")
+    expected = confusion_matrix(
+        test_df["Target"], test_df["Prediction"], labels=np.arange(q)
+    )
+    text = (seed_dir / "test_confusion_matrix.txt").read_text()
+    assert text.endswith("\n")
+    body = text.split("\n", 2)[2].rstrip("\n")
+    assert body == np.array2string(expected, separator=", ")
+
+
+def test_confusion_matrix_not_elided_for_many_classes(tmp_path):
+    """A large confusion matrix is written in full, without summarising."""
+    labels = np.arange(40)
+    _write_split_files(
+        tmp_path,
+        "train",
+        index=None,
+        true_y=labels,
+        predicted_y=labels,
+        proba=None,
+        classes=labels,
+        resample_id=0,
+    )
+
+    body = (
+        (tmp_path / "train_confusion_matrix.txt")
+        .read_text()
+        .split("\n", 2)[2]
+        .rstrip("\n")
+    )
+    assert "..." not in body
+    # Check the matrix keeps one physical line per row (no wrapping)
+    assert body.count("\n") == 39
 
 
 @pytest.mark.parametrize("with_indices", [False, True])
