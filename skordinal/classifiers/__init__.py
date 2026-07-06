@@ -1,6 +1,7 @@
 """Ordinal classification classifiers module."""
 
 from ._cost_sensitive_wrapper import CostSensitiveWrapper
+from ._elmop import ELMOP
 from ._nnop import NNOP
 from ._nnpom import NNPOM
 from ._ordinal_decomposition import OrdinalDecomposition
@@ -10,6 +11,7 @@ from ._svorex import SVOREX
 
 __all__ = [
     "CostSensitiveWrapper",
+    "ELMOP",
     "NNOP",
     "NNPOM",
     "OrdinalDecomposition",
