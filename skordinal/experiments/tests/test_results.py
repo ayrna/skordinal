@@ -10,15 +10,16 @@ import pytest
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
+from skordinal.experiments._results import _format_proba_column
 
 
-def _fitted_svc(classes=(1, 2, 3)):
+def _fitted_svc(classes=(1, 2, 3), probability=False):
     """Return an SVC fitted so that ``classes_`` equals ``classes``."""
     labels = np.asarray(classes)
     rng = np.random.default_rng(0)
     features = rng.standard_normal((labels.size * 4, 4))
     targets = np.tile(labels, 4)
-    return SVC().fit(features, targets)
+    return SVC(probability=probability).fit(features, targets)
 
 
 def _make_result(
@@ -178,6 +179,50 @@ def test_save_model_false(tmp_path):
     assert (pair_dir / "predictions_by_seed" / "seed_0").exists()
 
 
+def test_save_proba_written_to_disk(tmp_path):
+    """Probability columns are persisted in both prediction files."""
+    rng = np.random.default_rng(0)
+    estimator = _fitted_svc(probability=True)
+    q = estimator.classes_.size
+
+    raw_train = rng.random((3, q))
+    raw_test = rng.random((4, q))
+    train_y_proba = raw_train / raw_train.sum(axis=1, keepdims=True)
+    y_proba = raw_test / raw_test.sum(axis=1, keepdims=True)
+    result = ExperimentResult(
+        dataset_name="toy",
+        classifier_name="conf_1",
+        resample_id=0,
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=np.array([1, 2, 3, 1]),
+        y_proba=y_proba,
+        train_metrics={"ccr_train": 0.9},
+        test_metrics={"ccr_test": 0.8},
+        best_params={"C": 1},
+        best_model=estimator,
+        train_true_y=np.array([1, 2, 3]),
+        test_true_y=np.array([1, 2, 3, 1]),
+        train_y_proba=train_y_proba,
+    )
+    Results(tmp_path).save(result, save_model=False)
+
+    seed_dir = tmp_path / "conf_1" / "toy" / "predictions_by_seed" / "seed_0"
+    for name, proba in (
+        ("train_predictions.csv", train_y_proba),
+        ("test_predictions.csv", y_proba),
+    ):
+        df = pd.read_csv(seed_dir / name)
+        assert "Prediction probabilities" in df.columns
+        assert set(df["Target"]) <= set(range(q))
+        # Check Prediction equals the argmax index of the probabilities
+        npt.assert_array_equal(df["Prediction"].values, np.argmax(proba, axis=1))
+        for cell, source in zip(df["Prediction probabilities"], proba):
+            parsed = np.fromstring(cell.strip("[]"), sep=",")
+            assert parsed.shape == (q,)
+            npt.assert_allclose(parsed, source)
+            npt.assert_allclose(parsed.sum(), 1.0, atol=1e-8)
+
+
 def test_save_requires_true_labels(tmp_path):
     """save raises ValueError when a split lacks its true labels."""
     base = dict(
@@ -229,6 +274,37 @@ def test_save_rejects_unknown_labels(tmp_path, overrides, match):
         Results(tmp_path).save(_make_result(**kwargs))
     # Check the failed save left no model behind
     assert not (tmp_path / "clf" / "toy" / "models" / "0.joblib").exists()
+
+
+def test_save_rejects_misshaped_proba(tmp_path):
+    """A probability matrix without one column per class raises."""
+    result = ExperimentResult(
+        dataset_name="toy",
+        classifier_name="clf",
+        resample_id=0,
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=None,
+        y_proba=None,
+        train_metrics={},
+        test_metrics={},
+        best_params={},
+        best_model=_fitted_svc(),
+        train_true_y=np.array([1, 2, 3]),
+        train_y_proba=np.full((3, 2), 0.5),
+    )
+    with pytest.raises(ValueError, match="probabilities have shape"):
+        Results(tmp_path).save(result, save_model=False)
+
+
+def test_format_proba_column_cells_round_trip():
+    """Wide probability cells stay single-line and parse back exactly."""
+    rng = np.random.default_rng(0)
+    raw = rng.random((3, 20))
+    proba = raw / raw.sum(axis=1, keepdims=True)
+
+    for cell, row in zip(_format_proba_column(proba), proba):
+        assert "\n" not in cell
+        npt.assert_array_equal(np.fromstring(cell.strip("[]"), sep=","), row)
 
 
 def test_save_no_test_partition(tmp_path):

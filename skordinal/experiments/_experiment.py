@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from collections import OrderedDict
 from time import time
 from typing import Any, cast
@@ -20,6 +21,21 @@ def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) ->
     """Compute a single ordinal metric by name."""
     scorer = cast(Any, get_ordinal_scorer(metric_name.strip()))
     return scorer._score_func(y_true, y_pred, **scorer._kwargs)
+
+
+def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
+    """Return class probabilities, or ``None`` when the estimator cannot."""
+    if not hasattr(estimator, "predict_proba"):
+        return None
+    try:
+        return estimator.predict_proba(inputs)
+    except AttributeError as exc:
+        warnings.warn(
+            f"predict_proba raised AttributeError; probabilities are omitted: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
 
 
 class Experiment:
@@ -281,13 +297,13 @@ class Experiment:
             train_metrics["time_train"] = optimal_estimator.refit_time_
             test_metrics["time_test"] = elapsed
 
-        # Compute class probabilities when available.
+        # Compute class probabilities on each split when supported
+        estimator = optimal_estimator.best_estimator_
+        train_y_proba = _predict_proba_or_none(estimator, train_inputs)
         y_proba = None
-        if y_test is not None and hasattr(
-            optimal_estimator.best_estimator_, "predict_proba"
-        ):
+        if y_test is not None:
             assert test_inputs is not None
-            y_proba = optimal_estimator.best_estimator_.predict_proba(test_inputs)
+            y_proba = _predict_proba_or_none(estimator, test_inputs)
 
         # Build and return the ExperimentResult; no persistence here.
         return ExperimentResult(
@@ -300,9 +316,10 @@ class Experiment:
             train_metrics=train_metrics,
             test_metrics=test_metrics,
             best_params=optimal_estimator.best_params_,
-            best_model=optimal_estimator.best_estimator_,
+            best_model=estimator,
             train_true_y=y_train,
             test_true_y=y_test,
             train_index=train_index,
             test_index=test_index,
+            train_y_proba=train_y_proba,
         )

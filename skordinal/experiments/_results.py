@@ -36,8 +36,9 @@ class ExperimentResult:
         was available.
 
     y_proba : ndarray of shape (n_test_samples, n_classes) or None
-        Class probability estimates on the test partition. ``None`` if the
-        estimator does not support ``predict_proba``.
+        Class probability estimates on the test partition, columns ordered
+        by ``best_model.classes_``. ``None`` when no test partition is
+        available or the estimator cannot provide probabilities.
 
     train_metrics : dict
         Metric values computed on the training partition, including timing.
@@ -71,6 +72,12 @@ class ExperimentResult:
         predictions file. ``None`` falls back to a partition-local
         ``range(n_test_samples)`` at write time.
 
+    train_y_proba : ndarray of shape (n_train_samples, n_classes) or None, \
+            default=None
+        Class-probability estimates on the training partition, columns
+        ordered by ``best_model.classes_``. ``None`` when the estimator
+        cannot provide probabilities.
+
     """
 
     dataset_name: str
@@ -87,6 +94,14 @@ class ExperimentResult:
     test_true_y: np.ndarray | None = None
     train_index: np.ndarray | None = None
     test_index: np.ndarray | None = None
+    train_y_proba: np.ndarray | None = None
+
+
+def _format_proba_column(proba: np.ndarray) -> list[str]:
+    """Render probability rows as single-line ``"[p0, p1, ...]"`` cells."""
+    return [
+        "[" + ", ".join(repr(float(p)) for p in row) + "]" for row in np.asarray(proba)
+    ]
 
 
 def _write_split_files(
@@ -96,6 +111,7 @@ def _write_split_files(
     index: np.ndarray | None,
     true_y: np.ndarray,
     predicted_y: np.ndarray,
+    proba: np.ndarray | None,
     classes: np.ndarray,
 ) -> None:
     """Encode one split's labels and write its predictions file."""
@@ -103,19 +119,27 @@ def _write_split_files(
         raise ValueError(
             f"'{split}' true labels contain classes unknown to the fitted model."
         )
-    if not np.isin(predicted_y, classes).all():
-        raise ValueError(
-            f"'{split}' predicted labels contain classes unknown to the fitted model."
-        )
     pattern_id = index if index is not None else np.arange(predicted_y.shape[0])
     target = np.searchsorted(classes, true_y)
-    prediction = np.searchsorted(classes, predicted_y)
 
-    columns: dict[str, object] = {
-        "Pattern ID": pattern_id,
-        "Target": target,
-        "Prediction": prediction,
-    }
+    columns: dict[str, object] = {"Pattern ID": pattern_id, "Target": target}
+    if proba is not None:
+        if proba.shape != (true_y.shape[0], classes.size):
+            raise ValueError(
+                f"'{split}' probabilities have shape {proba.shape}; expected "
+                f"({true_y.shape[0]}, {classes.size})."
+            )
+        columns["Prediction probabilities"] = _format_proba_column(proba)
+        # Derive the prediction as the argmax index of the probabilities
+        prediction = np.argmax(proba, axis=1)
+    else:
+        if not np.isin(predicted_y, classes).all():
+            raise ValueError(
+                f"'{split}' predicted labels contain classes unknown to the "
+                "fitted model."
+            )
+        prediction = np.searchsorted(classes, predicted_y)
+    columns["Prediction"] = prediction
     pd.DataFrame(columns).to_csv(seed_dir / f"{split}_predictions.csv", index=False)
 
 
@@ -150,11 +174,15 @@ class Results:
                 models/
                     <resample_id>.joblib
 
-    Each ``*_predictions.csv`` has columns ``Pattern ID``, ``Target`` and
-    ``Prediction``. ``Target`` and ``Prediction`` are zero-based class
-    indices into ``best_model.classes_``; ``Pattern ID`` is the sample's
-    position in the original dataset array, or its position within the
-    partition when no sample indices were recorded. The root-level
+    Each ``*_predictions.csv`` has columns ``Pattern ID``, ``Target``, an
+    optional ``Prediction probabilities`` column (present only when
+    probability estimates are available), and ``Prediction``. ``Target``
+    and ``Prediction`` are zero-based class indices into
+    ``best_model.classes_``; ``Pattern ID`` is the sample's position in the
+    original dataset array, or its position within the partition when no
+    sample indices were recorded. When probabilities are present,
+    ``Prediction`` is their argmax index, which may differ from the
+    estimator's own decision rule reflected in ``report.csv``. The root-level
     ``train_summary.csv`` and ``test_summary.csv`` files are written by
     ``save_summary`` and are absent until it is called.
 
@@ -184,10 +212,11 @@ class Results:
         ValueError
             If ``result`` lacks the true labels required for the ``Target``
             column (``train_true_y``, or ``test_true_y`` when test
-            predictions are present), or if a true or predicted label is
-            not one of ``best_model.classes_``. Files already written for a
-            preceding split are left in place; nothing else is recorded for
-            the partition.
+            predictions are present), if a true or predicted label is not
+            one of ``best_model.classes_``, or if a probability matrix does
+            not hold one row per sample and one column per class. Files
+            already written for a preceding split are left in place;
+            nothing else is recorded for the partition.
 
         OSError
             If the folder cannot be created.
@@ -224,6 +253,7 @@ class Results:
             index=result.train_index,
             true_y=result.train_true_y,
             predicted_y=result.train_predicted_y,
+            proba=result.train_y_proba,
             classes=classes,
         )
         if result.test_predicted_y is not None:
@@ -234,6 +264,7 @@ class Results:
                 index=result.test_index,
                 true_y=result.test_true_y,
                 predicted_y=result.test_predicted_y,
+                proba=result.y_proba,
                 classes=classes,
             )
 
