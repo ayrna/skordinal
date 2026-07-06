@@ -189,7 +189,8 @@ def test_run_and_summarize_bundled_dataset(tmp_path):
     df = pd.read_csv(pair_dir / "report.csv", index_col=0)
     assert df.shape[0] == 3
 
-    assert (pair_dir / "params.json").is_file()
+    assert (pair_dir / "hyperparameter_configuration.csv").is_file()
+    assert not (pair_dir / "params.json").exists()
 
     pred_dir = pair_dir / "predictions_by_seed"
     train_preds = sorted(pred_dir.glob("seed_*/train_predictions.csv"))

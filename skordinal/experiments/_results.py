@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -177,7 +176,7 @@ class Results:
         <classifier_name>/
             <dataset_name>/
                 report.csv
-                params.json
+                hyperparameter_configuration.csv
                 predictions_by_seed/
                     seed_<resample_id>/
                         train_predictions.csv
@@ -197,7 +196,10 @@ class Results:
     ``Prediction`` is their argmax index, which may differ from the
     estimator's own decision rule reflected in ``report.csv``. Each
     ``*_confusion_matrix.txt`` holds the confusion matrix of the same
-    file's ``Target`` and ``Prediction`` columns. The root-level
+    file's ``Target`` and ``Prediction`` columns.
+    ``hyperparameter_configuration.csv`` records the best parameters per
+    seed with the ``clf__`` pipeline prefix stripped; its ``Seed`` column
+    always holds the resample identifier. The root-level
     ``train_summary.csv`` and ``test_summary.csv`` files are written by
     ``save_summary`` and are absent until it is called.
 
@@ -212,7 +214,7 @@ class Results:
         *,
         save_model: bool = True,
     ) -> None:
-        """Write per-seed predictions, confusion matrices, report and model.
+        """Write per-seed files, the report row, hyperparameters and model.
 
         Parameters
         ----------
@@ -289,14 +291,7 @@ class Results:
             joblib.dump(result.best_model, models_dir / f"{result.resample_id}.joblib")
 
         self._append_report_row(result, base_dir)
-
-        # Upsert params entry in params.json
-        json_path = base_dir / "params.json"
-        params: dict[str, Any] = {}
-        if json_path.is_file():
-            params = json.loads(json_path.read_text(encoding="utf-8"))
-        params[str(result.resample_id)] = dict(result.best_params)
-        json_path.write_text(json.dumps(params, indent=2), encoding="utf-8")
+        self._upsert_hyperparameters(result, base_dir)
 
     def _ensure_dirs(
         self,
@@ -331,6 +326,26 @@ class Results:
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
         df.to_csv(csv_path)
+
+    def _upsert_hyperparameters(self, result: ExperimentResult, base_dir: Path) -> None:
+        """Upsert one seed's row in the hyperparameter configuration CSV."""
+        row: dict[str, Any] = {
+            k.removeprefix("clf__"): v for k, v in result.best_params.items()
+        }
+        # Set Seed last so no same-named parameter can shadow the upsert key
+        row["Seed"] = result.resample_id
+
+        csv_path = base_dir / "hyperparameter_configuration.csv"
+        df = pd.DataFrame([row])
+        if csv_path.is_file():
+            existing = pd.read_csv(csv_path)
+            existing = existing[existing["Seed"] != result.resample_id]
+            df = pd.concat([existing, df], ignore_index=True)
+
+        columns = ["Seed"] + sorted(c for c in df.columns if c != "Seed")
+        df = df[columns].sort_values("Seed").reset_index(drop=True)
+        # Restore integer dtypes upcast to float by the NaN column union
+        df.convert_dtypes().to_csv(csv_path, index=False)
 
     @classmethod
     def load(cls, experiment_folder: str | Path) -> Results:

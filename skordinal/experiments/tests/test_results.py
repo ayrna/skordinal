@@ -1,7 +1,5 @@
 """Tests for the Results class."""
 
-import json
-
 import joblib
 import numpy as np
 import numpy.testing as npt
@@ -109,9 +107,15 @@ def test_save(tmp_path):
     assert df.shape == (2, 4)
     assert list(df.columns) == ["ccr_train", "mae_train", "ccr_test", "mae_test"]
 
-    params = json.loads((pair_dir / "params.json").read_text())
-    assert params["0"] == {"C": 0.1, "gamma": 1}
-    assert params["1"] == {"C": 1, "gamma": 1}
+    assert not (pair_dir / "params.json").exists()
+    hyper = pd.read_csv(pair_dir / "hyperparameter_configuration.csv")
+    assert list(hyper.columns) == ["Seed", "C", "gamma"]
+    row_0 = hyper[hyper["Seed"] == 0].iloc[0]
+    assert row_0["C"] == 0.1
+    assert row_0["gamma"] == 1
+    row_1 = hyper[hyper["Seed"] == 1].iloc[0]
+    assert row_1["C"] == 1
+    assert row_1["gamma"] == 1
 
     models_dir = pair_dir / "models"
     assert (models_dir / "0.joblib").is_file()
@@ -422,8 +426,8 @@ def test_save_pattern_id_fallback(tmp_path, with_indices):
     npt.assert_array_equal(test_df["Pattern ID"].values, expected_test)
 
 
-def test_save_multiple_partitions_and_params_upsert(tmp_path):
-    """Repeated saves accumulate report rows and upsert params.json."""
+def test_save_multiple_partitions_and_hyperparameter_upsert(tmp_path):
+    """Repeated saves accumulate report rows and upsert hyperparameters."""
     r = Results(tmp_path)
     for i in range(3):
         r.save(
@@ -460,8 +464,94 @@ def test_save_multiple_partitions_and_params_upsert(tmp_path):
         save_model=False,
     )
 
-    params = json.loads((tmp_path / "clf" / "ds" / "params.json").read_text())
-    assert params["0"]["C"] == 1.0
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    seed_0 = hyper[hyper["Seed"] == 0]
+    assert len(seed_0) == 1
+    assert seed_0.iloc[0]["C"] == 1.0
+    # Check rows stay sorted by Seed after the out-of-order upsert
+    npt.assert_array_equal(hyper["Seed"].values, [0, 1, 2])
+
+
+def test_hyperparameters_prefix_strip_and_union(tmp_path):
+    """The clf__ prefix is stripped and missing params union to NaN."""
+    r = Results(tmp_path)
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={"clf__gamma": 1},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    r.save(
+        _make_result(
+            partition=1,
+            dataset="ds",
+            configuration="clf",
+            best_params={"clf__gamma": 0.3, "clf__alpha": 2},
+            train_metrics={"mae_train": 0.2},
+            test_metrics={"mae_test": 0.2},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    # Check columns are Seed first, then alphabetical (not insertion order)
+    assert list(hyper.columns) == ["Seed", "alpha", "gamma"]
+    npt.assert_array_equal(hyper["Seed"].values, [0, 1])
+    assert pd.isna(hyper[hyper["Seed"] == 0].iloc[0]["alpha"])
+    assert hyper[hyper["Seed"] == 1].iloc[0]["alpha"] == 2
+
+    # Check integer values survive the NaN column union unquoted
+    raw = (tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv").read_text()
+    assert "2.0" not in raw
+
+
+def test_hyperparameters_empty_params(tmp_path):
+    """Empty best_params yields a one-column CSV holding only Seed."""
+    Results(tmp_path).save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    assert list(hyper.columns) == ["Seed"]
+
+
+def test_hyperparameters_seed_param_cannot_shadow_key(tmp_path):
+    """A parameter literally named Seed cannot overwrite the Seed column."""
+    Results(tmp_path).save(
+        _make_result(
+            partition=5,
+            dataset="ds",
+            configuration="clf",
+            best_params={"Seed": 999},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    npt.assert_array_equal(hyper["Seed"].values, [5])
 
 
 def test_load(tmp_path):
