@@ -6,6 +6,7 @@ import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pytest
+from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 
@@ -80,6 +81,16 @@ def test_cost_sensitive_wrapper_predict_proba_sums_to_one(X, y):
     assert proba.shape == (X.shape[0], classifier.classes_.size)
     npt.assert_allclose(proba.sum(axis=1), np.ones(X.shape[0]))
     assert np.all(proba >= 0.0)
+
+
+def test_cost_sensitive_wrapper_predict_proba_all_zero_row_falls_back_to_uniform(X, y):
+    """An all-zero per-class score row falls back to a uniform distribution."""
+    base = DummyClassifier(strategy="constant", constant=0)
+    classifier = CostSensitiveWrapper(base).fit(X, y)
+    proba = classifier.predict_proba(X)
+
+    K = classifier.classes_.size
+    npt.assert_allclose(proba, np.full((X.shape[0], K), 1.0 / K))
 
 
 def test_cost_sensitive_wrapper_sets_classes_and_n_features_in_after_fit(X, y):

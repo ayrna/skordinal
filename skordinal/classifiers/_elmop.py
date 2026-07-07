@@ -10,17 +10,8 @@ from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.validation import check_is_fitted
 
 from skordinal.utils._sklearn_compat import validate_data
+from skordinal.utils.extmath import losses_to_proba, proba_to_cumproba
 from skordinal.utils.validation import check_ordinal_targets
-
-
-def _losses_to_proba(losses):
-    """Convert a per-sample loss matrix to row-normalised probabilities."""
-    eps = np.finfo(float).tiny
-    scores = 1.0 / (np.asarray(losses, dtype=np.float64) + eps)
-    scores -= scores.max(axis=1, keepdims=True)
-    proba = np.exp(scores)
-    proba /= proba.sum(axis=1, keepdims=True)
-    return proba
 
 
 class ELMOP(ClassifierMixin, BaseEstimator):
@@ -211,7 +202,7 @@ class ELMOP(ClassifierMixin, BaseEstimator):
 
     def _proba(self, X):
         """Compute class probabilities from pre-validated X."""
-        return _losses_to_proba(self._losses(X))
+        return losses_to_proba(self._losses(X))
 
     def predict(self, X):
         """Predict ordinal class labels for patterns in X.
@@ -243,9 +234,10 @@ class ELMOP(ClassifierMixin, BaseEstimator):
         """Return per-class probability estimates.
 
         Probabilities are derived from the per-class exponential decoding
-        losses through a monotone decreasing transform, so smaller loss
-        means higher probability and ``predict`` coincides with the
-        argmax of ``predict_proba``.
+        losses through a monotone decreasing transform, so smaller loss means
+        higher probability and, apart from floating-point ties in the
+        transformed scores, ``predict`` coincides with the argmax of
+        ``predict_proba``.
 
         Parameters
         ----------
@@ -269,8 +261,8 @@ class ELMOP(ClassifierMixin, BaseEstimator):
     def predict_cumproba(self, X):
         """Cumulative class probabilities for each sample.
 
-        Derived from ``predict_proba`` as
-        ``numpy.cumsum(predict_proba(X), axis=1)[:, :-1]``.
+        Derived from ``predict_proba`` as the row-wise cumulative sum of
+        all but the last column.
 
         Parameters
         ----------
@@ -290,4 +282,4 @@ class ELMOP(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, dtype=np.float64)
-        return np.cumsum(self._proba(X), axis=1)[:, :-1]
+        return proba_to_cumproba(self._proba(X))

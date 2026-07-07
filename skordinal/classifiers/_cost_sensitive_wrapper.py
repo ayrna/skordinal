@@ -18,6 +18,7 @@ from sklearn.utils._param_validation import HasMethods
 from sklearn.utils.validation import check_is_fitted
 
 from skordinal.utils._sklearn_compat import validate_data
+from skordinal.utils.extmath import normalize_proba_rows
 from skordinal.utils.validation import check_ordinal_targets
 
 
@@ -216,12 +217,4 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
             idx = int(np.searchsorted(est_p.classes_, 1))
             P[:, p] = est_p.predict_proba(X)[:, idx]
 
-        # Replace all-zero rows with the uniform distribution
-        zero_rows = P.sum(axis=1) == 0.0
-        P[zero_rows] = 1.0 / K
-
-        # Clip to a tiny floor and renormalise each row to sum to one
-        np.clip(P, np.finfo(float).tiny, None, out=P)
-        P /= P.sum(axis=1, keepdims=True)
-
-        return P
+        return normalize_proba_rows(P)

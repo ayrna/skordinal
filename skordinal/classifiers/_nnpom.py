@@ -14,6 +14,7 @@ from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
 from skordinal.utils._sklearn_compat import validate_data
+from skordinal.utils.extmath import params_to_thresholds, thresholds_grad
 from skordinal.utils.validation import check_ordinal_targets
 
 
@@ -221,7 +222,9 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         self.theta1_ = theta1
         self.theta2_ = theta2
-        self.thresholds_ = self._convert_thresholds(thresholds_param, n_classes)
+        self.thresholds_ = params_to_thresholds(thresholds_param.ravel()).reshape(
+            1, n_classes - 1
+        )
 
         # Scikit-learn compatibility
         self.n_layers_ = 3
@@ -359,51 +362,6 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         return W
 
-    def _convert_thresholds(
-        self,
-        thresholds_param: np.ndarray,
-        n_classes: int,
-    ) -> np.ndarray:
-        """Transform thresholds to perform unconstrained optimization.
-
-        thresholds(1) = thresholds_param(1)
-        thresholds(2) = thresholds_param(1) + thresholds_param(2)**2
-        thresholds(3) = thresholds_param(1) + thresholds_param(2)**2 +
-                        thresholds_param(3)**2
-
-        Parameters
-        ----------
-        thresholds_param : ndarray of shape (n_classes - 1, 1)
-            Contains the original value of the thresholds between classes
-
-        n_classes : int
-            Number of classes.
-
-        Returns
-        -------
-        thresholds : ndarray of shape (n_classes - 1, 1)
-            Thresholds of the line
-
-        """
-        # Threshold ^2 element by element
-        thresholds_pquad = thresholds_param**2
-
-        # Gets row-array containing the thresholds
-        thresholds = np.reshape(
-            np.multiply(
-                np.tile(
-                    np.concatenate(
-                        (thresholds_param[0:1], thresholds_pquad[1:]), axis=0
-                    ),
-                    (1, n_classes - 1),
-                ).T,
-                np.tril(np.ones((n_classes - 1, n_classes - 1))),
-            ).sum(axis=1),
-            (n_classes - 1, 1),
-        ).T
-
-        return thresholds
-
     def _nnpom_cost_function(
         self,
         nn_params: np.ndarray,
@@ -460,7 +418,9 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         )
 
         # Convert thresholds
-        thresholds = self._convert_thresholds(thresholds_param, n_classes)
+        thresholds = params_to_thresholds(thresholds_param.ravel()).reshape(
+            1, n_classes - 1
+        )
 
         # Setup some useful variables
         n_samples = np.size(X, 0)
@@ -524,33 +484,15 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         theta1_grad = delta_1 / n_samples + p1
         theta2_grad = delta_2 / n_samples + p2
 
-        # Threshold gradients
-        thresh_grad_matrix = np.multiply(
-            np.concatenate(
-                (
-                    np.triu(np.ones((n_classes - 1, n_classes - 1))),
-                    np.ones((n_classes - 1, 1)),
-                ),
-                axis=1,
-            ),
-            np.tile(g_gradients.sum(axis=0), (n_classes - 1, 1)),
-        )
-
-        original_shape = thresh_grad_matrix.shape
-        thresh_grad_matrix = thresh_grad_matrix.flatten(order="F")
-
-        thresh_grad_matrix[(n_classes)::n_classes] = thresh_grad_matrix.flatten(
-            order="F"
-        )[(n_classes)::n_classes] + np.multiply(
-            error_der[:, 1 : (n_classes - 1)], f_gradients[:, 0 : (n_classes - 2)]
-        ).sum(axis=0)
-
-        thresh_grad_matrix = np.reshape(
-            thresh_grad_matrix[:, np.newaxis], original_shape, order="F"
-        )
-
-        threshold_grad = thresh_grad_matrix.sum(axis=1)[:, np.newaxis] / n_samples
-        threshold_grad[1:] = 2 * np.multiply(threshold_grad[1:], thresholds_param[1:])
+        # Threshold gradients: dJ/d(threshold) for each of the n_classes - 1
+        # ordered thresholds, pushed back through the unconstrained
+        # parametrization via the chain rule
+        raw_threshold_grad = (
+            (error_der[:, : n_classes - 1] - error_der[:, 1:n_classes]) * f_gradients
+        ).sum(axis=0) / n_samples
+        threshold_grad = thresholds_grad(
+            thresholds_param.ravel(), raw_threshold_grad
+        ).reshape(-1, 1)
 
         # Unroll gradients
         grad = np.concatenate(
