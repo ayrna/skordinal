@@ -78,9 +78,8 @@ def binary_cumulative_to_ordinal(
     per-row count of crossed thresholds, which indexes into
     ``classes``.
 
-    This routine does NOT correct monotonicity violations — call
-    :func:`skordinal.utils.validation.check_monotonic_probabilities`
-    beforehand if the binary predictions may be non-monotone.
+    This routine does not correct monotonicity violations; rows are
+    decoded as given.
 
     Parameters
     ----------

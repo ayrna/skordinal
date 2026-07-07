@@ -1,22 +1,15 @@
 """Tests for the validation utilities."""
 
-import inspect
-
 import numpy as np
 import pytest
-from numpy.testing import assert_allclose, assert_array_equal
+from numpy.testing import assert_array_equal
 
 import skordinal.utils.validation as val_mod
-from skordinal.utils.validation import (
-    check_monotonic_probabilities,
-    check_ordinal_targets,
-    validate_thresholds,
-)
+from skordinal.utils.validation import check_ordinal_targets, validate_thresholds
 
 _ALL_HELPERS = [
     check_ordinal_targets,
     validate_thresholds,
-    check_monotonic_probabilities,
 ]
 _HELPER_NAMES = [f.__name__ for f in _ALL_HELPERS]
 
@@ -30,14 +23,8 @@ def test_api_no_mutable_defaults(func):
         )
 
 
-def test_api_check_monotonic_probabilities_default_repair():
-    """The default value of ``repair`` is True."""
-    sig = inspect.signature(check_monotonic_probabilities)
-    assert sig.parameters["repair"].default is True
-
-
 def test_integration_all_names_in_module_all():
-    """``__all__`` lists exactly the three public helpers and is re-exported."""
+    """``validation.__all__`` lists exactly the helpers, all re-exported."""
     import skordinal.utils as utils_pkg
 
     expected = set(_HELPER_NAMES)
@@ -45,8 +32,8 @@ def test_integration_all_names_in_module_all():
     assert set(val_mod.__all__) == expected
     for name in expected:
         assert callable(getattr(val_mod, name))
-    # Subpackage shortcut: skordinal.utils re-exports the same surface.
-    assert set(utils_pkg.__all__) == expected
+    # Subpackage shortcut: skordinal.utils re-exports these among others.
+    assert expected <= set(utils_pkg.__all__)
     for name in expected:
         assert getattr(utils_pkg, name) is getattr(val_mod, name)
 
@@ -125,73 +112,3 @@ def test_vt_invalid_raises(thresholds, match):
     """Each invalid threshold vector raises ValueError with a specific message."""
     with pytest.raises(ValueError, match=match):
         validate_thresholds(thresholds)
-
-
-def test_cmp_valid_input_output_values():
-    """Output values, row sums, and non-negativity for a valid monotonic input."""
-    cumproba = np.array([[0.2, 0.5, 0.9]])
-    class_proba = check_monotonic_probabilities(cumproba)
-    assert_allclose(class_proba, [[0.2, 0.3, 0.4, 0.1]], atol=1e-12)
-    assert_allclose(class_proba.sum(axis=1), 1.0, atol=1e-12)
-    assert np.all(class_proba >= 0.0)
-
-
-def test_cmp_repair_true_repairs_violation():
-    """Monotonicity violations are repaired silently when ``repair=True``."""
-    cumproba = np.array([[0.5, 0.3, 0.9]])
-    class_proba = check_monotonic_probabilities(cumproba, repair=True)
-    assert_allclose(class_proba.sum(axis=1), 1.0, atol=1e-12)
-    assert np.all(class_proba >= 0.0)
-
-
-def test_cmp_repair_false_valid_input():
-    """``repair=False`` happy path with multiple rows."""
-    cumproba = np.array([[0.2, 0.5, 0.9], [0.1, 0.4, 0.8]])
-    class_proba = check_monotonic_probabilities(cumproba, repair=False)
-    assert class_proba.shape == (2, 4)
-    assert_allclose(class_proba[0], [0.2, 0.3, 0.4, 0.1], atol=1e-12)
-    assert_allclose(class_proba.sum(axis=1), 1.0, atol=1e-12)
-    assert np.all(class_proba >= 0.0)
-
-
-def test_cmp_repair_false_raises_on_violation():
-    """A non-monotonic row raises ValueError when ``repair=False``."""
-    with pytest.raises(ValueError, match=r"cumproba rows must be non-decreasing"):
-        check_monotonic_probabilities(np.array([[0.5, 0.3]]), repair=False)
-
-
-@pytest.mark.parametrize("repair", [True, False])
-def test_cmp_k2_single_column(repair):
-    """K=2 (single input column) produces a 2-column output for both branches."""
-    cumproba = np.array([[0.3], [0.7]])
-    class_proba = check_monotonic_probabilities(cumproba, repair=repair)
-    assert class_proba.shape == (2, 2)
-    assert_allclose(class_proba[0], [0.3, 0.7], atol=1e-12)
-    assert_allclose(class_proba.sum(axis=1), 1.0, atol=1e-12)
-
-
-@pytest.mark.parametrize(
-    "cumproba",
-    [np.array([[-0.1, 0.5]]), np.array([[0.5, 1.2]])],
-    ids=["negative-entry", "above-one-entry"],
-)
-def test_cmp_out_of_range_raises(cumproba):
-    """Entries outside [0, 1] raise ValueError."""
-    with pytest.raises(ValueError, match=r"cumproba entries must lie in \[0, 1\]"):
-        check_monotonic_probabilities(cumproba)
-
-
-@pytest.mark.parametrize(
-    "cumproba, mass_index",
-    [
-        (np.array([[0.0, 0.0, 0.0]]), -1),
-        (np.array([[1.0, 1.0, 1.0]]), 0),
-    ],
-    ids=["all-zero-row", "all-one-row"],
-)
-def test_cmp_special_rows_concentrate_mass(cumproba, mass_index):
-    """All-zero and all-one rows place all mass on a single class."""
-    class_proba = check_monotonic_probabilities(cumproba)
-    assert_allclose(class_proba.sum(axis=1), 1.0, atol=1e-12)
-    assert np.all(class_proba >= 0.0)
-    assert class_proba[0, mass_index] == pytest.approx(1.0)
