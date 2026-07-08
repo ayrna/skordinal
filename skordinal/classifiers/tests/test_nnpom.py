@@ -5,6 +5,7 @@ import inspect
 import numpy as np
 import pandas as pd
 import pytest
+from scipy.optimize import check_grad
 from sklearn.exceptions import NotFittedError
 
 from skordinal.classifiers import NNPOM
@@ -216,3 +217,34 @@ def test_fit_no_nan_with_near_zero_probabilities():
     assert np.isfinite(clf.theta2_).all()
     assert np.isfinite(clf.thresholds_).all()
     assert set(clf.predict(X_reg)).issubset(set(clf.classes_))
+
+
+def test_nnpom_cost_function_gradient_matches_finite_difference():
+    """The analytic cost gradient matches a finite-difference approximation."""
+    rng = np.random.default_rng(0)
+    n_samples, n_features, n_hidden, n_classes = 30, 4, 3, 3
+    X_data = rng.standard_normal((n_samples, n_features))
+    y_encoded = rng.integers(0, n_classes, size=n_samples)
+    Y = np.eye(n_classes)[y_encoded]
+
+    n_theta1 = n_hidden * (n_features + 1)
+    n_theta2 = n_hidden
+    n_thresholds = n_classes - 1
+    x0 = rng.standard_normal(n_theta1 + n_theta2 + n_thresholds) * 0.1
+
+    clf = NNPOM()
+
+    def cost(nn_params):
+        J, _ = clf._nnpom_cost_function(
+            nn_params, n_features, n_hidden, n_classes, X_data, Y, 0.01
+        )
+        return J
+
+    def grad(nn_params):
+        _, g = clf._nnpom_cost_function(
+            nn_params, n_features, n_hidden, n_classes, X_data, Y, 0.01
+        )
+        return g
+
+    err = check_grad(cost, grad, x0)
+    assert err < 1e-4

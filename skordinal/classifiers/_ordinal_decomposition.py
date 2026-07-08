@@ -12,6 +12,7 @@ from sklearn.utils.validation import check_is_fitted
 
 from skordinal.model_selection import load_classifier
 from skordinal.utils._sklearn_compat import validate_data
+from skordinal.utils.extmath import losses_to_proba
 from skordinal.utils.validation import check_ordinal_targets
 
 
@@ -294,11 +295,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
             # Transforming from binary problems to the original problem
             losses = self._exponential_loss(predictions).astype(float)
-            eps = np.finfo(float).tiny
-            scores = 1.0 / (losses + eps)
-            scores -= scores.max(axis=1, keepdims=True)
-            y_proba = np.exp(scores)
-            y_proba /= y_proba.sum(axis=1, keepdims=True)
+            y_proba = losses_to_proba(losses)
 
         elif decision_method == "hinge_loss":
             # Scaling predictions from [0,1] range to [-1,1]
@@ -306,11 +303,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
             # Transforming from binary problems to the original problem
             losses = self._hinge_loss(predictions).astype(float)
-            eps = np.finfo(float).tiny
-            scores = 1.0 / (losses + eps)
-            scores -= scores.max(axis=1, keepdims=True)
-            y_proba = np.exp(scores)
-            y_proba /= y_proba.sum(axis=1, keepdims=True)
+            y_proba = losses_to_proba(losses)
 
         elif decision_method == "logarithmic_loss":
             # Scaling predictions from [0,1] range to [-1,1]
@@ -318,11 +311,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
             # Transforming from binary problems to the original problem
             losses = self._logarithmic_loss(predictions).astype(float)
-            eps = np.finfo(float).tiny
-            scores = 1.0 / (losses + eps)
-            scores -= scores.max(axis=1, keepdims=True)
-            y_proba = np.exp(scores)
-            y_proba /= y_proba.sum(axis=1, keepdims=True)
+            y_proba = losses_to_proba(losses)
 
         elif decision_method == "frank_hall":
             # Transforming from binary problems to the original problem

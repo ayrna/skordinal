@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
-from sklearn.isotonic import isotonic_regression
 from sklearn.utils import check_array
 from sklearn.utils.multiclass import check_classification_targets
 
 __all__ = [
     "check_ordinal_targets",
     "validate_thresholds",
-    "check_monotonic_probabilities",
 ]
 
 
@@ -128,99 +126,3 @@ def validate_thresholds(thresholds: ArrayLike) -> None:
         raise ValueError(
             f"thresholds must be strictly increasing, got differences {diffs!r}"
         )
-
-
-def check_monotonic_probabilities(
-    cumproba: ArrayLike,
-    repair: bool = True,
-) -> NDArray[np.float64]:
-    """Convert cumulative class probabilities to class-wise probabilities.
-
-    Takes a matrix of cumulative probabilities ``P(Y <= k | x)`` for
-    ``k = 1, ..., n_classes - 1`` and returns a matrix of class-wise
-    probabilities ``P(Y = k | x)`` for ``k = 1, ..., n_classes``.
-
-    When ``repair=True``, monotonicity violations in each row are
-    silently fixed via isotonic regression before differencing. When
-    ``repair=False``, any non-monotonic row triggers a ``ValueError``.
-
-    Special row behaviors:
-
-    - An all-zero row becomes ``[0, 0, ..., 1]``; the final class absorbs
-      all probability mass.
-    - An all-one row becomes ``[1, 0, ..., 0]``; the first class absorbs
-      all probability mass.
-
-    Parameters
-    ----------
-    cumproba : array-like of shape (n_samples, n_classes - 1)
-        Cumulative probabilities. Each row should be a non-decreasing
-        sequence of values in ``[0, 1]``.
-
-    repair : bool, default=True
-        If ``True``, apply isotonic regression row-wise to enforce
-        monotonicity before differencing, then clip and renormalise.
-        If ``False``, raise ``ValueError`` when any row is non-monotonic.
-
-    Returns
-    -------
-    class_proba : ndarray of shape (n_samples, n_classes), dtype np.float64
-        Class-wise probabilities. Each row is non-negative and sums to
-        exactly ``1.0``.
-
-    Raises
-    ------
-    ValueError
-        If ``cumproba`` is not 2-D, has zero columns, contains NaN / inf
-        values, contains values outside ``[0, 1]``, or — when
-        ``repair=False`` — has any row whose entries are not
-        non-decreasing. Upstream ``ValueError`` from ``check_array``
-        (e.g. NaN inputs) is propagated unchanged.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> from skordinal.utils.validation import check_monotonic_probabilities
-    >>> cumproba = np.array([[0.2, 0.5, 0.9]])
-    >>> check_monotonic_probabilities(cumproba)
-    array([[0.2, 0.3, 0.4, 0.1]])
-    """
-    cumproba = check_array(
-        cumproba, ensure_2d=True, dtype=np.float64, input_name="cumproba"
-    )
-
-    if cumproba.min() < 0.0 or cumproba.max() > 1.0:
-        raise ValueError(
-            f"cumproba entries must lie in [0, 1], got range "
-            f"[{cumproba.min():.4g}, {cumproba.max():.4g}]"
-        )
-
-    n_samples, n_thresholds = cumproba.shape
-    class_proba = np.empty((n_samples, n_thresholds + 1), dtype=np.float64)
-
-    if not repair:
-        diffs = np.diff(cumproba, axis=1)
-        if (diffs < 0.0).any():
-            raise ValueError(
-                f"cumproba rows must be non-decreasing, got minimum diff "
-                f"{diffs.min():.4g}"
-            )
-        class_proba[:, 0] = cumproba[:, 0]
-        class_proba[:, 1:-1] = diffs
-        class_proba[:, -1] = 1.0 - cumproba[:, -1]
-        return class_proba
-
-    for i in range(n_samples):
-        row_iso = isotonic_regression(
-            cumproba[i], y_min=0.0, y_max=1.0, increasing=True
-        )
-        class_proba[i, 0] = row_iso[0]
-        class_proba[i, 1:-1] = np.diff(row_iso)
-        class_proba[i, -1] = 1.0 - row_iso[-1]
-
-    np.clip(class_proba, 0.0, None, out=class_proba)
-    row_sums = class_proba.sum(axis=1, keepdims=True)
-    # Defensive: y_min=0 prevents all-zero rows; clip is a safety net.
-    row_sums = np.where(row_sums == 0.0, 1.0, row_sums)
-    class_proba /= row_sums
-    return class_proba
