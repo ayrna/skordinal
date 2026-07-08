@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +11,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
+from sklearn.metrics import confusion_matrix
 
 
 @dataclass(frozen=True)
@@ -36,8 +37,9 @@ class ExperimentResult:
         was available.
 
     y_proba : ndarray of shape (n_test_samples, n_classes) or None
-        Class probability estimates on the test partition. ``None`` if the
-        estimator does not support ``predict_proba``.
+        Class probability estimates on the test partition, columns ordered
+        by ``best_model.classes_``. ``None`` when no test partition is
+        available or the estimator cannot provide probabilities.
 
     train_metrics : dict
         Metric values computed on the training partition, including timing.
@@ -52,12 +54,30 @@ class ExperimentResult:
         Fitted estimator selected during cross-validation or direct fit.
 
     train_true_y : ndarray of shape (n_train_samples,) or None, default=None
-        True class labels for the training partition. When provided, predictions
-        CSV files include a ``y_true`` column alongside ``y_pred``.
+        True class labels for the training partition, used to derive the
+        ``Target`` column of the training predictions file.
 
     test_true_y : ndarray of shape (n_test_samples,) or None, default=None
-        True class labels for the test partition. When provided, the test
-        predictions CSV file includes a ``y_true`` column alongside ``y_pred``.
+        True class labels for the test partition, used to derive the
+        ``Target`` column of the test predictions file.
+
+    train_index : ndarray of shape (n_train_samples,) or None, default=None
+        Zero-based positions of the training samples in the original,
+        unsplit dataset array. Written as the ``Pattern ID`` column of the
+        training predictions file. ``None`` falls back to a partition-local
+        ``range(n_train_samples)`` at write time.
+
+    test_index : ndarray of shape (n_test_samples,) or None, default=None
+        Zero-based positions of the test samples in the original, unsplit
+        dataset array. Written as the ``Pattern ID`` column of the test
+        predictions file. ``None`` falls back to a partition-local
+        ``range(n_test_samples)`` at write time.
+
+    train_y_proba : ndarray of shape (n_train_samples, n_classes) or None, \
+            default=None
+        Class-probability estimates on the training partition, columns
+        ordered by ``best_model.classes_``. ``None`` when the estimator
+        cannot provide probabilities.
 
     """
 
@@ -73,6 +93,64 @@ class ExperimentResult:
     best_model: BaseEstimator
     train_true_y: np.ndarray | None = None
     test_true_y: np.ndarray | None = None
+    train_index: np.ndarray | None = None
+    test_index: np.ndarray | None = None
+    train_y_proba: np.ndarray | None = None
+
+
+def _format_proba_column(proba: np.ndarray) -> list[str]:
+    """Render probability rows as single-line ``"[p0, p1, ...]"`` cells."""
+    return [
+        "[" + ", ".join(repr(float(p)) for p in row) + "]" for row in np.asarray(proba)
+    ]
+
+
+def _write_split_files(
+    seed_dir: Path,
+    split: str,
+    *,
+    index: np.ndarray | None,
+    true_y: np.ndarray,
+    predicted_y: np.ndarray,
+    proba: np.ndarray | None,
+    classes: np.ndarray,
+    resample_id: int,
+) -> None:
+    """Encode one split's labels and write its per-seed output files."""
+    if not np.isin(true_y, classes).all():
+        raise ValueError(
+            f"'{split}' true labels contain classes unknown to the fitted model."
+        )
+    pattern_id = index if index is not None else np.arange(predicted_y.shape[0])
+    target = np.searchsorted(classes, true_y)
+
+    columns: dict[str, object] = {"Pattern ID": pattern_id, "Target": target}
+    if proba is not None:
+        if proba.shape != (true_y.shape[0], classes.size):
+            raise ValueError(
+                f"'{split}' probabilities have shape {proba.shape}; expected "
+                f"({true_y.shape[0]}, {classes.size})."
+            )
+        columns["Prediction probabilities"] = _format_proba_column(proba)
+        # Derive the prediction as the argmax index of the probabilities
+        prediction = np.argmax(proba, axis=1)
+    else:
+        if not np.isin(predicted_y, classes).all():
+            raise ValueError(
+                f"'{split}' predicted labels contain classes unknown to the "
+                "fitted model."
+            )
+        prediction = np.searchsorted(classes, predicted_y)
+    columns["Prediction"] = prediction
+    pd.DataFrame(columns).to_csv(seed_dir / f"{split}_predictions.csv", index=False)
+
+    cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
+    body = np.array2string(
+        cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
+    )
+    (seed_dir / f"{split}_confusion_matrix.txt").write_text(
+        f"Seed {resample_id}\n{'=' * 21}\n{body}\n", encoding="utf-8"
+    )
 
 
 class Results:
@@ -98,15 +176,32 @@ class Results:
         <classifier_name>/
             <dataset_name>/
                 report.csv
-                params.json
-                predictions/
-                    train_<resample_id>.csv
-                    test_<resample_id>.csv
+                hyperparameter_configuration.csv
+                predictions_by_seed/
+                    seed_<resample_id>/
+                        train_predictions.csv
+                        test_predictions.csv
+                        train_confusion_matrix.txt
+                        test_confusion_matrix.txt
                 models/
                     <resample_id>.joblib
 
-    The root-level ``train_summary.csv`` and ``test_summary.csv`` files are
-    written by ``save_summary`` and are absent until it is called.
+    Each ``*_predictions.csv`` has columns ``Pattern ID``, ``Target``, an
+    optional ``Prediction probabilities`` column (present only when
+    probability estimates are available), and ``Prediction``. ``Target``
+    and ``Prediction`` are zero-based class indices into
+    ``best_model.classes_``; ``Pattern ID`` is the sample's position in the
+    original dataset array, or its position within the partition when no
+    sample indices were recorded. When probabilities are present,
+    ``Prediction`` is their argmax index, which may differ from the
+    estimator's own decision rule reflected in ``report.csv``. Each
+    ``*_confusion_matrix.txt`` holds the confusion matrix of the same
+    file's ``Target`` and ``Prediction`` columns.
+    ``hyperparameter_configuration.csv`` records the best parameters per
+    seed with the ``clf__`` pipeline prefix stripped; its ``Seed`` column
+    always holds the resample identifier. The root-level
+    ``train_summary.csv`` and ``test_summary.csv`` files are written by
+    ``save_summary`` and are absent until it is called.
 
     """
 
@@ -119,7 +214,7 @@ class Results:
         *,
         save_model: bool = True,
     ) -> None:
-        """Store information obtained from the run of one partition.
+        """Write per-seed files, the report row, hyperparameters and model.
 
         Parameters
         ----------
@@ -131,6 +226,15 @@ class Results:
 
         Raises
         ------
+        ValueError
+            If ``result`` lacks the true labels required for the ``Target``
+            column (``train_true_y``, or ``test_true_y`` when test
+            predictions are present), if a true or predicted label is not
+            one of ``best_model.classes_``, or if a probability matrix does
+            not hold one row per sample and one column per class. Files
+            already written for a preceding split are left in place;
+            nothing else is recorded for the partition.
+
         OSError
             If the folder cannot be created.
 
@@ -141,49 +245,75 @@ class Results:
         >>> results.save(result)  # doctest: +SKIP
 
         """
-        base_dir, models_dir, pred_dir = self._ensure_dirs(
-            result.classifier_name, result.dataset_name, save_model=save_model
+        if result.train_true_y is None:
+            raise ValueError(
+                "'result.train_true_y' is required to write the 'Target' "
+                "column of the training predictions file."
+            )
+        if result.test_predicted_y is not None and result.test_true_y is None:
+            raise ValueError(
+                "'result.test_true_y' is required to write the 'Target' "
+                "column of the test predictions file."
+            )
+
+        base_dir, models_dir, seed_dir = self._ensure_dirs(
+            result.classifier_name,
+            result.dataset_name,
+            result.resample_id,
+            save_model=save_model,
         )
 
-        # Write model and prediction CSVs
+        classes = np.asarray(result.best_model.classes_)
+        _write_split_files(
+            seed_dir,
+            "train",
+            index=result.train_index,
+            true_y=result.train_true_y,
+            predicted_y=result.train_predicted_y,
+            proba=result.train_y_proba,
+            classes=classes,
+            resample_id=result.resample_id,
+        )
+        if result.test_predicted_y is not None:
+            assert result.test_true_y is not None
+            _write_split_files(
+                seed_dir,
+                "test",
+                index=result.test_index,
+                true_y=result.test_true_y,
+                predicted_y=result.test_predicted_y,
+                proba=result.y_proba,
+                classes=classes,
+                resample_id=result.resample_id,
+            )
+
         if save_model:
             joblib.dump(result.best_model, models_dir / f"{result.resample_id}.joblib")
-        train_df = pd.DataFrame({"y_pred": result.train_predicted_y})
-        if result.train_true_y is not None:
-            train_df.insert(0, "y_true", result.train_true_y)
-        train_df.to_csv(pred_dir / f"train_{result.resample_id}.csv", index=False)
-        if result.test_predicted_y is not None:
-            test_df = pd.DataFrame({"y_pred": result.test_predicted_y})
-            if result.test_true_y is not None:
-                test_df.insert(0, "y_true", result.test_true_y)
-            test_df.to_csv(pred_dir / f"test_{result.resample_id}.csv", index=False)
 
         self._append_report_row(result, base_dir)
-
-        # Upsert params entry in params.json
-        json_path = base_dir / "params.json"
-        params: dict[str, Any] = {}
-        if json_path.is_file():
-            params = json.loads(json_path.read_text(encoding="utf-8"))
-        params[str(result.resample_id)] = dict(result.best_params)
-        json_path.write_text(json.dumps(params, indent=2), encoding="utf-8")
+        self._upsert_hyperparameters(result, base_dir)
 
     def _ensure_dirs(
-        self, classifier_name: str, dataset_name: str, *, save_model: bool
+        self,
+        classifier_name: str,
+        dataset_name: str,
+        resample_id: int,
+        *,
+        save_model: bool,
     ) -> tuple[Path, Path, Path]:
-        """Create required sub-directories and return ``(base_dir, models_dir, pred_dir)``."""
+        """Create required sub-directories and return their paths."""
         base = self._experiment_folder / classifier_name / dataset_name
-        pred_dir = base / "predictions"
+        seed_dir = base / "predictions_by_seed" / f"seed_{resample_id}"
         models_dir = base / "models"
         try:
-            pred_dir.mkdir(parents=True, exist_ok=True)
+            seed_dir.mkdir(parents=True, exist_ok=True)
             if save_model:
                 models_dir.mkdir(exist_ok=True)
         except OSError:
             raise OSError(
                 f"Could not create folder {base} (or subfolders) to store results."
             )
-        return base, models_dir, pred_dir
+        return base, models_dir, seed_dir
 
     def _append_report_row(self, result: ExperimentResult, base_dir: Path) -> None:
         """Append one metrics row to ``report.csv``."""
@@ -196,6 +326,26 @@ class Results:
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
         df.to_csv(csv_path)
+
+    def _upsert_hyperparameters(self, result: ExperimentResult, base_dir: Path) -> None:
+        """Upsert one seed's row in the hyperparameter configuration CSV."""
+        row: dict[str, Any] = {
+            k.removeprefix("clf__"): v for k, v in result.best_params.items()
+        }
+        # Set Seed last so no same-named parameter can shadow the upsert key
+        row["Seed"] = result.resample_id
+
+        csv_path = base_dir / "hyperparameter_configuration.csv"
+        df = pd.DataFrame([row])
+        if csv_path.is_file():
+            existing = pd.read_csv(csv_path)
+            existing = existing[existing["Seed"] != result.resample_id]
+            df = pd.concat([existing, df], ignore_index=True)
+
+        columns = ["Seed"] + sorted(c for c in df.columns if c != "Seed")
+        df = df[columns].sort_values("Seed").reset_index(drop=True)
+        # Restore integer dtypes upcast to float by the NaN column union
+        df.convert_dtypes().to_csv(csv_path, index=False)
 
     @classmethod
     def load(cls, experiment_folder: str | Path) -> Results:

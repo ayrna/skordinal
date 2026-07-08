@@ -307,6 +307,8 @@ def test_partition_bunch_contract(tmp_path):
         "target_names",
         "dataset_name",
         "resample_id",
+        "train_index",
+        "test_index",
         "n_classes",
         "DESCR",
     }
@@ -327,6 +329,31 @@ def test_partition_bunch_contract(tmp_path):
     assert bunch.resample_id == 0
     # DESCR is a non-empty string
     assert isinstance(bunch.DESCR, str) and len(bunch.DESCR) > 0
+
+
+def test_partition_index_contract():
+    """train_index/test_index are integer, ascending, disjoint and complete."""
+    for bunch in load_partitions("era", resamples=3):
+        for index, data in (
+            (bunch.train_index, bunch.data_train),
+            (bunch.test_index, bunch.data_test),
+        ):
+            assert isinstance(index, np.ndarray)
+            assert np.issubdtype(index.dtype, np.integer)
+            assert len(index) == data.shape[0]
+            assert np.all(np.diff(index) > 0)
+        n_total = bunch.data_train.shape[0] + bunch.data_test.shape[0]
+        combined = np.concatenate([bunch.train_index, bunch.test_index])
+        assert np.array_equal(np.sort(combined), np.arange(n_total))
+
+
+def test_partition_index_matches_source_rows():
+    """train_index/test_index select the same rows as data_train/test."""
+    raw = load_dataset("era")
+    bunches = list(load_partitions("era", resamples=3))
+    for bunch in bunches:
+        np.testing.assert_array_equal(raw.data[bunch.train_index], bunch.data_train)
+        np.testing.assert_array_equal(raw.data[bunch.test_index], bunch.data_test)
 
 
 def _setup_missing_csv(tmp_path):

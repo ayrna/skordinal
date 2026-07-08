@@ -44,7 +44,8 @@ def csv_ds_dir(tmp_path):
     rng = np.random.default_rng(7)
     n = 60
     X = rng.standard_normal((n, 4))
-    y = np.repeat([0, 1, 2], n // 3)
+    # Interleave classes so both mask halves contain every class
+    y = np.tile([0, 1, 2], n // 3)
     rows = np.hstack([X, y.reshape(-1, 1)])
     np.savetxt(tmp_path / "smallds.csv", rows, delimiter=",", fmt="%.6f")
     mask0 = [True] * (n // 2) + [False] * (n // 2)
@@ -188,17 +189,18 @@ def test_run_and_summarize_bundled_dataset(tmp_path):
     df = pd.read_csv(pair_dir / "report.csv", index_col=0)
     assert df.shape[0] == 3
 
-    assert (pair_dir / "params.json").is_file()
+    assert (pair_dir / "hyperparameter_configuration.csv").is_file()
+    assert not (pair_dir / "params.json").exists()
 
-    pred_dir = pair_dir / "predictions"
-    train_preds = sorted(pred_dir.glob("train_*.csv"))
-    test_preds = sorted(pred_dir.glob("test_*.csv"))
+    pred_dir = pair_dir / "predictions_by_seed"
+    train_preds = sorted(pred_dir.glob("seed_*/train_predictions.csv"))
+    test_preds = sorted(pred_dir.glob("seed_*/test_predictions.csv"))
     assert len(train_preds) == 3
     assert len(test_preds) == 3
 
-    # resample_id stems on prediction filenames are ints (0, 1, 2)
-    ids_from_files = sorted(int(f.stem.split("_")[1]) for f in train_preds)
-    assert ids_from_files == [0, 1, 2]
+    # Check per-seed directory names carry the resample_id (0, 1, 2)
+    ids_from_dirs = sorted(int(f.parent.name.split("_")[1]) for f in train_preds)
+    assert ids_from_dirs == [0, 1, 2]
 
     # report.csv must contain one <metric>_train and one <metric>_test column
     assert "mean_absolute_error_train" in df.columns
@@ -269,12 +271,16 @@ def test_run_mask_path_train_test_sizes_match_masks(tmp_path, csv_ds_dir):
     )
     b.run()
 
-    pred_dir = results_dir / "SVM" / "smallds" / "predictions"
+    seed_dir = results_dir / "SVM" / "smallds" / "predictions_by_seed" / "seed_0"
     # Each mask splits n=60 half-and-half: 30 train / 30 test
-    train_0 = pd.read_csv(pred_dir / "train_0.csv")
-    test_0 = pd.read_csv(pred_dir / "test_0.csv")
+    train_0 = pd.read_csv(seed_dir / "train_predictions.csv")
+    test_0 = pd.read_csv(seed_dir / "test_predictions.csv")
     assert len(train_0) == 30
     assert len(test_0) == 30
+
+    # Check Pattern ID carries the original row positions defined by mask 0
+    np.testing.assert_array_equal(train_0["Pattern ID"].values, np.arange(30))
+    np.testing.assert_array_equal(test_0["Pattern ID"].values, np.arange(30, 60))
 
 
 def test_run_resamples_below_two_raises(tmp_path):

@@ -455,6 +455,12 @@ def load_partitions(
         resample_id : int
             Identifier of the current resample, taken from
             ``range(resamples)`` or from the supplied list of ids.
+        train_index : ndarray of shape (n_train,)
+            0-based indices of the training rows within the original
+            dataset array.
+        test_index : ndarray of shape (n_test,)
+            0-based indices of the test rows within the original
+            dataset array.
         n_classes : int
             Number of ordinal classes.
         DESCR : str
@@ -503,6 +509,8 @@ def load_partitions(
                 target_names=target_names,
                 dataset_name=str(name),
                 resample_id=int(resample_id),
+                train_index=np.flatnonzero(train_mask),
+                test_index=np.flatnonzero(~train_mask),
                 n_classes=n_classes,
                 DESCR=(
                     f"{name} resample {resample_id}: "

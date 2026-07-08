@@ -1,14 +1,24 @@
 """Tests for the Results class."""
 
-import json
-
 import joblib
 import numpy as np
 import numpy.testing as npt
 import pandas as pd
+import pytest
+from sklearn.metrics import confusion_matrix
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
+from skordinal.experiments._results import _format_proba_column, _write_split_files
+
+
+def _fitted_svc(classes=(1, 2, 3), probability=False):
+    """Return an SVC fitted so that ``classes_`` equals ``classes``."""
+    labels = np.asarray(classes)
+    rng = np.random.default_rng(0)
+    features = rng.standard_normal((labels.size * 4, 4))
+    targets = np.tile(labels, 4)
+    return SVC(probability=probability).fit(features, targets)
 
 
 def _make_result(
@@ -19,13 +29,19 @@ def _make_result(
     train_metrics: dict,
     test_metrics: dict,
     train_predicted_y: np.ndarray,
-    test_predicted_y: np.ndarray,
+    test_predicted_y: np.ndarray | None,
     estimator=None,
     train_true_y=None,
     test_true_y=None,
+    train_index=None,
+    test_index=None,
 ) -> ExperimentResult:
     if estimator is None:
-        estimator = SVC()
+        estimator = _fitted_svc()
+    if train_true_y is None:
+        train_true_y = train_predicted_y
+    if test_true_y is None and test_predicted_y is not None:
+        test_true_y = test_predicted_y
     return ExperimentResult(
         dataset_name=dataset,
         classifier_name=configuration,
@@ -39,6 +55,8 @@ def _make_result(
         best_model=estimator,
         train_true_y=train_true_y,
         test_true_y=test_true_y,
+        train_index=train_index,
+        test_index=test_index,
     )
 
 
@@ -53,8 +71,8 @@ def _make_pair_csv(base, classifier, dataset, rows):
 
 
 def test_save(tmp_path):
-    """Two partitions produce the expected on-disk layout: report.csv, params.json, models, predictions."""
-    estimator = SVC()
+    """Two partitions produce the full per-seed on-disk layout."""
+    estimator = _fitted_svc()
     results = Results(tmp_path)
 
     result_0 = _make_result(
@@ -89,56 +107,66 @@ def test_save(tmp_path):
     assert df.shape == (2, 4)
     assert list(df.columns) == ["ccr_train", "mae_train", "ccr_test", "mae_test"]
 
-    params = json.loads((pair_dir / "params.json").read_text())
-    assert params["0"] == {"C": 0.1, "gamma": 1}
-    assert params["1"] == {"C": 1, "gamma": 1}
+    assert not (pair_dir / "params.json").exists()
+    hyper = pd.read_csv(pair_dir / "hyperparameter_configuration.csv")
+    assert list(hyper.columns) == ["Seed", "C", "gamma"]
+    row_0 = hyper[hyper["Seed"] == 0].iloc[0]
+    assert row_0["C"] == 0.1
+    assert row_0["gamma"] == 1
+    row_1 = hyper[hyper["Seed"] == 1].iloc[0]
+    assert row_1["C"] == 1
+    assert row_1["gamma"] == 1
 
     models_dir = pair_dir / "models"
     assert (models_dir / "0.joblib").is_file()
     assert (models_dir / "1.joblib").is_file()
     assert isinstance(joblib.load(models_dir / "0.joblib"), SVC)
 
-    pred_dir = pair_dir / "predictions"
-    train_0 = pd.read_csv(pred_dir / "train_0.csv")
-    assert list(train_0.columns) == ["y_pred"]
-    npt.assert_array_equal(train_0["y_pred"].values, result_0.train_predicted_y)
+    # Check the old flat predictions/ directory is gone in the new layout
+    assert not (pair_dir / "predictions").exists()
 
-    test_0 = pd.read_csv(pred_dir / "test_0.csv")
-    assert list(test_0.columns) == ["y_pred"]
-    npt.assert_array_equal(test_0["y_pred"].values, result_0.test_predicted_y)
+    seed_dir = pair_dir / "predictions_by_seed" / "seed_0"
+    train_0 = pd.read_csv(seed_dir / "train_predictions.csv")
+    assert list(train_0.columns) == ["Pattern ID", "Target", "Prediction"]
+
+    test_0 = pd.read_csv(seed_dir / "test_predictions.csv")
+    assert list(test_0.columns) == ["Pattern ID", "Target", "Prediction"]
 
 
-def test_save_with_true_labels(tmp_path):
-    """When true labels are provided, y_true appears first in prediction CSVs."""
-    train_true = np.array([1, 2, 3, 1, 2])
-    test_true = np.array([1, 2, 3])
+def test_save_encodes_labels_zero_based(tmp_path):
+    """Target/Prediction are searchsorted indices into 1-based classes_."""
+    estimator = _fitted_svc()
+    npt.assert_array_equal(estimator.classes_, np.array([1, 2, 3]))
+
+    test_true = np.array([1, 2, 3, 1])
+    test_pred = np.array([2, 2, 3, 1])
     result = _make_result(
         partition=0,
         dataset="toy",
         configuration="clf",
         best_params={},
-        train_metrics={"acc_train": 0.8},
-        test_metrics={"acc_test": 0.7},
-        train_predicted_y=np.array([1, 2, 2, 1, 2]),
-        test_predicted_y=np.array([1, 2, 2]),
-        train_true_y=train_true,
+        train_metrics={"acc_train": 1.0},
+        test_metrics={"acc_test": 1.0},
+        train_predicted_y=np.array([2, 2, 3]),
+        test_predicted_y=test_pred,
+        estimator=estimator,
+        train_true_y=np.array([1, 2, 3]),
         test_true_y=test_true,
     )
     Results(tmp_path).save(result, save_model=False)
 
-    pred_dir = tmp_path / "clf" / "toy" / "predictions"
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    train_df = pd.read_csv(seed_dir / "train_predictions.csv")
+    npt.assert_array_equal(train_df["Target"].values, np.array([0, 1, 2]))
+    npt.assert_array_equal(train_df["Prediction"].values, np.array([1, 1, 2]))
 
-    train_df = pd.read_csv(pred_dir / "train_0.csv")
-    assert list(train_df.columns) == ["y_true", "y_pred"]
-    npt.assert_array_equal(train_df["y_true"].values, train_true)
-
-    test_df = pd.read_csv(pred_dir / "test_0.csv")
-    assert list(test_df.columns) == ["y_true", "y_pred"]
-    npt.assert_array_equal(test_df["y_true"].values, test_true)
+    test_df = pd.read_csv(seed_dir / "test_predictions.csv")
+    npt.assert_array_equal(test_df["Target"].values, np.array([0, 1, 2, 0]))
+    npt.assert_array_equal(test_df["Prediction"].values, np.array([1, 1, 2, 0]))
 
 
 def test_save_model_false(tmp_path):
-    """save_model=False must not create a models/ folder."""
+    """save_model=False writes the seed dir but no models/ folder."""
     result = _make_result(
         partition=0,
         dataset="toy",
@@ -153,32 +181,108 @@ def test_save_model_false(tmp_path):
 
     pair_dir = tmp_path / "conf_1" / "toy"
     assert not (pair_dir / "models").exists()
-    assert (pair_dir / "predictions").exists()
+    assert (pair_dir / "predictions_by_seed" / "seed_0").exists()
 
 
-def test_save_proba_not_written_to_disk(tmp_path):
-    """y_proba is stored in ExperimentResult but not written to disk."""
-    y_proba = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3]])
+def test_save_proba_written_to_disk(tmp_path):
+    """Probability columns are persisted in both prediction files."""
+    rng = np.random.default_rng(0)
+    estimator = _fitted_svc(probability=True)
+    q = estimator.classes_.size
+
+    raw_train = rng.random((3, q))
+    raw_test = rng.random((4, q))
+    train_y_proba = raw_train / raw_train.sum(axis=1, keepdims=True)
+    y_proba = raw_test / raw_test.sum(axis=1, keepdims=True)
     result = ExperimentResult(
         dataset_name="toy",
         classifier_name="conf_1",
         resample_id=0,
-        train_predicted_y=np.array([1, 2]),
-        test_predicted_y=np.array([1, 2]),
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=np.array([1, 2, 3, 1]),
         y_proba=y_proba,
         train_metrics={"ccr_train": 0.9},
         test_metrics={"ccr_test": 0.8},
         best_params={"C": 1},
-        best_model=SVC(),
+        best_model=estimator,
+        train_true_y=np.array([1, 2, 3]),
+        test_true_y=np.array([1, 2, 3, 1]),
+        train_y_proba=train_y_proba,
     )
     Results(tmp_path).save(result, save_model=False)
 
-    pred_dir = tmp_path / "conf_1" / "toy" / "predictions"
-    assert list(pred_dir.glob("proba*")) == []
+    seed_dir = tmp_path / "conf_1" / "toy" / "predictions_by_seed" / "seed_0"
+    for name, proba in (
+        ("train_predictions.csv", train_y_proba),
+        ("test_predictions.csv", y_proba),
+    ):
+        df = pd.read_csv(seed_dir / name)
+        assert "Prediction probabilities" in df.columns
+        assert set(df["Target"]) <= set(range(q))
+        # Check Prediction equals the argmax index of the probabilities
+        npt.assert_array_equal(df["Prediction"].values, np.argmax(proba, axis=1))
+        for cell, source in zip(df["Prediction probabilities"], proba):
+            parsed = np.fromstring(cell.strip("[]"), sep=",")
+            assert parsed.shape == (q,)
+            npt.assert_allclose(parsed, source)
+            npt.assert_allclose(parsed.sum(), 1.0, atol=1e-8)
 
 
-def test_save_no_test_partition(tmp_path):
-    """When test_predicted_y is None, no test CSV is written."""
+def test_save_requires_true_labels(tmp_path):
+    """save raises ValueError when a split lacks its true labels."""
+    base = dict(
+        dataset_name="toy",
+        classifier_name="clf",
+        resample_id=0,
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=np.array([1, 2]),
+        y_proba=None,
+        train_metrics={},
+        test_metrics={},
+        best_params={},
+        best_model=_fitted_svc(),
+    )
+
+    no_train = ExperimentResult(**base, test_true_y=np.array([1, 2]))
+    with pytest.raises(ValueError, match="train_true_y"):
+        Results(tmp_path).save(no_train, save_model=False)
+
+    no_test = ExperimentResult(**base, train_true_y=np.array([1, 2, 3]))
+    with pytest.raises(ValueError, match="test_true_y"):
+        Results(tmp_path).save(no_test, save_model=False)
+
+
+@pytest.mark.parametrize(
+    "overrides, match",
+    [
+        ({"train_true_y": np.array([1, 2, 4])}, "'train' true labels"),
+        ({"test_true_y": np.array([1, 2, 4])}, "'test' true labels"),
+        ({"test_predicted_y": np.array([1, 2, 4])}, "'test' predicted labels"),
+    ],
+)
+def test_save_rejects_unknown_labels(tmp_path, overrides, match):
+    """A label absent from classes_ raises instead of mis-encoding."""
+    kwargs = dict(
+        partition=0,
+        dataset="toy",
+        configuration="clf",
+        best_params={},
+        train_metrics={"acc_train": 1.0},
+        test_metrics={"acc_test": 1.0},
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=np.array([1, 2, 3]),
+        train_true_y=np.array([1, 2, 3]),
+        test_true_y=np.array([1, 2, 3]),
+    )
+    kwargs.update(overrides)
+    with pytest.raises(ValueError, match=match):
+        Results(tmp_path).save(_make_result(**kwargs))
+    # Check the failed save left no model behind
+    assert not (tmp_path / "clf" / "toy" / "models" / "0.joblib").exists()
+
+
+def test_save_rejects_misshaped_proba(tmp_path):
+    """A probability matrix without one column per class raises."""
     result = ExperimentResult(
         dataset_name="toy",
         classifier_name="clf",
@@ -186,20 +290,144 @@ def test_save_no_test_partition(tmp_path):
         train_predicted_y=np.array([1, 2, 3]),
         test_predicted_y=None,
         y_proba=None,
-        train_metrics={"ccr_train": 0.9},
+        train_metrics={},
         test_metrics={},
         best_params={},
-        best_model=SVC(),
+        best_model=_fitted_svc(),
+        train_true_y=np.array([1, 2, 3]),
+        train_y_proba=np.full((3, 2), 0.5),
+    )
+    with pytest.raises(ValueError, match="probabilities have shape"):
+        Results(tmp_path).save(result, save_model=False)
+
+
+def test_format_proba_column_cells_round_trip():
+    """Wide probability cells stay single-line and parse back exactly."""
+    rng = np.random.default_rng(0)
+    raw = rng.random((3, 20))
+    proba = raw / raw.sum(axis=1, keepdims=True)
+
+    for cell, row in zip(_format_proba_column(proba), proba):
+        assert "\n" not in cell
+        npt.assert_array_equal(np.fromstring(cell.strip("[]"), sep=","), row)
+
+
+def test_save_no_test_partition(tmp_path):
+    """When test_predicted_y is None, no test files are written."""
+    result = _make_result(
+        partition=0,
+        dataset="toy",
+        configuration="clf",
+        best_params={},
+        train_metrics={"ccr_train": 0.9},
+        test_metrics={},
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=None,
     )
     Results(tmp_path).save(result, save_model=False)
 
-    pred_dir = tmp_path / "clf" / "toy" / "predictions"
-    assert (pred_dir / "train_0.csv").is_file()
-    assert not (pred_dir / "test_0.csv").exists()
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    assert (seed_dir / "train_predictions.csv").is_file()
+    assert (seed_dir / "train_confusion_matrix.txt").is_file()
+    assert not (seed_dir / "test_predictions.csv").exists()
+    assert not (seed_dir / "test_confusion_matrix.txt").exists()
 
 
-def test_save_multiple_partitions_and_params_upsert(tmp_path):
-    """Saving multiple partitions accumulates rows in report.csv; saving the same id twice overwrites its params entry."""
+def test_save_writes_confusion_matrices(tmp_path):
+    """Each seed dir gets train and test confusion-matrix text files."""
+    estimator = _fitted_svc()
+    test_true = np.array([1, 1, 2, 2, 3, 3])
+    test_pred = np.array([1, 2, 2, 3, 3, 3])
+    result = _make_result(
+        partition=0,
+        dataset="toy",
+        configuration="clf",
+        best_params={},
+        train_metrics={"acc_train": 1.0},
+        test_metrics={"acc_test": 1.0},
+        train_predicted_y=np.array([1, 2, 3]),
+        test_predicted_y=test_pred,
+        estimator=estimator,
+        train_true_y=np.array([1, 2, 3]),
+        test_true_y=test_true,
+    )
+    Results(tmp_path).save(result, save_model=False)
+
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    for name in ("train_confusion_matrix.txt", "test_confusion_matrix.txt"):
+        lines = (seed_dir / name).read_text().split("\n")
+        assert lines[0] == "Seed 0"
+        assert lines[1] == "=" * 21
+
+    # Check the body matches the labelled confusion matrix of the saved CSV
+    q = estimator.classes_.size
+    test_df = pd.read_csv(seed_dir / "test_predictions.csv")
+    expected = confusion_matrix(
+        test_df["Target"], test_df["Prediction"], labels=np.arange(q)
+    )
+    text = (seed_dir / "test_confusion_matrix.txt").read_text()
+    assert text.endswith("\n")
+    body = text.split("\n", 2)[2].rstrip("\n")
+    assert body == np.array2string(expected, separator=", ")
+
+
+def test_confusion_matrix_not_elided_for_many_classes(tmp_path):
+    """A large confusion matrix is written in full, without summarising."""
+    labels = np.arange(40)
+    _write_split_files(
+        tmp_path,
+        "train",
+        index=None,
+        true_y=labels,
+        predicted_y=labels,
+        proba=None,
+        classes=labels,
+        resample_id=0,
+    )
+
+    body = (
+        (tmp_path / "train_confusion_matrix.txt")
+        .read_text()
+        .split("\n", 2)[2]
+        .rstrip("\n")
+    )
+    assert "..." not in body
+    # Check the matrix keeps one physical line per row (no wrapping)
+    assert body.count("\n") == 39
+
+
+@pytest.mark.parametrize("with_indices", [False, True])
+def test_save_pattern_id_fallback(tmp_path, with_indices):
+    """Pattern ID echoes the given indices and falls back to range(n)."""
+    train_index = np.array([10, 11, 12, 13]) if with_indices else None
+    test_index = np.array([40, 41]) if with_indices else None
+    Results(tmp_path).save(
+        _make_result(
+            partition=0,
+            dataset="toy",
+            configuration="clf",
+            best_params={},
+            train_metrics={"acc_train": 1.0},
+            test_metrics={"acc_test": 1.0},
+            train_predicted_y=np.array([1, 2, 3, 1]),
+            test_predicted_y=np.array([1, 2]),
+            train_index=train_index,
+            test_index=test_index,
+        ),
+        save_model=False,
+    )
+
+    seed_dir = tmp_path / "clf" / "toy" / "predictions_by_seed" / "seed_0"
+    train_df = pd.read_csv(seed_dir / "train_predictions.csv")
+    test_df = pd.read_csv(seed_dir / "test_predictions.csv")
+    expected_train = train_index if with_indices else np.arange(4)
+    expected_test = test_index if with_indices else np.arange(2)
+    npt.assert_array_equal(train_df["Pattern ID"].values, expected_train)
+    npt.assert_array_equal(test_df["Pattern ID"].values, expected_test)
+
+
+def test_save_multiple_partitions_and_hyperparameter_upsert(tmp_path):
+    """Repeated saves accumulate report rows and upsert hyperparameters."""
     r = Results(tmp_path)
     for i in range(3):
         r.save(
@@ -236,8 +464,94 @@ def test_save_multiple_partitions_and_params_upsert(tmp_path):
         save_model=False,
     )
 
-    params = json.loads((tmp_path / "clf" / "ds" / "params.json").read_text())
-    assert params["0"]["C"] == 1.0
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    seed_0 = hyper[hyper["Seed"] == 0]
+    assert len(seed_0) == 1
+    assert seed_0.iloc[0]["C"] == 1.0
+    # Check rows stay sorted by Seed after the out-of-order upsert
+    npt.assert_array_equal(hyper["Seed"].values, [0, 1, 2])
+
+
+def test_hyperparameters_prefix_strip_and_union(tmp_path):
+    """The clf__ prefix is stripped and missing params union to NaN."""
+    r = Results(tmp_path)
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={"clf__gamma": 1},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    r.save(
+        _make_result(
+            partition=1,
+            dataset="ds",
+            configuration="clf",
+            best_params={"clf__gamma": 0.3, "clf__alpha": 2},
+            train_metrics={"mae_train": 0.2},
+            test_metrics={"mae_test": 0.2},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    # Check columns are Seed first, then alphabetical (not insertion order)
+    assert list(hyper.columns) == ["Seed", "alpha", "gamma"]
+    npt.assert_array_equal(hyper["Seed"].values, [0, 1])
+    assert pd.isna(hyper[hyper["Seed"] == 0].iloc[0]["alpha"])
+    assert hyper[hyper["Seed"] == 1].iloc[0]["alpha"] == 2
+
+    # Check integer values survive the NaN column union unquoted
+    raw = (tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv").read_text()
+    assert "2.0" not in raw
+
+
+def test_hyperparameters_empty_params(tmp_path):
+    """Empty best_params yields a one-column CSV holding only Seed."""
+    Results(tmp_path).save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    assert list(hyper.columns) == ["Seed"]
+
+
+def test_hyperparameters_seed_param_cannot_shadow_key(tmp_path):
+    """A parameter literally named Seed cannot overwrite the Seed column."""
+    Results(tmp_path).save(
+        _make_result(
+            partition=5,
+            dataset="ds",
+            configuration="clf",
+            best_params={"Seed": 999},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+
+    hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
+    npt.assert_array_equal(hyper["Seed"].values, [5])
 
 
 def test_load(tmp_path):

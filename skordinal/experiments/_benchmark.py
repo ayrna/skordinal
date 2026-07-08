@@ -269,6 +269,8 @@ class Benchmark:
                         dataset_name=dataset_name,
                         classifier_name=label,
                         resample_id=b.resample_id,
+                        train_index=b.train_index,
+                        test_index=b.test_index,
                     )
                     self._results.save(result)
 

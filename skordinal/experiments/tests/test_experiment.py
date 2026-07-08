@@ -123,6 +123,31 @@ def test_run_identity_passthrough(split_with_test):
     assert result.resample_id == 42
 
 
+def test_run_forwards_partition_indices(split_with_test):
+    """train_index/test_index round-trip onto the result; default None."""
+    X_train, y_train, X_test, y_test = split_with_test
+    train_index = np.arange(X_train.shape[0])
+    test_index = np.arange(X_test.shape[0])
+
+    result = _make_experiment().run(
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+        dataset_name="ds",
+        classifier_name="cfg",
+        resample_id=0,
+        train_index=train_index,
+        test_index=test_index,
+    )
+    npt.assert_array_equal(result.train_index, train_index)
+    npt.assert_array_equal(result.test_index, test_index)
+
+    default_result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
+    assert default_result.train_index is None
+    assert default_result.test_index is None
+
+
 @pytest.mark.parametrize("has_test", [True, False])
 def test_run_test_present_vs_absent(split_with_test, split_train_only, has_test):
     """With test data: test_predicted_y is an array and metrics are finite; without: None and NaN."""
@@ -198,19 +223,49 @@ def test_run_metric_keys_for_each_eval_metric(split_with_test):
         assert name + "_test" in result.test_metrics
 
 
-def test_run_y_proba_absent_without_predict_proba(split_with_test):
-    """y_proba is None when the fitted estimator has no predict_proba."""
+def test_run_proba_absent_without_predict_proba(split_with_test):
+    """Both proba fields are None when the estimator has no predict_proba."""
     X_train, y_train, X_test, y_test = split_with_test
     result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
 
     assert result.y_proba is None
+    assert result.train_y_proba is None
 
 
-def test_run_y_proba_present_with_predict_proba(split_with_test):
-    """y_proba is populated when the estimator supports predict_proba."""
+def test_run_proba_present_with_predict_proba(split_with_test):
+    """Both proba fields are populated when predict_proba is supported."""
     X_train, y_train, X_test, y_test = split_with_test
     conf = ModelConfig(SVC(), param_grid={"probability": [True]})
     result = _call_run(_make_experiment(conf), X_train, y_train, X_test, y_test)
 
+    n_classes = np.unique(y_train).size
     assert result.y_proba is not None
-    assert result.y_proba.shape[0] == X_test.shape[0]
+    assert result.y_proba.shape == (X_test.shape[0], n_classes)
+    assert result.train_y_proba is not None
+    assert result.train_y_proba.shape == (X_train.shape[0], n_classes)
+
+
+def test_run_no_test_labels_skips_test_proba(split_with_test):
+    """y_proba stays None when y_test is None even if X_test is given."""
+    X_train, y_train, X_test, _ = split_with_test
+    conf = ModelConfig(SVC(), param_grid={"probability": [True]})
+    result = _call_run(_make_experiment(conf), X_train, y_train, X_test, None)
+
+    assert result.y_proba is None
+    assert result.train_y_proba is not None
+
+
+def test_run_proba_none_when_predict_proba_raises(split_with_test, monkeypatch):
+    """A call-time AttributeError from predict_proba warns and yields None."""
+    X_train, y_train, X_test, y_test = split_with_test
+
+    def raise_attribute_error(self, X):
+        """Raise as meta-estimators without probabilistic members do."""
+        raise AttributeError("predict_proba is unavailable")
+
+    monkeypatch.setattr(SVC, "predict_proba", raise_attribute_error)
+    with pytest.warns(RuntimeWarning, match="probabilities are omitted"):
+        result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
+
+    assert result.train_y_proba is None
+    assert result.y_proba is None
