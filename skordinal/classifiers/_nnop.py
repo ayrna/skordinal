@@ -15,6 +15,7 @@ from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
 from skordinal.utils._sklearn_compat import validate_data
+from skordinal.utils.extmath import cumproba_to_proba, repair_cumproba
 from skordinal.utils.validation import check_ordinal_targets
 
 
@@ -267,6 +268,78 @@ class NNOP(ClassifierMixin, BaseEstimator):
         y_pred = self.classes_[a3.min(axis=1).astype(int) - 1]
 
         return y_pred
+
+    def predict_cumproba(self, X: ArrayLike) -> np.ndarray:
+        """Cumulative class probabilities for each sample.
+
+        The ``n_classes - 1`` output neurons independently estimate
+        ``P(y <= k | x)`` under the ordered-partitions coding, so the
+        raw outputs are not guaranteed to be non-decreasing across
+        ``k``.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        cumproba : ndarray of shape (n_samples, n_classes - 1)
+            Entry ``[i, k]`` is the estimated probability that sample
+            ``i`` belongs to class ``k`` or lower. Isotonic repair
+            enforces that each row is non-decreasing.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+
+        ValueError
+            If input is invalid.
+
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        return repair_cumproba(self._cumproba(X))
+
+    def predict_proba(self, X: ArrayLike) -> np.ndarray:
+        """Class probability estimates for each sample.
+
+        Derives class probabilities from the repaired cumulative
+        probability estimates via finite differencing.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        proba : ndarray of shape (n_samples, n_classes)
+            Row-stochastic matrix of class probability estimates.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+
+        ValueError
+            If input is invalid.
+
+        Notes
+        -----
+        Because ``predict`` follows the canonical NNOP decision rule of
+        picking the first class whose raw cumulative estimate exceeds
+        0.5 (a median/first-crossing rule), rather than the argmax of
+        this method's output, ``classes_[argmax(predict_proba(X),
+        axis=1)]`` is not in general equal to ``predict(X)``. Users
+        needing calibrated, argmax-consistent probabilities should wrap
+        the estimator with ``sklearn.calibration.CalibratedClassifierCV``.
+
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        return cumproba_to_proba(self._cumproba(X), repair=True)
 
     def _cumproba(self, X: np.ndarray) -> np.ndarray:
         """Compute raw cumulative probabilities on pre-validated X."""

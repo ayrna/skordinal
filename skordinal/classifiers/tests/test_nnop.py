@@ -8,6 +8,7 @@ import pytest
 from sklearn.exceptions import NotFittedError
 
 from skordinal.classifiers import NNOP
+from skordinal.datasets import make_ordinal_classification
 
 
 @pytest.fixture
@@ -20,6 +21,19 @@ def X():
 def y():
     """Create sample target variables for testing."""
     return np.array([0, 1, 1, 0, 1])
+
+
+@pytest.fixture
+def ordinal_data():
+    """Create a synthetic 3-class ordinal dataset for behavioural tests."""
+    return make_ordinal_classification(
+        n_samples=90,
+        n_features=4,
+        n_classes=3,
+        n_informative=4,
+        noise=0.1,
+        random_state=0,
+    )
 
 
 @pytest.mark.parametrize(
@@ -232,3 +246,45 @@ def test_nnop_predict_uses_trained_unit_bias():
     # trained forward crosses 0.5 at the first output -> class 0; the old
     # buggy forward stayed below 0.5 there and would fall through to class 1
     np.testing.assert_array_equal(clf.predict(probe), [0])
+
+
+def test_nnop_proba_and_cumproba_well_formed(ordinal_data):
+    """predict_proba/predict_cumproba are well-formed."""
+    X, y = ordinal_data
+    clf = NNOP(n_hidden=4, max_iter=50, random_state=0).fit(X, y)
+    n_classes = len(clf.classes_)
+
+    proba = clf.predict_proba(X)
+    assert proba.shape == (X.shape[0], n_classes)
+    assert np.all(proba >= 0.0)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
+
+    cumproba = clf.predict_cumproba(X)
+    assert cumproba.shape == (X.shape[0], n_classes - 1)
+    assert np.all(cumproba >= 0.0) and np.all(cumproba <= 1.0)
+    assert np.all(np.diff(cumproba, axis=1) >= 0)
+
+
+def test_nnop_predict_cumproba_repairs_non_monotone_raw_row():
+    """predict_cumproba repairs a non-monotone raw row into non-decreasing."""
+    clf = NNOP(n_hidden=1, max_iter=1).fit(
+        np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+        np.array([0, 0, 1, 1, 2, 2]),
+    )
+    # Overwrite fitted state so the two independent output sigmoids invert:
+    # column 0 evaluates higher than column 1, violating monotonicity by
+    # construction. A real fit cannot guarantee this row shape, but it
+    # isolates the repair-routing behaviour under test
+    clf.theta1_ = np.zeros((1, 2))
+    clf.theta2_ = np.array([[5.0, 0.0], [-5.0, 0.0]])
+
+    probe = np.array([[0.0]])
+    raw = clf._cumproba(probe)
+    assert raw[0, 0] > raw[0, 1]  # confirm the raw row is non-monotone
+
+    cumproba = clf.predict_cumproba(probe)
+    assert np.all(np.diff(cumproba, axis=1) >= 0)
+
+    proba = clf.predict_proba(probe)
+    assert np.all(proba >= 0.0)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
