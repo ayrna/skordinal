@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from ._results import _atomic_write
+
 
 def _check_split(split, *, allow_both):
     """Raise ValueError when split is not a recognised value."""
@@ -225,5 +227,5 @@ def save_summary(results_path, *, split="test"):
         f"{outer}_{inner}" if inner else outer for outer, inner in flat.columns
     ]
     out_path = Path(results_path) / f"{split}_summary.csv"
-    flat.to_csv(out_path)
+    _atomic_write(out_path, flat.to_csv())
     return out_path

@@ -1,5 +1,7 @@
 """Tests for the Results class."""
 
+import os
+
 import joblib
 import numpy as np
 import numpy.testing as npt
@@ -9,7 +11,13 @@ from sklearn.metrics import confusion_matrix
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
-from skordinal.experiments._results import _format_proba_column, _write_split_files
+from skordinal.experiments._results import (
+    _TEMP_PREFIX,
+    _atomic_dump,
+    _atomic_write,
+    _format_proba_column,
+    _write_split_files,
+)
 
 
 def _fitted_svc(classes=(1, 2, 3), probability=False):
@@ -586,3 +594,55 @@ def test_exists(tmp_path):
     )
     assert r.exists("SVC", "toy", "0") is True
     assert r.exists("SVC", "toy", "1") is False
+
+
+def test_atomic_write_success_leaves_no_temp(tmp_path):
+    """_atomic_write writes full content and leaves no temp file."""
+    target = tmp_path / "f.csv"
+    _atomic_write(target, "a,b\n1,2\n")
+    assert target.read_text() == "a,b\n1,2\n"
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+def test_atomic_write_cleans_up_on_failure(tmp_path, monkeypatch):
+    """A failing os.replace unlinks the temp file and re-raises."""
+    monkeypatch.setattr(
+        "skordinal.experiments._results.os.replace",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("boom")),
+    )
+    with pytest.raises(OSError, match="boom"):
+        _atomic_write(tmp_path / "f.csv", "data")
+    assert not (tmp_path / "f.csv").exists()
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+def test_atomic_write_fsyncs(tmp_path, monkeypatch):
+    """_atomic_write calls os.fsync on the temp file descriptor."""
+    calls = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(
+        "skordinal.experiments._results.os.fsync",
+        lambda fd: calls.append(fd) or real_fsync(fd),
+    )
+    _atomic_write(tmp_path / "f.txt", "x")
+    assert len(calls) == 1
+
+
+def test_atomic_dump_cleans_up_on_failure(tmp_path, monkeypatch):
+    """A failing os.replace unlinks the dump's temp file and re-raises."""
+    monkeypatch.setattr(
+        "skordinal.experiments._results.os.replace",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("boom")),
+    )
+    with pytest.raises(OSError, match="boom"):
+        _atomic_dump(tmp_path / "m.joblib", {"k": 1})
+    assert not (tmp_path / "m.joblib").exists()
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+def test_atomic_dump_round_trips_no_temp(tmp_path):
+    """_atomic_dump serialises an object recoverable by joblib.load."""
+    target = tmp_path / "m.joblib"
+    _atomic_dump(target, {"k": [1, 2, 3]})
+    assert joblib.load(target) == {"k": [1, 2, 3]}
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []

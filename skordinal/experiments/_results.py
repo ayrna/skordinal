@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,37 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.metrics import confusion_matrix
+
+_TEMP_PREFIX = ".skordinal-tmp-"
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Write text to path atomically via a temp file, fsync and replace."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _atomic_dump(path: Path, obj: Any) -> None:
+    """Serialise obj to path atomically via a temp file, fsync and replace."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
+    try:
+        # Close the mkstemp descriptor; joblib opens its own handle by path
+        os.close(fd)
+        joblib.dump(obj, tmp)
+        with open(tmp, "rb") as fh:
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 @dataclass(frozen=True)
@@ -142,14 +175,18 @@ def _write_split_files(
             )
         prediction = np.searchsorted(classes, predicted_y)
     columns["Prediction"] = prediction
-    pd.DataFrame(columns).to_csv(seed_dir / f"{split}_predictions.csv", index=False)
+    _atomic_write(
+        seed_dir / f"{split}_predictions.csv",
+        pd.DataFrame(columns).to_csv(index=False),
+    )
 
     cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
     body = np.array2string(
         cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
     )
-    (seed_dir / f"{split}_confusion_matrix.txt").write_text(
-        f"Seed {resample_id}\n{'=' * 21}\n{body}\n", encoding="utf-8"
+    _atomic_write(
+        seed_dir / f"{split}_confusion_matrix.txt",
+        f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
     )
 
 
@@ -288,7 +325,7 @@ class Results:
             )
 
         if save_model:
-            joblib.dump(result.best_model, models_dir / f"{result.resample_id}.joblib")
+            _atomic_dump(models_dir / f"{result.resample_id}.joblib", result.best_model)
 
         self._append_report_row(result, base_dir)
         self._upsert_hyperparameters(result, base_dir)
@@ -325,7 +362,7 @@ class Results:
             existing = pd.read_csv(csv_path, index_col=0)
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
-        df.to_csv(csv_path)
+        _atomic_write(csv_path, df.to_csv())
 
     def _upsert_hyperparameters(self, result: ExperimentResult, base_dir: Path) -> None:
         """Upsert one seed's row in the hyperparameter configuration CSV."""
@@ -345,7 +382,7 @@ class Results:
         columns = ["Seed"] + sorted(c for c in df.columns if c != "Seed")
         df = df[columns].sort_values("Seed").reset_index(drop=True)
         # Restore integer dtypes upcast to float by the NaN column union
-        df.convert_dtypes().to_csv(csv_path, index=False)
+        _atomic_write(csv_path, df.convert_dtypes().to_csv(index=False))
 
     @classmethod
     def load(cls, experiment_folder: str | Path) -> Results:
