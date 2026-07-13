@@ -15,6 +15,7 @@ from skordinal.experiments._results import (
     _TEMP_PREFIX,
     _atomic_dump,
     _atomic_write,
+    _check_path_component,
     _format_proba_column,
     _write_split_files,
 )
@@ -646,3 +647,73 @@ def test_atomic_dump_round_trips_no_temp(tmp_path):
     _atomic_dump(target, {"k": [1, 2, 3]})
     assert joblib.load(target) == {"k": [1, 2, 3]}
     assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+@pytest.mark.parametrize("bad", ["", ".", "..", "a/b", f"a{os.sep}b"])
+def test_check_path_component_rejects_bad_strings(bad):
+    """_check_path_component rejects empty, dotted or separator names."""
+    with pytest.raises(ValueError):
+        _check_path_component(bad, "classifier_name")
+
+
+@pytest.mark.parametrize("bad", [3, None, ("x",)])
+def test_check_path_component_rejects_non_str(bad):
+    """_check_path_component rejects a non-string component."""
+    with pytest.raises(TypeError):
+        _check_path_component(bad, "classifier_name")
+
+
+def test_save_rejects_traversal_before_writing(tmp_path):
+    """save raises on a traversal component and writes nothing."""
+    result = _make_result(
+        partition=0,
+        dataset="..",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    with pytest.raises(ValueError):
+        Results(tmp_path).save(result, save_model=False)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_report_row_round_trip_precision(tmp_path):
+    """A high-precision metric survives a later save's report read."""
+    value = 0.12345678901234566
+    r = Results(tmp_path)
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": value},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    # Second save reads report.csv back through the round-trip reader
+    r.save(
+        _make_result(
+            partition=1,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.2},
+            test_metrics={"mae_test": 0.2},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    df = pd.read_csv(
+        tmp_path / "clf" / "ds" / "report.csv",
+        index_col=0,
+        float_precision="round_trip",
+    )
+    assert df.loc[0, "mae_train"] == value

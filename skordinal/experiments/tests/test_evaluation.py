@@ -244,3 +244,11 @@ def test_save_summary_empty_folder_raises(tmp_path):
     """save_summary raises ValueError when there are no results."""
     with pytest.raises(ValueError, match="No results"):
         save_summary(tmp_path)
+
+
+def test_summarize_round_trip_precision(tmp_path):
+    """summarize reports a single high-precision metric bit-exact."""
+    value = 0.12345678901234566
+    _make_pair_csv(tmp_path, "clf", "ds", [{"mae_test": value}])
+    df = summarize(tmp_path, split="test")
+    assert df.loc[("clf", "ds"), ("mae_test", "mean")] == value

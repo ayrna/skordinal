@@ -47,6 +47,16 @@ def _atomic_dump(path: Path, obj: Any) -> None:
         raise
 
 
+def _check_path_component(name: Any, what: str) -> None:
+    """Reject a path component that is empty, dotted or holds a separator."""
+    if not isinstance(name, str):
+        raise TypeError(f"{what} must be a str; got {type(name).__name__}.")
+    if name in ("", ".", ".."):
+        raise ValueError(f"{what} must not be empty or a dot segment; got {name!r}.")
+    if any(sep in name for sep in (os.sep, "/", os.altsep) if sep):
+        raise ValueError(f"{what} must not contain a path separator; got {name!r}.")
+
+
 @dataclass(frozen=True)
 class ExperimentResult:
     """Result of running a single classifier on one dataset partition.
@@ -263,8 +273,14 @@ class Results:
 
         Raises
         ------
+        TypeError
+            If ``result.classifier_name`` or ``result.dataset_name`` is not
+            a string.
+
         ValueError
-            If ``result`` lacks the true labels required for the ``Target``
+            If ``result.classifier_name`` or ``result.dataset_name`` is
+            empty, a dot segment, or contains a path separator, if
+            ``result`` lacks the true labels required for the ``Target``
             column (``train_true_y``, or ``test_true_y`` when test
             predictions are present), if a true or predicted label is not
             one of ``best_model.classes_``, or if a probability matrix does
@@ -330,6 +346,12 @@ class Results:
         self._append_report_row(result, base_dir)
         self._upsert_hyperparameters(result, base_dir)
 
+    def _pair_dir(self, classifier_name: str, dataset_name: str) -> Path:
+        """Validate both components and return the classifier/dataset dir."""
+        _check_path_component(classifier_name, "classifier_name")
+        _check_path_component(dataset_name, "dataset_name")
+        return self._experiment_folder / classifier_name / dataset_name
+
     def _ensure_dirs(
         self,
         classifier_name: str,
@@ -339,7 +361,7 @@ class Results:
         save_model: bool,
     ) -> tuple[Path, Path, Path]:
         """Create required sub-directories and return their paths."""
-        base = self._experiment_folder / classifier_name / dataset_name
+        base = self._pair_dir(classifier_name, dataset_name)
         seed_dir = base / "predictions_by_seed" / f"seed_{resample_id}"
         models_dir = base / "models"
         try:
@@ -359,7 +381,7 @@ class Results:
         csv_path = base_dir / "report.csv"
         df = pd.DataFrame([row], index=pd.Index([result.resample_id], dtype=str))
         if csv_path.is_file():
-            existing = pd.read_csv(csv_path, index_col=0)
+            existing = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
         _atomic_write(csv_path, df.to_csv())
@@ -375,7 +397,7 @@ class Results:
         csv_path = base_dir / "hyperparameter_configuration.csv"
         df = pd.DataFrame([row])
         if csv_path.is_file():
-            existing = pd.read_csv(csv_path)
+            existing = pd.read_csv(csv_path, float_precision="round_trip")
             existing = existing[existing["Seed"] != result.resample_id]
             df = pd.concat([existing, df], ignore_index=True)
 
@@ -434,6 +456,15 @@ class Results:
             ``True`` if the per-pair CSV exists **and** contains a row
             whose index equals ``resample_id``.
 
+        Raises
+        ------
+        TypeError
+            If ``classifier_name`` or ``dataset_name`` is not a string.
+
+        ValueError
+            If ``classifier_name`` or ``dataset_name`` is empty, a dot
+            segment, or contains a path separator.
+
         Examples
         --------
         >>> from skordinal.experiments import Results
@@ -442,9 +473,7 @@ class Results:
         False
 
         """
-        csv_path = (
-            self._experiment_folder / classifier_name / dataset_name / "report.csv"
-        )
+        csv_path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not csv_path.is_file():
             return False
         df = pd.read_csv(csv_path, index_col=0)

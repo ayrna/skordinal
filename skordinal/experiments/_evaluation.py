@@ -88,7 +88,7 @@ def summarize(results_path, *, labels=None, split="test"):
         if label_set is not None and clf not in label_set:
             continue
 
-        df = pd.read_csv(csv_path, index_col=0)
+        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
 
         # Select columns for the requested split
         if split == "test":
@@ -164,7 +164,7 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     rows = []
 
     for clf, ds, csv_path in _iter_pairs(results_path):
-        df = pd.read_csv(csv_path, index_col=0)
+        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
         # Format as "mean +/- std", or "n/a" when metric is absent or all-NaN
         if col not in df.columns or df[col].isna().all():
             cell = "n/a"
