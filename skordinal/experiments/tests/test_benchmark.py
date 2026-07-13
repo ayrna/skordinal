@@ -1,6 +1,7 @@
 """Tests for the benchmark runner module."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -343,3 +344,30 @@ def test_verbose_false_no_stdout(tmp_path, capsys):
     b.run()
     captured = capsys.readouterr()
     assert captured.out == ""
+
+
+def test_results_path_resolved_once_across_chdir(tmp_path, monkeypatch):
+    """A relative results_path is anchored at construction, not at run."""
+    work_a = tmp_path / "a"
+    work_b = tmp_path / "b"
+    work_a.mkdir()
+    work_b.mkdir()
+    monkeypatch.chdir(work_a)
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path="runs",
+        resamples=3,
+        cv=2,
+        verbose=False,
+        random_state=0,
+    )
+    # results_path is now absolute and anchored under work_a
+    assert Path(b.results_path).is_absolute()
+    assert Path(b.results_path) == (work_a / "runs").resolve()
+    monkeypatch.chdir(work_b)
+    b.run()
+    # Results land under the construction-time root, not the new cwd
+    assert (work_a / "runs" / "SVM" / _BUNDLED_DS / "report.csv").is_file()
+    assert not (work_b / "runs").exists()

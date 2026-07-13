@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,6 +14,47 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.metrics import confusion_matrix
+
+_TEMP_PREFIX = ".skordinal-tmp-"
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    """Write text to path atomically via a temp file, fsync and replace."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _atomic_dump(path: Path, obj: Any) -> None:
+    """Serialise obj to path atomically via a temp file, fsync and replace."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
+    try:
+        # Close the mkstemp descriptor; joblib opens its own handle by path
+        os.close(fd)
+        joblib.dump(obj, tmp)
+        with open(tmp, "rb") as fh:
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _check_path_component(name: Any, what: str) -> None:
+    """Reject a path component that is empty, dotted or holds a separator."""
+    if not isinstance(name, str):
+        raise TypeError(f"{what} must be a str; got {type(name).__name__}.")
+    if name in ("", ".", ".."):
+        raise ValueError(f"{what} must not be empty or a dot segment; got {name!r}.")
+    if any(sep in name for sep in (os.sep, "/", os.altsep) if sep):
+        raise ValueError(f"{what} must not contain a path separator; got {name!r}.")
 
 
 @dataclass(frozen=True)
@@ -142,14 +185,18 @@ def _write_split_files(
             )
         prediction = np.searchsorted(classes, predicted_y)
     columns["Prediction"] = prediction
-    pd.DataFrame(columns).to_csv(seed_dir / f"{split}_predictions.csv", index=False)
+    _atomic_write(
+        seed_dir / f"{split}_predictions.csv",
+        pd.DataFrame(columns).to_csv(index=False),
+    )
 
     cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
     body = np.array2string(
         cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
     )
-    (seed_dir / f"{split}_confusion_matrix.txt").write_text(
-        f"Seed {resample_id}\n{'=' * 21}\n{body}\n", encoding="utf-8"
+    _atomic_write(
+        seed_dir / f"{split}_confusion_matrix.txt",
+        f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
     )
 
 
@@ -214,7 +261,11 @@ class Results:
         *,
         save_model: bool = True,
     ) -> None:
-        """Write per-seed files, the report row, hyperparameters and model.
+        """Write per-seed files, the model, hyperparameters and the report row.
+
+        The report row is written last and acts as the commit marker read
+        by ``exists``: a save interrupted at any earlier point leaves no
+        row, so a rerun detects the partition as missing and rewrites it.
 
         Parameters
         ----------
@@ -226,8 +277,14 @@ class Results:
 
         Raises
         ------
+        TypeError
+            If ``result.classifier_name`` or ``result.dataset_name`` is not
+            a string.
+
         ValueError
-            If ``result`` lacks the true labels required for the ``Target``
+            If ``result.classifier_name`` or ``result.dataset_name`` is
+            empty, a dot segment, or contains a path separator, if
+            ``result`` lacks the true labels required for the ``Target``
             column (``train_true_y``, or ``test_true_y`` when test
             predictions are present), if a true or predicted label is not
             one of ``best_model.classes_``, or if a probability matrix does
@@ -262,6 +319,13 @@ class Results:
             result.resample_id,
             save_model=save_model,
         )
+        # Clear any temp file left by a prior crash before writing new ones
+        for stray in base_dir.rglob(f"{_TEMP_PREFIX}*"):
+            if stray.is_file():
+                stray.unlink(missing_ok=True)
+        # Drop this resample's committed row so a crash mid-write cannot
+        # leave a report row describing predictions no longer on disk
+        self._uncommit_report_row(base_dir, result.resample_id)
 
         classes = np.asarray(result.best_model.classes_)
         _write_split_files(
@@ -288,10 +352,17 @@ class Results:
             )
 
         if save_model:
-            joblib.dump(result.best_model, models_dir / f"{result.resample_id}.joblib")
+            _atomic_dump(models_dir / f"{result.resample_id}.joblib", result.best_model)
 
-        self._append_report_row(result, base_dir)
         self._upsert_hyperparameters(result, base_dir)
+        # Write the report row last: it is the commit marker for exists()
+        self._append_report_row(result, base_dir)
+
+    def _pair_dir(self, classifier_name: str, dataset_name: str) -> Path:
+        """Validate both components and return the classifier/dataset dir."""
+        _check_path_component(classifier_name, "classifier_name")
+        _check_path_component(dataset_name, "dataset_name")
+        return self._experiment_folder / classifier_name / dataset_name
 
     def _ensure_dirs(
         self,
@@ -302,7 +373,7 @@ class Results:
         save_model: bool,
     ) -> tuple[Path, Path, Path]:
         """Create required sub-directories and return their paths."""
-        base = self._experiment_folder / classifier_name / dataset_name
+        base = self._pair_dir(classifier_name, dataset_name)
         seed_dir = base / "predictions_by_seed" / f"seed_{resample_id}"
         models_dir = base / "models"
         try:
@@ -315,17 +386,33 @@ class Results:
             )
         return base, models_dir, seed_dir
 
+    def _uncommit_report_row(self, base_dir: Path, resample_id: int) -> None:
+        """Drop this resample's row from report.csv before rewriting it."""
+        csv_path = base_dir / "report.csv"
+        if not csv_path.is_file():
+            return
+        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
+        df.index = df.index.astype(str)
+        if str(resample_id) not in df.index:
+            return
+        df = df.drop(index=str(resample_id))
+        if df.empty:
+            # Remove the commit marker entirely so exists() reports False
+            csv_path.unlink()
+            return
+        _atomic_write(csv_path, df.to_csv())
+
     def _append_report_row(self, result: ExperimentResult, base_dir: Path) -> None:
-        """Append one metrics row to ``report.csv``."""
+        """Append one metrics row to report.csv."""
         row: dict[str, Any] = {**result.train_metrics, **result.test_metrics}
 
         csv_path = base_dir / "report.csv"
         df = pd.DataFrame([row], index=pd.Index([result.resample_id], dtype=str))
         if csv_path.is_file():
-            existing = pd.read_csv(csv_path, index_col=0)
+            existing = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
-        df.to_csv(csv_path)
+        _atomic_write(csv_path, df.to_csv())
 
     def _upsert_hyperparameters(self, result: ExperimentResult, base_dir: Path) -> None:
         """Upsert one seed's row in the hyperparameter configuration CSV."""
@@ -338,14 +425,14 @@ class Results:
         csv_path = base_dir / "hyperparameter_configuration.csv"
         df = pd.DataFrame([row])
         if csv_path.is_file():
-            existing = pd.read_csv(csv_path)
+            existing = pd.read_csv(csv_path, float_precision="round_trip")
             existing = existing[existing["Seed"] != result.resample_id]
             df = pd.concat([existing, df], ignore_index=True)
 
         columns = ["Seed"] + sorted(c for c in df.columns if c != "Seed")
         df = df[columns].sort_values("Seed").reset_index(drop=True)
         # Restore integer dtypes upcast to float by the NaN column union
-        df.convert_dtypes().to_csv(csv_path, index=False)
+        _atomic_write(csv_path, df.convert_dtypes().to_csv(index=False))
 
     @classmethod
     def load(cls, experiment_folder: str | Path) -> Results:
@@ -397,6 +484,15 @@ class Results:
             ``True`` if the per-pair CSV exists **and** contains a row
             whose index equals ``resample_id``.
 
+        Raises
+        ------
+        TypeError
+            If ``classifier_name`` or ``dataset_name`` is not a string.
+
+        ValueError
+            If ``classifier_name`` or ``dataset_name`` is empty, a dot
+            segment, or contains a path separator.
+
         Examples
         --------
         >>> from skordinal.experiments import Results
@@ -405,9 +501,7 @@ class Results:
         False
 
         """
-        csv_path = (
-            self._experiment_folder / classifier_name / dataset_name / "report.csv"
-        )
+        csv_path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not csv_path.is_file():
             return False
         df = pd.read_csv(csv_path, index_col=0)

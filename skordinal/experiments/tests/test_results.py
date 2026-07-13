@@ -1,5 +1,7 @@
 """Tests for the Results class."""
 
+import os
+
 import joblib
 import numpy as np
 import numpy.testing as npt
@@ -9,7 +11,14 @@ from sklearn.metrics import confusion_matrix
 from sklearn.svm import SVC
 
 from skordinal.experiments import ExperimentResult, Results
-from skordinal.experiments._results import _format_proba_column, _write_split_files
+from skordinal.experiments._results import (
+    _TEMP_PREFIX,
+    _atomic_dump,
+    _atomic_write,
+    _check_path_component,
+    _format_proba_column,
+    _write_split_files,
+)
 
 
 def _fitted_svc(classes=(1, 2, 3), probability=False):
@@ -586,3 +595,227 @@ def test_exists(tmp_path):
     )
     assert r.exists("SVC", "toy", "0") is True
     assert r.exists("SVC", "toy", "1") is False
+
+
+def test_atomic_write_success_leaves_no_temp(tmp_path):
+    """_atomic_write writes full content and leaves no temp file."""
+    target = tmp_path / "f.csv"
+    _atomic_write(target, "a,b\n1,2\n")
+    assert target.read_text() == "a,b\n1,2\n"
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+def test_atomic_write_cleans_up_on_failure(tmp_path, monkeypatch):
+    """A failing os.replace unlinks the temp file and re-raises."""
+    monkeypatch.setattr(
+        "skordinal.experiments._results.os.replace",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("boom")),
+    )
+    with pytest.raises(OSError, match="boom"):
+        _atomic_write(tmp_path / "f.csv", "data")
+    assert not (tmp_path / "f.csv").exists()
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+def test_atomic_write_fsyncs(tmp_path, monkeypatch):
+    """_atomic_write calls os.fsync on the temp file descriptor."""
+    calls = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(
+        "skordinal.experiments._results.os.fsync",
+        lambda fd: calls.append(fd) or real_fsync(fd),
+    )
+    _atomic_write(tmp_path / "f.txt", "x")
+    assert len(calls) == 1
+
+
+def test_atomic_dump_cleans_up_on_failure(tmp_path, monkeypatch):
+    """A failing os.replace unlinks the dump's temp file and re-raises."""
+    monkeypatch.setattr(
+        "skordinal.experiments._results.os.replace",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("boom")),
+    )
+    with pytest.raises(OSError, match="boom"):
+        _atomic_dump(tmp_path / "m.joblib", {"k": 1})
+    assert not (tmp_path / "m.joblib").exists()
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+def test_atomic_dump_round_trips_no_temp(tmp_path):
+    """_atomic_dump serialises an object recoverable by joblib.load."""
+    target = tmp_path / "m.joblib"
+    _atomic_dump(target, {"k": [1, 2, 3]})
+    assert joblib.load(target) == {"k": [1, 2, 3]}
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+@pytest.mark.parametrize("bad", ["", ".", "..", "a/b", f"a{os.sep}b"])
+def test_check_path_component_rejects_bad_strings(bad):
+    """_check_path_component rejects empty, dotted or separator names."""
+    with pytest.raises(ValueError):
+        _check_path_component(bad, "classifier_name")
+
+
+@pytest.mark.parametrize("bad", [3, None, ("x",)])
+def test_check_path_component_rejects_non_str(bad):
+    """_check_path_component rejects a non-string component."""
+    with pytest.raises(TypeError):
+        _check_path_component(bad, "classifier_name")
+
+
+def test_save_rejects_traversal_before_writing(tmp_path):
+    """save raises on a traversal component and writes nothing."""
+    result = _make_result(
+        partition=0,
+        dataset="..",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    with pytest.raises(ValueError):
+        Results(tmp_path).save(result, save_model=False)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_report_row_round_trip_precision(tmp_path):
+    """A high-precision metric survives a later save's report read."""
+    value = 0.12345678901234566
+    r = Results(tmp_path)
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": value},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    # Second save reads report.csv back through the round-trip reader
+    r.save(
+        _make_result(
+            partition=1,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.2},
+            test_metrics={"mae_test": 0.2},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    df = pd.read_csv(
+        tmp_path / "clf" / "ds" / "report.csv",
+        index_col=0,
+        float_precision="round_trip",
+    )
+    assert df.loc[0, "mae_train"] == value
+
+
+def test_resave_is_idempotent_no_duplicate_row(tmp_path):
+    """Re-saving the same resample keeps exactly one report row."""
+    r = Results(tmp_path)
+    for _ in range(2):
+        r.save(
+            _make_result(
+                partition=0,
+                dataset="ds",
+                configuration="clf",
+                best_params={},
+                train_metrics={"mae_train": 0.1},
+                test_metrics={"mae_test": 0.1},
+                train_predicted_y=np.array([1]),
+                test_predicted_y=np.array([1]),
+            ),
+            save_model=False,
+        )
+    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
+    assert df.shape[0] == 1
+
+
+def test_orphan_temp_file_swept_on_save(tmp_path):
+    """A leftover temp file under the pair dir is removed by save."""
+    pair = tmp_path / "clf" / "ds"
+    (pair / "predictions_by_seed" / "seed_0").mkdir(parents=True)
+    stale = pair / f"{_TEMP_PREFIX}leftover.tmp"
+    stale.write_text("junk")
+    Results(tmp_path).save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    assert not stale.exists()
+
+
+def test_crash_between_predictions_and_report_not_committed(tmp_path, monkeypatch):
+    """A crash before the report write leaves exists() False; rerun fixes it."""
+    r = Results(tmp_path)
+    kwargs = dict(
+        partition=0,
+        dataset="ds",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    monkeypatch.setattr(
+        Results,
+        "_append_report_row",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
+    )
+    with pytest.raises(RuntimeError):
+        r.save(_make_result(**kwargs), save_model=False)
+    # Predictions were written but no report row was committed
+    seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
+    assert (seed / "train_predictions.csv").is_file()
+    assert r.exists("clf", "ds", "0") is False
+    # A normal rerun commits the row
+    monkeypatch.undo()
+    r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is True
+
+
+def test_stale_report_row_uncommitted_on_crash_resave(tmp_path, monkeypatch):
+    """Re-saving a resample uncommits its row; a crash leaves it uncommitted."""
+    r = Results(tmp_path)
+    kwargs = dict(
+        partition=0,
+        dataset="ds",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is True
+    # Crash on re-save after the uncommit but before the recommit
+    monkeypatch.setattr(
+        Results,
+        "_append_report_row",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
+    )
+    with pytest.raises(RuntimeError):
+        r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is False
+    monkeypatch.undo()
+    r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is True
