@@ -8,6 +8,7 @@ from numbers import Integral, Real
 import numpy as np
 import scipy
 from numpy.typing import ArrayLike
+from scipy.special import expit
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.utils import check_random_state
 from sklearn.utils._param_validation import Interval
@@ -227,6 +228,12 @@ class NNOP(ClassifierMixin, BaseEstimator):
     def predict(self, X: ArrayLike) -> np.ndarray:
         """Perform classification on samples in X.
 
+        The predicted class is the first class whose (raw, unrepaired)
+        cumulative estimate ``P(y <= k | x)`` exceeds 0.5 (the
+        median/first-crossing rule). This is not in general the same
+        class as ``classes_[argmax(predict_proba(X), axis=1)]``; see the
+        Notes on ``predict_proba``.
+
         Parameters
         ----------
         X : {array-like, sparse matrix} of shape (n_samples, n_features)
@@ -251,21 +258,22 @@ class NNOP(ClassifierMixin, BaseEstimator):
         n_samples = X.shape[0]
         n_classes = len(self.classes_)
 
-        a1 = np.append(np.ones((n_samples, 1)), X, axis=1)
-        z2 = np.append(np.ones((n_samples, 1)), np.matmul(a1, self.theta1_.T), axis=1)
-
-        a2 = 1.0 / (1.0 + np.exp(-z2))
-        projected = np.matmul(a2, self.theta2_.T)
-        projected = 1.0 / (1.0 + np.exp(-projected))
-
+        cumproba = self._cumproba(X)
         a3 = np.multiply(
-            np.where(np.append(projected, np.ones((n_samples, 1)), axis=1) > 0.5, 1, 0),
+            np.where(np.append(cumproba, np.ones((n_samples, 1)), axis=1) > 0.5, 1, 0),
             np.tile(np.arange(1, n_classes + 1), (n_samples, 1)),
         )
         a3[np.where(a3 == 0)] = n_classes + 1
         y_pred = self.classes_[a3.min(axis=1).astype(int) - 1]
 
         return y_pred
+
+    def _cumproba(self, X: np.ndarray) -> np.ndarray:
+        """Compute raw cumulative probabilities on pre-validated X."""
+        X_bias = np.hstack([np.ones((X.shape[0], 1)), X])
+        z2 = X_bias @ self.theta1_.T
+        a2 = np.hstack([np.ones((z2.shape[0], 1)), expit(z2)])
+        return expit(a2 @ self.theta2_.T)
 
     def _unpack_parameters(
         self,

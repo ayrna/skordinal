@@ -204,3 +204,31 @@ def test_nnop_random_state_accepts_random_state_instance(X, y):
     ).fit(X, y)
 
     np.testing.assert_array_equal(rs_seed.theta1_, rs_instance.theta1_)
+
+
+def test_nnop_predict_uses_trained_unit_bias():
+    """predict evaluates the trained unit hidden bias, not sigmoid(1)."""
+    clf = NNOP(n_hidden=1, max_iter=1).fit(
+        np.array([[0.0], [1.0], [2.0], [3.0]]), np.array([0, 0, 1, 1])
+    )
+    # Overwrite fitted state: zero input-to-hidden weights make the hidden
+    # activation constant (0.5), isolating the bias-column treatment -- the
+    # sole difference between the old and the trained forward -- from the
+    # real hidden-unit contribution
+    clf.theta1_ = np.zeros((1, 2))
+    clf.theta2_ = np.array([[10.0, -16.0]])
+
+    probe = np.array([[0.0]])
+    trained_cumproba = clf._cumproba(probe)
+
+    # the old (buggy) forward passed the hidden bias unit through the
+    # sigmoid, i.e. it contributed sigmoid(1.0) instead of the trained
+    # forward's 1.0
+    old_bias_activation = 1.0 / (1.0 + np.exp(-1.0))
+    old_z3 = old_bias_activation * 10.0 + 0.5 * -16.0
+    old_cumproba = 1.0 / (1.0 + np.exp(-old_z3))
+    assert old_cumproba < 0.5 < trained_cumproba[0, 0]
+
+    # trained forward crosses 0.5 at the first output -> class 0; the old
+    # buggy forward stayed below 0.5 there and would fall through to class 1
+    np.testing.assert_array_equal(clf.predict(probe), [0])
