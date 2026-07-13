@@ -717,3 +717,105 @@ def test_report_row_round_trip_precision(tmp_path):
         float_precision="round_trip",
     )
     assert df.loc[0, "mae_train"] == value
+
+
+def test_resave_is_idempotent_no_duplicate_row(tmp_path):
+    """Re-saving the same resample keeps exactly one report row."""
+    r = Results(tmp_path)
+    for _ in range(2):
+        r.save(
+            _make_result(
+                partition=0,
+                dataset="ds",
+                configuration="clf",
+                best_params={},
+                train_metrics={"mae_train": 0.1},
+                test_metrics={"mae_test": 0.1},
+                train_predicted_y=np.array([1]),
+                test_predicted_y=np.array([1]),
+            ),
+            save_model=False,
+        )
+    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
+    assert df.shape[0] == 1
+
+
+def test_orphan_temp_file_swept_on_save(tmp_path):
+    """A leftover temp file under the pair dir is removed by save."""
+    pair = tmp_path / "clf" / "ds"
+    (pair / "predictions_by_seed" / "seed_0").mkdir(parents=True)
+    stale = pair / f"{_TEMP_PREFIX}leftover.tmp"
+    stale.write_text("junk")
+    Results(tmp_path).save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    assert not stale.exists()
+
+
+def test_crash_between_predictions_and_report_not_committed(tmp_path, monkeypatch):
+    """A crash before the report write leaves exists() False; rerun fixes it."""
+    r = Results(tmp_path)
+    kwargs = dict(
+        partition=0,
+        dataset="ds",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    monkeypatch.setattr(
+        Results,
+        "_append_report_row",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
+    )
+    with pytest.raises(RuntimeError):
+        r.save(_make_result(**kwargs), save_model=False)
+    # Predictions were written but no report row was committed
+    seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
+    assert (seed / "train_predictions.csv").is_file()
+    assert r.exists("clf", "ds", "0") is False
+    # A normal rerun commits the row
+    monkeypatch.undo()
+    r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is True
+
+
+def test_stale_report_row_uncommitted_on_crash_resave(tmp_path, monkeypatch):
+    """Re-saving a resample uncommits its row; a crash leaves it uncommitted."""
+    r = Results(tmp_path)
+    kwargs = dict(
+        partition=0,
+        dataset="ds",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is True
+    # Crash on re-save after the uncommit but before the recommit
+    monkeypatch.setattr(
+        Results,
+        "_append_report_row",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
+    )
+    with pytest.raises(RuntimeError):
+        r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is False
+    monkeypatch.undo()
+    r.save(_make_result(**kwargs), save_model=False)
+    assert r.exists("clf", "ds", "0") is True

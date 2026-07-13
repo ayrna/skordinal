@@ -261,7 +261,11 @@ class Results:
         *,
         save_model: bool = True,
     ) -> None:
-        """Write per-seed files, the report row, hyperparameters and model.
+        """Write per-seed files, the model, hyperparameters and the report row.
+
+        The report row is written last and acts as the commit marker read
+        by ``exists``: a save interrupted at any earlier point leaves no
+        row, so a rerun detects the partition as missing and rewrites it.
 
         Parameters
         ----------
@@ -315,6 +319,13 @@ class Results:
             result.resample_id,
             save_model=save_model,
         )
+        # Clear any temp file left by a prior crash before writing new ones
+        for stray in base_dir.rglob(f"{_TEMP_PREFIX}*"):
+            if stray.is_file():
+                stray.unlink(missing_ok=True)
+        # Drop this resample's committed row so a crash mid-write cannot
+        # leave a report row describing predictions no longer on disk
+        self._uncommit_report_row(base_dir, result.resample_id)
 
         classes = np.asarray(result.best_model.classes_)
         _write_split_files(
@@ -343,8 +354,9 @@ class Results:
         if save_model:
             _atomic_dump(models_dir / f"{result.resample_id}.joblib", result.best_model)
 
-        self._append_report_row(result, base_dir)
         self._upsert_hyperparameters(result, base_dir)
+        # Write the report row last: it is the commit marker for exists()
+        self._append_report_row(result, base_dir)
 
     def _pair_dir(self, classifier_name: str, dataset_name: str) -> Path:
         """Validate both components and return the classifier/dataset dir."""
@@ -374,8 +386,24 @@ class Results:
             )
         return base, models_dir, seed_dir
 
+    def _uncommit_report_row(self, base_dir: Path, resample_id: int) -> None:
+        """Drop this resample's row from report.csv before rewriting it."""
+        csv_path = base_dir / "report.csv"
+        if not csv_path.is_file():
+            return
+        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
+        df.index = df.index.astype(str)
+        if str(resample_id) not in df.index:
+            return
+        df = df.drop(index=str(resample_id))
+        if df.empty:
+            # Remove the commit marker entirely so exists() reports False
+            csv_path.unlink()
+            return
+        _atomic_write(csv_path, df.to_csv())
+
     def _append_report_row(self, result: ExperimentResult, base_dir: Path) -> None:
-        """Append one metrics row to ``report.csv``."""
+        """Append one metrics row to report.csv."""
         row: dict[str, Any] = {**result.train_metrics, **result.test_metrics}
 
         csv_path = base_dir / "report.csv"
