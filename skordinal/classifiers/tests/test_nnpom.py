@@ -9,6 +9,7 @@ from scipy.optimize import check_grad
 from sklearn.exceptions import NotFittedError
 
 from skordinal.classifiers import NNPOM
+from skordinal.datasets import make_ordinal_classification
 
 
 @pytest.fixture
@@ -21,6 +22,19 @@ def X():
 def y():
     """Create sample target variables for testing."""
     return np.array([0, 1, 1, 0, 1])
+
+
+@pytest.fixture
+def ordinal_data():
+    """Create a synthetic 3-class ordinal dataset for behavioural tests."""
+    return make_ordinal_classification(
+        n_samples=90,
+        n_features=4,
+        n_classes=3,
+        n_informative=4,
+        noise=0.1,
+        random_state=0,
+    )
 
 
 @pytest.mark.parametrize(
@@ -248,3 +262,23 @@ def test_nnpom_cost_function_gradient_matches_finite_difference():
 
     err = check_grad(cost, grad, x0)
     assert err < 1e-4
+
+
+def test_nnpom_proba_and_cumproba_well_formed(ordinal_data):
+    """predict_proba/predict_cumproba are well-formed and match predict."""
+    X, y = ordinal_data
+    clf = NNPOM(n_hidden=4, max_iter=50, random_state=0).fit(X, y)
+    n_classes = len(clf.classes_)
+
+    proba = clf.predict_proba(X)
+    assert proba.shape == (X.shape[0], n_classes)
+    assert np.all(proba >= 0.0)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
+
+    cumproba = clf.predict_cumproba(X)
+    assert cumproba.shape == (X.shape[0], n_classes - 1)
+    assert np.all(cumproba >= 0.0) and np.all(cumproba <= 1.0)
+    assert np.all(np.diff(cumproba, axis=1) >= 0)
+
+    expected_pred = clf.classes_[proba.argmax(axis=1)]
+    np.testing.assert_array_equal(clf.predict(X), expected_pred)

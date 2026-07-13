@@ -14,7 +14,12 @@ from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted
 
 from skordinal.utils._sklearn_compat import validate_data
-from skordinal.utils.extmath import params_to_thresholds, thresholds_grad
+from skordinal.utils.extmath import (
+    cumproba_to_proba,
+    params_to_thresholds,
+    repair_cumproba,
+    thresholds_grad,
+)
 from skordinal.utils.validation import check_ordinal_targets
 
 
@@ -82,7 +87,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
     theta2_ : ndarray of shape (1, n_hidden)
         Output layer weights (without bias, the biases will be the thresholds)
 
-    thresholds_ : ndarray of shape (n_classes - 1, 1)
+    thresholds_ : ndarray of shape (1, n_classes - 1)
         Class thresholds parameters
 
     References
@@ -274,6 +279,74 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         y_pred = self.classes_[a3.argmax(1)]
 
         return y_pred
+
+    def predict_cumproba(self, X: ArrayLike) -> np.ndarray:
+        """Cumulative class probabilities for each sample.
+
+        Computes ``P(y <= k | x) = sigmoid(threshold_k - f(x))`` for
+        each ordinal threshold ``k``, where ``f(x)`` is the network's
+        scalar projection. Rows are non-decreasing by construction
+        (ordered thresholds and a monotone sigmoid).
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        cumproba : ndarray of shape (n_samples, n_classes - 1)
+            Entry ``[i, k]`` is the estimated probability that sample
+            ``i`` belongs to class ``k`` or lower.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+
+        ValueError
+            If input is invalid.
+
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        return repair_cumproba(self._cumproba(X))
+
+    def predict_proba(self, X: ArrayLike) -> np.ndarray:
+        """Class probability estimates for each sample.
+
+        Derives class probabilities from the cumulative probability
+        estimates via finite differencing.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        proba : ndarray of shape (n_samples, n_classes)
+            Non-negative class probabilities; each row sums to 1.0.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+
+        ValueError
+            If input is invalid.
+
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        return cumproba_to_proba(self._cumproba(X), repair=True)
+
+    def _cumproba(self, X: np.ndarray) -> np.ndarray:
+        """Compute raw cumulative probabilities on pre-validated X."""
+        a1 = np.append(np.ones((X.shape[0], 1)), X, axis=1)
+        a2 = expit(np.matmul(a1, self.theta1_.T))
+        projected = np.matmul(a2, self.theta2_.T)
+        return expit(self.thresholds_ - projected)
 
     def _unpack_parameters(
         self,
