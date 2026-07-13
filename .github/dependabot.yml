@@ -15,3 +15,18 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "MNT"
+
+  # Maintain the Python runtime dependencies declared in pyproject.toml
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "MNT"
