@@ -44,7 +44,9 @@ class Benchmark:
         Names must be recognised by ``skordinal.metrics.get_ordinal_scorer``.
 
     results_path : str or Path
-        Directory where result files are written.
+        Directory where result files are written. Expanded and resolved to
+        an absolute path at construction, so a later working-directory
+        change does not affect where results are written or read.
 
     resamples : int, default=30
         Number of resamples (train/test splits) to load per dataset. Forwarded
@@ -148,7 +150,9 @@ class Benchmark:
         self.data_home: str | Path | None = data_home
         self.datasets: list[str] = list(datasets)
         self.eval_metrics: list[str] = list(eval_metrics)
-        self.results_path: str | Path = results_path
+        # Resolve once so a later chdir cannot split the write and read roots
+        self.results_path = Path(results_path).expanduser().resolve()
+        self._results = Results(self.results_path)
         self.resamples: int = resamples
         self.tuning_metric = tuning_metric
         self.cv = cv
@@ -221,8 +225,6 @@ class Benchmark:
             (no matching path and not present in the bundled collection).
 
         """
-        self._results = Results(Path(self.results_path))
-
         if self.verbose:
             print("\n###############################")
             print("\tRunning Benchmark")
