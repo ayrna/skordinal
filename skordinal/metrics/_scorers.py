@@ -1,10 +1,7 @@
 """Scorer registry for ordinal classification metrics."""
 
-from __future__ import annotations
-
-from collections.abc import Callable
-
 from sklearn.metrics import accuracy_score, make_scorer, mean_absolute_error
+from sklearn.utils._param_validation import validate_params
 
 from ._metrics import (
     accuracy_off1_score,
@@ -21,7 +18,7 @@ from ._metrics import (
     weighted_kappa,
 )
 
-_SCORERS: dict[str, Callable] = {
+_SCORERS = {
     "neg_average_mean_absolute_error": make_scorer(
         average_mean_absolute_error, greater_is_better=False
     ),
@@ -59,7 +56,8 @@ _SCORERS: dict[str, Callable] = {
 __all__ = ["get_ordinal_scorer", "list_ordinal_scorers"]
 
 
-def get_ordinal_scorer(name: str) -> Callable:
+@validate_params({"name": [str]}, prefer_skip_nested_validation=True)
+def get_ordinal_scorer(name):
     """Return a scikit-learn-compatible scorer by name.
 
     Parameters
@@ -76,8 +74,6 @@ def get_ordinal_scorer(name: str) -> Callable:
 
     Raises
     ------
-    TypeError
-        If ``name`` is not a string.
     ValueError
         If ``name`` is not a registered scorer name.
 
@@ -89,8 +85,6 @@ def get_ordinal_scorer(name: str) -> Callable:
     True
 
     """
-    if not isinstance(name, str):
-        raise TypeError(f"name must be a string, got {type(name)}.")
     key = name.strip()
     if key in _SCORERS:
         return _SCORERS[key]
@@ -99,7 +93,7 @@ def get_ordinal_scorer(name: str) -> Callable:
     )
 
 
-def list_ordinal_scorers() -> list[str]:
+def list_ordinal_scorers():
     """Return the sorted list of registered ordinal scorer names.
 
     Returns

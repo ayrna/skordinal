@@ -1,17 +1,13 @@
 """Metrics for ordinal classification."""
 
-from __future__ import annotations
-
 import numpy as np
 import scipy.stats
-from numpy.typing import ArrayLike, NDArray
 from sklearn.metrics import confusion_matrix, recall_score
 from sklearn.utils import check_array, check_consistent_length
+from sklearn.utils._param_validation import validate_params
 
 
-def _check_metric_inputs(
-    y_true: ArrayLike, y_pred: ArrayLike
-) -> tuple[NDArray, NDArray]:
+def _check_metric_inputs(y_true, y_pred):
     """Coerce metric inputs to 1-D arrays and validate length consistency.
 
     Two-dimensional inputs are interpreted as one-hot encoded labels and
@@ -46,9 +42,7 @@ def _check_metric_inputs(
     return y_true_arr, y_pred_arr
 
 
-def _check_proba_inputs(
-    y_true: ArrayLike, y_proba: ArrayLike, *, sum_atol: float = 1e-6
-) -> tuple[NDArray, NDArray[np.float64]]:
+def _check_proba_inputs(y_true, y_proba, *, sum_atol=1e-6):
     """Validate inputs for probabilistic ordinal metrics.
 
     ``y_true`` may be 1-D class labels or a 2-D one-hot matrix.
@@ -93,13 +87,7 @@ def _check_proba_inputs(
     return y_true_arr, y_proba_arr
 
 
-def _recall_per_class(
-    y_true: NDArray,
-    y_pred: NDArray,
-    *,
-    labels: ArrayLike | None = None,
-    sample_weight: ArrayLike | None = None,
-) -> NDArray[np.float64]:
+def _recall_per_class(y_true, y_pred, *, labels=None, sample_weight=None):
     """Return per-class recall as a 1-D float64 ndarray.
 
     Thin wrapper around :func:`sklearn.metrics.recall_score` with
@@ -138,13 +126,7 @@ def _recall_per_class(
     )
 
 
-def _per_class_mae(
-    y_true: NDArray,
-    y_pred: NDArray,
-    *,
-    labels: ArrayLike | None = None,
-    sample_weight: ArrayLike | None = None,
-) -> NDArray[np.float64]:
+def _per_class_mae(y_true, y_pred, *, labels=None, sample_weight=None):
     """Return per-class mean absolute error as a 1-D float64 ndarray.
 
     Drops rows of the confusion matrix with no support (zero true
@@ -179,12 +161,15 @@ def _per_class_mae(
     return errors[non_zero].sum(axis=1) / support[non_zero]
 
 
-def average_mean_absolute_error(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
     """Compute the average per-class mean absolute error.
 
     For each class with at least one ground-truth sample, the mean
@@ -226,12 +211,15 @@ def average_mean_absolute_error(
     return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).mean())
 
 
-def geometric_mean(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def geometric_mean(y_true, y_pred, *, sample_weight=None):
     """Compute the geometric mean of per-class sensitivities.
 
     Sensitivity (recall) is computed for every class from the confusion
@@ -280,12 +268,15 @@ def geometric_mean(
     return float(pow(np.prod(sensitivities), 1.0 / cm.shape[0]))
 
 
-def gmsec(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def gmsec(y_true, y_pred, *, sample_weight=None):
     """Geometric mean of the sensitivities of the extreme ordinal classes.
 
     Proposed in :footcite:t:`vargas2024improving` to assess the
@@ -328,12 +319,15 @@ def gmsec(
     return float(np.sqrt(sensitivities[0] * sensitivities[-1]))
 
 
-def mean_extreme_sensitivity(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
     """Arithmetic mean of the sensitivities of the extreme ordinal classes.
 
     Assesses the balanced performance between the extreme classes of an
@@ -371,12 +365,15 @@ def mean_extreme_sensitivity(
     return float((sensitivities[0] + sensitivities[-1]) / 2.0)
 
 
-def maximum_mean_absolute_error(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def maximum_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
     """Compute the maximum per-class mean absolute error.
 
     Returns the largest per-class MAE across classes with at least one
@@ -417,12 +414,15 @@ def maximum_mean_absolute_error(
     return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).max())
 
 
-def minimum_sensitivity(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def minimum_sensitivity(y_true, y_pred, *, sample_weight=None):
     """Lowest per-class sensitivity.
 
     Returns the minimum recall across all classes present in
@@ -460,12 +460,15 @@ def minimum_sensitivity(
     return float(np.min(sensitivities))
 
 
-def mean_zero_one_error(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def mean_zero_one_error(y_true, y_pred, *, sample_weight=None):
     """Fraction of misclassified samples (error rate).
 
     Equivalent to ``1 - accuracy``; the complementary measure of the
@@ -502,7 +505,11 @@ def mean_zero_one_error(
     return float(1 - np.diagonal(cm).sum() / cm.sum())
 
 
-def kendalls_tau(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+@validate_params(
+    {"y_true": ["array-like"], "y_pred": ["array-like"]},
+    prefer_skip_nested_validation=True,
+)
+def kendalls_tau(y_true, y_pred):
     """Kendall's tau rank correlation coefficient.
 
     Measures the ordinal association between ``y_true`` and ``y_pred``
@@ -542,12 +549,15 @@ def kendalls_tau(y_true: ArrayLike, y_pred: ArrayLike) -> float:
     return float(corr)
 
 
-def weighted_kappa(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def weighted_kappa(y_true, y_pred, *, sample_weight=None):
     """Weighted Cohen's kappa with linear ordinal weights.
 
     A version of the kappa statistic that assigns different weights to
@@ -598,7 +608,11 @@ def weighted_kappa(
     return float((po - pe) / (1 - pe))
 
 
-def spearmans_rho(y_true: ArrayLike, y_pred: ArrayLike) -> float:
+@validate_params(
+    {"y_true": ["array-like"], "y_pred": ["array-like"]},
+    prefer_skip_nested_validation=True,
+)
+def spearmans_rho(y_true, y_pred):
     """Spearman's rank correlation coefficient between two ordinal vectors.
 
     A non-parametric measure of monotonic association computed from
@@ -645,12 +659,15 @@ def spearmans_rho(y_true: ArrayLike, y_pred: ArrayLike) -> float:
     return float(num / div)
 
 
-def ranked_probability_score(
-    y_true: ArrayLike,
-    y_proba: ArrayLike,
-    *,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_proba": ["array-like"],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     """Ranked probability score for ordinal class probabilities.
 
     Quadratic distance between the cumulative ground-truth indicator
@@ -718,13 +735,16 @@ def ranked_probability_score(
     return float(np.average(per_sample, weights=weights))
 
 
-def accuracy_off1_score(
-    y_true: ArrayLike,
-    y_pred: ArrayLike,
-    *,
-    labels: ArrayLike | None = None,
-    sample_weight: ArrayLike | None = None,
-) -> float:
+@validate_params(
+    {
+        "y_true": ["array-like"],
+        "y_pred": ["array-like"],
+        "labels": ["array-like", None],
+        "sample_weight": ["array-like", None],
+    },
+    prefer_skip_nested_validation=True,
+)
+def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
     """1-off accuracy: predictions in adjacent classes count as correct.
 
     A prediction is counted as correct when it lies within one class

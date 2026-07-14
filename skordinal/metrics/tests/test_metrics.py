@@ -5,6 +5,7 @@ import inspect
 import numpy as np
 import numpy.testing as npt
 import pytest
+from sklearn.utils._param_validation import InvalidParameterError
 
 from skordinal.metrics import (
     accuracy_off1_score,
@@ -395,3 +396,10 @@ def test_metric_returns_python_float(fn):
     assert type(result) is float, (
         f"{fn.__name__} returned {type(result).__name__}, expected float"
     )
+
+
+def test_metric_rejects_non_array_like_y_true():
+    """A scalar y_true is rejected at the parameter boundary."""
+    # decorator fires before _check_metric_inputs
+    with pytest.raises(InvalidParameterError):
+        average_mean_absolute_error(1.0, [1, 2])

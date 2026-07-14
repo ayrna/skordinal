@@ -3,6 +3,7 @@
 import numpy as np
 import numpy.testing as npt
 import pytest
+from sklearn.utils._param_validation import InvalidParameterError
 
 from skordinal.preprocessing import (
     binary_cumulative_to_ordinal,
@@ -254,3 +255,15 @@ def test_round_trip_encode_decode(K):
         binary_cumulative_to_ordinal(ordinal_to_binary_cumulative(y, classes), classes),
         y,
     )
+
+
+def test_build_coding_matrix_rejects_non_integer_n_classes():
+    """A non-integer n_classes is rejected at the parameter boundary."""
+    with pytest.raises(InvalidParameterError):
+        build_coding_matrix(3.5, "ordered_partitions")
+
+
+def test_encode_rejects_non_array_like_y():
+    """A scalar y is rejected at the parameter boundary."""
+    with pytest.raises(InvalidParameterError):
+        ordinal_to_binary_cumulative(1, np.array([0, 1, 2]))
