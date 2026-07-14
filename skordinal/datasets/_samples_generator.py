@@ -146,4 +146,4 @@ def make_ordinal_classification(
     thresholds = np.percentile(z, cut_percentiles)
     y = np.searchsorted(thresholds, z).astype(np.intp)
 
-    return X.astype(np.float64), y
+    return X, y
