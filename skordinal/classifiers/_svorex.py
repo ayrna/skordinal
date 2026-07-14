@@ -8,9 +8,8 @@ import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.utils._param_validation import Interval, StrOptions
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, validate_data
 
-from skordinal.utils._sklearn_compat import validate_data
 from skordinal.utils.validation import check_ordinal_targets
 
 from . import _libsvorex as svorex  # type: ignore[attr-defined]

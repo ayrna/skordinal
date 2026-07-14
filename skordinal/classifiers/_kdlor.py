@@ -11,9 +11,8 @@ from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.metrics.pairwise import pairwise_kernels
 from sklearn.utils._param_validation import Interval, StrOptions
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, validate_data
 
-from skordinal.utils._sklearn_compat import validate_data
 from skordinal.utils.extmath import cumproba_to_proba, repair_cumproba
 from skordinal.utils.validation import check_ordinal_targets
 

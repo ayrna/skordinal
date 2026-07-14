@@ -11,9 +11,8 @@ from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.class_weight import compute_sample_weight
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, validate_data
 
-from skordinal.utils._sklearn_compat import validate_data
 from skordinal.utils.extmath import (
     cumproba_to_proba,
     params_to_thresholds,
