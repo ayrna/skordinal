@@ -1,9 +1,9 @@
 """Ordinal coding utilities."""
 
-from __future__ import annotations
+from numbers import Integral
 
 import numpy as np
-from numpy.typing import ArrayLike
+from sklearn.utils._param_validation import Interval, StrOptions, validate_params
 
 _VALID_DECOMPOSITIONS = (
     "ordered_partitions",
@@ -13,10 +13,11 @@ _VALID_DECOMPOSITIONS = (
 )
 
 
-def ordinal_to_binary_cumulative(
-    y: ArrayLike,
-    classes: ArrayLike,
-) -> np.ndarray:
+@validate_params(
+    {"y": ["array-like"], "classes": ["array-like"]},
+    prefer_skip_nested_validation=True,
+)
+def ordinal_to_binary_cumulative(y, classes):
     """Encode ordinal targets into K-1 binary cumulative problems.
 
     Column ``k`` represents the binary problem
@@ -67,10 +68,11 @@ def ordinal_to_binary_cumulative(
     return (y[:, None] > classes[:-1]).astype(np.intp)
 
 
-def binary_cumulative_to_ordinal(
-    binary_preds: ArrayLike,
-    classes: ArrayLike,
-) -> np.ndarray:
+@validate_params(
+    {"binary_preds": ["array-like"], "classes": ["array-like"]},
+    prefer_skip_nested_validation=True,
+)
+def binary_cumulative_to_ordinal(binary_preds, classes):
     """Decode K-1 binary predictions back to ordinal class labels.
 
     Accepts either hard ``{0, 1}`` predictions or continuous
@@ -124,10 +126,14 @@ def binary_cumulative_to_ordinal(
     return classes[indices]
 
 
-def build_coding_matrix(
-    n_classes: int,
-    decomposition: str,
-) -> np.ndarray:
+@validate_params(
+    {
+        "n_classes": [Interval(Integral, 3, None, closed="left")],
+        "decomposition": [StrOptions(set(_VALID_DECOMPOSITIONS))],
+    },
+    prefer_skip_nested_validation=True,
+)
+def build_coding_matrix(n_classes, decomposition):
     """Return the coding matrix for an ordinal decomposition strategy.
 
     The resulting matrix has one row per class and one column per
@@ -178,14 +184,6 @@ def build_coding_matrix(
        Classification", in Proc. 12th European Conference on Machine Learning
        (ECML 2001), pp. 145-156, 2001.
     """
-    if not isinstance(n_classes, (int, np.integer)) or n_classes < 3:
-        raise ValueError(f"n_classes must be an integer >= 3; got {n_classes!r}.")
-    if decomposition not in _VALID_DECOMPOSITIONS:
-        raise ValueError(
-            f"decomposition must be one of {list(_VALID_DECOMPOSITIONS)}; "
-            f"got {decomposition!r}."
-        )
-
     K = int(n_classes)
     coding = np.zeros((K, K - 1), dtype=np.intp)
 
