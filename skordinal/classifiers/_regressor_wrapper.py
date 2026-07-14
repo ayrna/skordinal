@@ -14,9 +14,8 @@ from sklearn.base import (
 )
 from sklearn.svm import SVR
 from sklearn.utils._param_validation import HasMethods
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, validate_data
 
-from skordinal.utils._sklearn_compat import validate_data
 from skordinal.utils.validation import check_ordinal_targets
 
 

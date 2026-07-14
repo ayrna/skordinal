@@ -7,9 +7,8 @@ from scipy.special import expit
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.utils import check_random_state
 from sklearn.utils._param_validation import Interval, StrOptions
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import check_is_fitted, validate_data
 
-from skordinal.utils._sklearn_compat import validate_data
 from skordinal.utils.extmath import losses_to_proba, proba_to_cumproba
 from skordinal.utils.validation import check_ordinal_targets
 
