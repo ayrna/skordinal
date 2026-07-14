@@ -14,12 +14,22 @@ def _resolve_weights(weights, n_classes):
     if weights is None:
         return np.full(n_classes, 1.0 / n_classes)
     weights = np.asarray(weights, dtype=np.float64)
-    if weights.ndim != 1 or len(weights) not in (n_classes, n_classes - 1):
+    if weights.ndim != 1:
+        raise ValueError(
+            "weights must be a 1-D array-like of length n_classes "
+            f"({n_classes}) or n_classes - 1 ({n_classes - 1}); got an "
+            f"array of shape {weights.shape}."
+        )
+    if weights.size not in (n_classes, n_classes - 1):
         raise ValueError(
             f"weights must have length n_classes ({n_classes}) or "
-            f"n_classes - 1 ({n_classes - 1}); got {len(weights)}."
+            f"n_classes - 1 ({n_classes - 1}); got {weights.size}."
         )
-    if len(weights) == n_classes - 1:
+    if not np.all(np.isfinite(weights)):
+        raise ValueError(
+            f"weights must contain only finite values; got weights={weights.tolist()}."
+        )
+    if weights.size == n_classes - 1:
         weights = np.append(weights, 1.0 - weights.sum())
     if np.any(weights < 0) or weights.sum() <= 0:
         raise ValueError("weights must be non-negative and sum to a positive value.")
