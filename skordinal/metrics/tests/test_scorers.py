@@ -4,6 +4,7 @@ import numpy.testing as npt
 import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.utils._param_validation import InvalidParameterError
 
 from skordinal.metrics import (
     accuracy_off1_score,
@@ -137,9 +138,9 @@ def test_gridcv_with_loss_scorer():
     assert gs.best_score_ <= 0
 
 
-def test_get_ordinal_scorer_type_error():
-    """Non-string input raises TypeError."""
-    with pytest.raises(TypeError, match="must be a string"):
+def test_get_ordinal_scorer_rejects_non_string():
+    """A non-string name is rejected at the parameter boundary."""
+    with pytest.raises(InvalidParameterError):
         get_ordinal_scorer(123)
 
 
