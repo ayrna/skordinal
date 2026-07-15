@@ -34,7 +34,8 @@ class SVOREX(ClassifierMixin, BaseEstimator):
         - poly: use Polynomial kernel with order p
 
     degree : int, default=2
-        Set degree in kernel function.
+        Degree of the polynomial kernel; must be at least 1. Ignored by
+        the ``rbf`` and ``linear`` kernels.
 
     tol : float, default=0.001
         Set tolerance of termination criterion.
@@ -66,7 +67,7 @@ class SVOREX(ClassifierMixin, BaseEstimator):
     _parameter_constraints: dict = {
         "C": [Interval(Real, 0.0, None, closed="neither")],
         "kernel": [StrOptions({"rbf", "linear", "poly"})],
-        "degree": [Interval(Integral, 0, None, closed="left")],
+        "degree": [Interval(Integral, 1, None, closed="left")],
         "tol": [Interval(Real, 0.0, None, closed="neither")],
         "gamma": [Interval(Real, 0.0, None, closed="neither")],
     }
