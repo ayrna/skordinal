@@ -150,7 +150,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
             self, X, y, accept_sparse=False, ensure_2d=True, dtype=None
         )
 
-        self.classes_, _ = check_ordinal_targets(y)
+        self.classes_, y_encoded = check_ordinal_targets(y)
         if self.classes_.size < 2:
             raise ValueError("OrdinalDecomposition requires at least 2 classes.")
 
@@ -165,7 +165,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
         # Give each train input its corresponding output label
         # for each binary classifier
         self.coding_matrix_ = self._coding_matrix(dtype, len(self.classes_))
-        class_labels = self.coding_matrix_[(np.digitize(y, self.classes_) - 1), :]
+        class_labels = self.coding_matrix_[y_encoded, :]
 
         self.estimators_ = []
         parameters = {} if self.parameters is None else self.parameters
