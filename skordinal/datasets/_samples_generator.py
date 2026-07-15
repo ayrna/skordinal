@@ -10,16 +10,29 @@ from sklearn.utils._param_validation import Interval, validate_params
 
 
 def _resolve_weights(weights, n_classes):
-    """Return class proportions summing to one (mirrors make_classification)."""
+    """Return class proportions summing to one."""
     if weights is None:
         return np.full(n_classes, 1.0 / n_classes)
     weights = np.asarray(weights, dtype=np.float64)
-    if weights.ndim != 1 or len(weights) not in (n_classes, n_classes - 1):
+    # Reject non-1-D input explicitly: a multi-dimensional array whose
+    # total element count happens to match n_classes would otherwise
+    # slip past the size check below and be returned as-is
+    if weights.ndim != 1:
+        raise ValueError(
+            "weights must be a 1-D array-like of length n_classes "
+            f"({n_classes}) or n_classes - 1 ({n_classes - 1}); got an "
+            f"array of shape {weights.shape}."
+        )
+    if weights.size not in (n_classes, n_classes - 1):
         raise ValueError(
             f"weights must have length n_classes ({n_classes}) or "
-            f"n_classes - 1 ({n_classes - 1}); got {len(weights)}."
+            f"n_classes - 1 ({n_classes - 1}); got {weights.size}."
         )
-    if len(weights) == n_classes - 1:
+    if not np.all(np.isfinite(weights)):
+        raise ValueError(
+            f"weights must contain only finite values; got weights={weights.tolist()}."
+        )
+    if weights.size == n_classes - 1:
         weights = np.append(weights, 1.0 - weights.sum())
     if np.any(weights < 0) or weights.sum() <= 0:
         raise ValueError("weights must be non-negative and sum to a positive value.")
@@ -82,10 +95,13 @@ def make_ordinal_classification(
         ``n_informative`` and ``n_classes``. ``0`` yields a noise-free
         (deterministic) labelling.
 
-    weights : array-like of shape (n_classes,) or (n_classes - 1,), default=None
+    weights : array-like of shape (n_classes,) or (n_classes - 1,), \
+            default=None
         Proportion of samples assigned to each class. If ``None``, classes are
         balanced. If ``n_classes - 1`` values are given, the last proportion is
-        inferred as ``1 - sum(weights)``. Values are normalised to sum to one.
+        inferred as ``1 - sum(weights)``. Values must be finite,
+        non-negative, and sum to a positive value; they are normalised
+        to sum to one.
 
     random_state : int, RandomState instance, or None, default=None
         Seed or random number generator for reproducibility.
@@ -97,17 +113,31 @@ def make_ordinal_classification(
 
     y : ndarray of shape (n_samples,)
         Ordinal integer class labels in ``{0, 1, ..., n_classes-1}``,
-        dtype ``intp``.
+        dtype ``intp``. The realised label set may be incomplete: a
+        class bin can be empty when ``n_samples`` is small or
+        ``weights`` is skewed, and a zero-weight boundary class may
+        still receive the extreme sample.
+
+    Raises
+    ------
+    ValueError
+        If ``n_informative`` exceeds ``n_features``, or if ``weights``
+        is not 1-D, has a length other than ``n_classes`` or
+        ``n_classes - 1``, contains a non-finite or negative value, or
+        does not sum to a positive value.
 
     Examples
     --------
     >>> import numpy as np
     >>> from skordinal.datasets import make_ordinal_classification
-    >>> X, y = make_ordinal_classification(n_samples=200, n_classes=4, random_state=0)
+    >>> X, y = make_ordinal_classification(
+    ...     n_samples=200, n_classes=4, random_state=0
+    ... )
     >>> X.shape, y.shape
     ((200, 10), (200,))
     >>> _, y = make_ordinal_classification(
-    ...     n_samples=1000, n_classes=3, weights=[0.6, 0.3, 0.1], random_state=0
+    ...     n_samples=1000, n_classes=3,
+    ...     weights=[0.6, 0.3, 0.1], random_state=0
     ... )
     >>> np.round(np.bincount(y) / y.size, 1).tolist()
     [0.6, 0.3, 0.1]
@@ -136,4 +166,4 @@ def make_ordinal_classification(
     thresholds = np.percentile(z, cut_percentiles)
     y = np.searchsorted(thresholds, z).astype(np.intp)
 
-    return X.astype(np.float64), y
+    return X, y
