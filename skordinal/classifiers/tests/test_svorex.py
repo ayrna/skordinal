@@ -54,6 +54,7 @@ def test_svorex_predict_matches_expected(kernel):
         ("C", 0),
         ("C", -1),
         ("degree", -1),
+        ("degree", 0),
         ("tol", 0),
         ("tol", -1e-5),
         ("kernel", "unknown"),
