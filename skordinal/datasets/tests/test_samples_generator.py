@@ -76,6 +76,8 @@ def test_unseeded_calls_vary():
         ({"n_classes": 3, "weights": [float("nan"), 0.5, 0.5]}, "finite"),
         ({"n_classes": 3, "weights": [float("inf"), 0.5, 0.5]}, "finite"),
         ({"n_classes": 3, "weights": [[0.3], [0.3], [0.4]]}, "shape"),
+        ({"n_classes": 3, "weights": [0.0, 0.0, 0.0]}, "positive"),
+        ({"n_classes": 3, "weights": [0.6, 0.6]}, "non-negative"),
     ],
     ids=[
         "n_samples_zero",
@@ -89,6 +91,8 @@ def test_unseeded_calls_vary():
         "weights_nan",
         "weights_infinite",
         "weights_not_1d",
+        "weights_sum_zero",
+        "weights_inferred_last_negative",
     ],
 )
 def test_invalid_parameters_raise(kwargs, match):
