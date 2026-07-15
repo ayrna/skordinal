@@ -60,7 +60,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
     n_features_in_ : int
         Number of features seen during fit.
 
-    coding_matrix_ : array-like, shape (n_targets, n_targets-1)
+    coding_matrix_ : array-like, shape (n_classes, n_classes - 1)
         Matrix that defines which classes will be used to build the model of each
         subproblem, and in which binary class they belong inside those new models.
         Further explained previously.
@@ -150,7 +150,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
             self, X, y, accept_sparse=False, ensure_2d=True, dtype=None
         )
 
-        self.classes_, _ = check_ordinal_targets(y)
+        self.classes_, y_encoded = check_ordinal_targets(y)
         if self.classes_.size < 2:
             raise ValueError("OrdinalDecomposition requires at least 2 classes.")
 
@@ -165,12 +165,12 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
         # Give each train input its corresponding output label
         # for each binary classifier
         self.coding_matrix_ = self._coding_matrix(dtype, len(self.classes_))
-        class_labels = self.coding_matrix_[(np.digitize(y, self.classes_) - 1), :]
+        class_labels = self.coding_matrix_[y_encoded, :]
 
         self.estimators_ = []
         parameters = {} if self.parameters is None else self.parameters
 
-        # Fitting n_targets - 1 classifiers
+        # Fitting n_classes - 1 classifiers
         for n in range(len(class_labels[0, :])):
             estimator = load_classifier(self.base_classifier, param_grid=parameters)
             if not hasattr(estimator, "predict_proba"):
@@ -336,7 +336,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         Returns
         -------
-        coding_matrix: array-like, shape (n_targets, n_targets-1)
+        coding_matrix: array-like, shape (n_classes, n_classes - 1)
             Each value must be in range {-1, 1, 0}, whether that class will belong to
             negative class, positive class or will not be used for that particular
             binary classifier.
@@ -385,7 +385,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         Returns
         -------
-        predictions : array, shape (n_samples, n_targets-1)
+        predictions : array, shape (n_samples, n_classes - 1)
             Probability estimates or binary classification outcomes.
 
         """
@@ -404,7 +404,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        predictions : array, shape (n_samples, n_targets-1)
+        predictions : array, shape (n_samples, n_classes - 1)
             Probability estimates or binary classification outcomes.
 
         Returns
@@ -428,7 +428,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        predictions : array, shape (n_samples, n_targets-1)
+        predictions : array, shape (n_samples, n_classes - 1)
             Probability estimates or binary classification outcomes.
 
         Returns
@@ -452,7 +452,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        predictions : array, shape (n_samples, n_targets-1)
+        predictions : array, shape (n_samples, n_classes - 1)
             Probability estimates or binary classification outcomes.
 
         Returns
@@ -476,7 +476,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        predictions : array, shape (n_samples, n_targets-1)
+        predictions : array, shape (n_samples, n_classes - 1)
             Probability estimates or binary classification outcomes.
 
         Returns
