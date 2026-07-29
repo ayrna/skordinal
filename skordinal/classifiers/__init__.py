@@ -3,6 +3,7 @@
 from ._cost_sensitive_wrapper import CostSensitiveWrapper
 from ._elmop import ELMOP
 from ._kdlor import KDLOR
+from ._logistic_it import LogisticIT
 from ._nnop import NNOP
 from ._nnpom import NNPOM
 from ._orboost import ORBoost
@@ -16,6 +17,7 @@ __all__ = [
     "CostSensitiveWrapper",
     "ELMOP",
     "KDLOR",
+    "LogisticIT",
     "NNOP",
     "NNPOM",
     "ORBoost",
