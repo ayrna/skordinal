@@ -1,11 +1,13 @@
 """Tests for the NNOP classifier."""
 
 import inspect
+import re
+import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.exceptions import NotFittedError
+from sklearn.exceptions import ConvergenceWarning, NotFittedError
 
 from skordinal.classifiers import NNOP
 from skordinal.datasets import make_ordinal_classification
@@ -288,3 +290,17 @@ def test_nnop_predict_cumproba_repairs_non_monotone_raw_row():
     proba = clf.predict_proba(probe)
     assert np.all(proba >= 0.0)
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
+
+
+def test_nnop_convergence_warning_only_at_insufficient_max_iter(ordinal_data):
+    """ConvergenceWarning fires at max_iter=1, not with the default budget."""
+    X, y = ordinal_data
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConvergenceWarning)
+        NNOP(random_state=0).fit(X, y)
+
+    with pytest.warns(ConvergenceWarning, match="did not converge") as record:
+        clf = NNOP(max_iter=1, random_state=0).fit(X, y)
+
+    message = str(record[0].message)
+    assert re.search(rf"stopped after {clf.n_iter_} iterations?\b", message), message
