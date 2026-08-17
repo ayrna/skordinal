@@ -107,12 +107,10 @@ class ModelConfig:
 
         Creates a clone via ``sklearn.base.clone`` so ``self.estimator``
         is never mutated.  When ``random_state`` is not ``None``, the
-        seed is forwarded to the clone, using the first match:
-
-        1. If the clone exposes ``random_state`` directly, it is set.
-        2. Else if the clone exposes ``clf__random_state`` (Pipeline
-           with a ``clf`` step), that is set.
-        3. Otherwise the seed is silently ignored.
+        seed is forwarded to every parameter named ``random_state`` or
+        ending in ``__random_state``, including those of nested
+        estimators and Pipeline steps.  When the estimator exposes no
+        such parameter, the seed is ignored.
 
         Parameters
         ----------
@@ -127,9 +125,11 @@ class ModelConfig:
         """
         est = clone(self.estimator)
         if random_state is not None:
-            params = est.get_params(deep=True)
-            if "random_state" in params:
-                est.set_params(random_state=random_state)
-            elif "clf__random_state" in params:
-                est.set_params(clf__random_state=random_state)
+            est.set_params(
+                **{
+                    key: random_state
+                    for key in est.get_params(deep=True)
+                    if key == "random_state" or key.endswith("__random_state")
+                }
+            )
         return est
