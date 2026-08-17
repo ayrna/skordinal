@@ -208,6 +208,7 @@ def get_data_home(data_home=None) -> str:
     Mirrors ``sklearn.datasets.get_data_home``. Resolution order:
     ``data_home`` argument → ``$SKORDINAL_DATA`` environment variable →
     ``~/skordinal_data``. The directory is created if it does not exist.
+    An empty ``$SKORDINAL_DATA`` value is treated as unset.
 
     Parameters
     ----------
@@ -228,7 +229,8 @@ def get_data_home(data_home=None) -> str:
     True
     """
     if data_home is None:
-        data_home = os.environ.get("SKORDINAL_DATA", Path.home() / "skordinal_data")
+        # Empty SKORDINAL_DATA would otherwise resolve to the cwd
+        data_home = os.environ.get("SKORDINAL_DATA") or (Path.home() / "skordinal_data")
     data_home = Path(data_home).expanduser()
     data_home.mkdir(parents=True, exist_ok=True)
     return str(data_home)

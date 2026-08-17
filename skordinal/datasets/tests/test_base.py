@@ -104,6 +104,15 @@ def test_clear_data_home_removes_directory(tmp_path):
     assert not target.exists()
 
 
+def test_get_data_home_empty_env_var_treated_as_unset(tmp_path, monkeypatch):
+    """``SKORDINAL_DATA=""`` falls back to the default home, not the cwd."""
+    monkeypatch.setenv("SKORDINAL_DATA", "")
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    result = get_data_home(data_home=None)
+    assert Path(result) == tmp_path / "skordinal_data"
+    assert Path(result) != Path.cwd()
+
+
 def test_load_dataset_named_csv_bunch_contract(named_csv):
     """Named-header CSV yields a Bunch with correct shape, names, dtype."""
     bunch = load_dataset(named_csv)
