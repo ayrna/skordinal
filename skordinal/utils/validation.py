@@ -83,6 +83,40 @@ def check_ordinal_targets(
     return classes, y_encoded.astype(np.intp)
 
 
+def _rank_encode_labels(
+    y: ArrayLike,
+    classes: ArrayLike,
+    *,
+    input_name: str = "y",
+) -> NDArray[np.intp]:
+    """Rank-encode ``y`` against ``classes``, rejecting non-finite or
+    unknown ``y`` values.
+
+    A label above the last class encodes to ``len(classes)`` without
+    raising, so a caller with a documented out-of-range penalty can
+    still apply it. Every other unknown label raises. ``classes`` must
+    already be non-empty and sorted ascending, which is not validated
+    here.
+    """
+    classes = np.asarray(classes)
+    y = np.asarray(y)
+    if y.dtype.kind == "f" and not np.isfinite(y).all():
+        raise ValueError(f"{input_name} contains non-finite values.")
+    idx = np.searchsorted(classes, y)
+    # in_bounds excludes only labels above the last class. A mismatch
+    # after clipping flags every other unmatched label as unknown.
+    in_bounds = idx < len(classes)
+    clipped = np.clip(idx, 0, len(classes) - 1)
+    mismatched = in_bounds & (classes[clipped] != y)
+    if np.any(mismatched):
+        bad = np.unique(y[mismatched])
+        raise ValueError(
+            f"{input_name} contains labels not present in the given "
+            f"label set: {bad.tolist()}; labels={classes.tolist()}."
+        )
+    return idx
+
+
 def validate_thresholds(thresholds: ArrayLike) -> None:
     """Check that thresholds are strictly increasing and finite.
 
