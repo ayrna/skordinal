@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from numbers import Integral, Real
 
 import numpy as np
@@ -9,6 +10,7 @@ import scipy
 from numpy.typing import ArrayLike
 from scipy.special import expit
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils import check_random_state
 from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted, validate_data
@@ -88,6 +90,11 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
     thresholds_ : ndarray of shape (1, n_classes - 1)
         Class thresholds parameters
+
+    Notes
+    -----
+    If the L-BFGS-B solver stops before converging, a ``ConvergenceWarning``
+    is raised and ``n_iter_`` reports the iterations actually run.
 
     References
     ----------
@@ -218,6 +225,19 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         nn_params = results_optimization[0]
         self.loss_ = float(results_optimization[1])
         self.n_iter_ = int(results_optimization[2].get("nit", 0))
+
+        if results_optimization[2].get("warnflag", 0) != 0:
+            task = results_optimization[2].get("task", "")
+            if isinstance(task, bytes):
+                task = task.decode()
+            warnings.warn(
+                f"NNPOM did not converge (stopped after {self.n_iter_} "
+                f"iterations: {task}). Consider increasing max_iter, "
+                "adjusting the regularization strength alpha, or "
+                "standardizing X.",
+                ConvergenceWarning,
+                stacklevel=2,
+            )
 
         # Unpack the parameters
         theta1, theta2, thresholds_param = self._unpack_parameters(

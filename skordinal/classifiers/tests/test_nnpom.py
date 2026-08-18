@@ -1,12 +1,14 @@
 """Tests for the NNPOM classifier."""
 
 import inspect
+import re
+import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
 from scipy.optimize import check_grad
-from sklearn.exceptions import NotFittedError
+from sklearn.exceptions import ConvergenceWarning, NotFittedError
 
 from skordinal.classifiers import NNPOM
 from skordinal.datasets import make_ordinal_classification
@@ -282,3 +284,17 @@ def test_nnpom_proba_and_cumproba_well_formed(ordinal_data):
 
     expected_pred = clf.classes_[proba.argmax(axis=1)]
     np.testing.assert_array_equal(clf.predict(X), expected_pred)
+
+
+def test_nnpom_convergence_warning_only_at_insufficient_max_iter(ordinal_data):
+    """ConvergenceWarning fires at max_iter=1, not with the default budget."""
+    X, y = ordinal_data
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConvergenceWarning)
+        NNPOM(random_state=0).fit(X, y)
+
+    with pytest.warns(ConvergenceWarning, match="did not converge") as record:
+        clf = NNPOM(max_iter=1, random_state=0).fit(X, y)
+
+    message = str(record[0].message)
+    assert re.search(rf"stopped after {clf.n_iter_} iterations?\b", message), message
