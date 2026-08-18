@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from numbers import Integral
 from pathlib import Path
+
+from sklearn.utils import check_random_state
 
 from skordinal.datasets import load_partitions
 
@@ -71,12 +74,14 @@ class Benchmark:
         only, then applied to both train and test splits. ``None`` means no
         preprocessing.
 
-    random_state : int or None, default=None
+    random_state : int or None, default=0
         Seed used for two sources of randomness: the base estimator and the
         cross-validation splitter (``StratifiedKFold``) used during
         hyper-parameter search. Also forwarded to ``load_partitions`` when a
-        fallback split is generated. When ``None``, both use their own default
-        random behaviour.
+        fallback split is generated. A non-integer value (including ``None``)
+        is resolved to one concrete integer at construction, so every
+        ``load_partitions`` call in ``run`` shares the same partitioning
+        scheme.
 
     verbose : bool, default=True
         If ``True``, progress messages are printed to stdout.
@@ -116,7 +121,7 @@ class Benchmark:
         cv: int = 3,
         n_jobs: int = 1,
         input_preprocessing: str | None = None,
-        random_state: int | None = None,
+        random_state: int | None = 0,
         verbose: bool = True,
     ) -> None:
         if not models:
@@ -158,6 +163,9 @@ class Benchmark:
         self.cv = cv
         self.n_jobs = n_jobs
         self.input_preprocessing = input_preprocessing
+        # Collapse to one concrete int shared by every load_partitions call in run()
+        if not isinstance(random_state, Integral):
+            random_state = int(check_random_state(random_state).randint(2**31 - 1))
         self.random_state = random_state
         self.verbose = verbose
 
