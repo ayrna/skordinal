@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
-from time import time
+from time import perf_counter
 from typing import Any, cast
 
 import numpy as np
@@ -216,7 +216,8 @@ class Experiment:
             train_inputs = scaler.transform(train_inputs)
             test_inputs = scaler.transform(cast(np.ndarray, X_test))
 
-        # Select and fit the best estimator via GridSearchCV or direct fit.
+        # Select and fit the best estimator, keeping the refit metadata in
+        # locals so nothing is ever injected onto the estimator itself
         base = self.model.build(self.random_state)
         if self.model.needs_search:
             scorer = (
@@ -227,7 +228,7 @@ class Experiment:
             splitter = StratifiedKFold(
                 n_splits=self.cv, shuffle=True, random_state=self.random_state
             )
-            optimal_estimator: Any = GridSearchCV(
+            search = GridSearchCV(
                 base,
                 param_grid=self.model.param_grid,
                 scoring=scorer,
@@ -235,31 +236,34 @@ class Experiment:
                 cv=splitter,
                 error_score="raise",
             )
+            search.fit(train_inputs, y_train)
+            best_estimator = search.best_estimator_
+            best_params = search.best_params_
+            refit_time = search.refit_time_
+            cv_time_train = search.cv_results_["mean_fit_time"].mean()
+            cv_time_test = search.cv_results_["mean_score_time"].mean()
         else:
             if self.model.param_grid:
                 base.set_params(**self.model.fixed_params())
-            optimal_estimator = base
-
-        _fit_start = time()
-        optimal_estimator.fit(train_inputs, y_train)
-        _fit_elapsed = time() - _fit_start
-
-        if not isinstance(optimal_estimator, GridSearchCV):
-            optimal_estimator.refit_time_ = _fit_elapsed
-            optimal_estimator.best_params_ = self.model.fixed_params()
-            optimal_estimator.best_estimator_ = optimal_estimator
+            fit_start = perf_counter()
+            base.fit(train_inputs, y_train)
+            refit_time = perf_counter() - fit_start
+            best_estimator = base
+            best_params = self.model.fixed_params()
+            cv_time_train = np.nan
+            cv_time_test = np.nan
 
         # Predict on the training split.
-        train_predicted_y = optimal_estimator.predict(train_inputs)
+        train_predicted_y = best_estimator.predict(train_inputs)
 
         # Predict on the test split when it is present.
         test_predicted_y = None
         elapsed = np.nan
         if y_test is not None:
             assert test_inputs is not None
-            start = time()
-            test_predicted_y = np.asarray(optimal_estimator.predict(test_inputs))
-            elapsed = time() - start
+            start = perf_counter()
+            test_predicted_y = np.asarray(best_estimator.predict(test_inputs))
+            elapsed = perf_counter() - start
 
         # Compute evaluation metrics for both splits.
         train_metrics: OrderedDict[str, Any] = OrderedDict()
@@ -278,32 +282,18 @@ class Experiment:
                 test_score = _compute_metric(metric_name, y_test, test_predicted_y)
                 test_metrics[metric_name.strip() + "_test"] = test_score
 
-        # Assemble timing keys (GridSearchCV vs direct-fit branches).
-        if isinstance(optimal_estimator, GridSearchCV):
-            train_metrics["cv_time_train"] = optimal_estimator.cv_results_[
-                "mean_fit_time"
-            ].mean()
-            test_metrics["cv_time_test"] = optimal_estimator.cv_results_[
-                "mean_score_time"
-            ].mean()
-            train_metrics["time_train"] = optimal_estimator.refit_time_
-            test_metrics["time_test"] = elapsed
-        else:
-            optimal_estimator.best_params_ = self.model.fixed_params()
-            optimal_estimator.best_estimator_ = optimal_estimator
-
-            train_metrics["cv_time_train"] = np.nan
-            test_metrics["cv_time_test"] = np.nan
-            train_metrics["time_train"] = optimal_estimator.refit_time_
-            test_metrics["time_test"] = elapsed
+        # Assemble timing keys, the cv_* pair stays NaN unless a search ran
+        train_metrics["cv_time_train"] = cv_time_train
+        test_metrics["cv_time_test"] = cv_time_test
+        train_metrics["time_train"] = refit_time
+        test_metrics["time_test"] = elapsed
 
         # Compute class probabilities on each split when supported
-        estimator = optimal_estimator.best_estimator_
-        train_y_proba = _predict_proba_or_none(estimator, train_inputs)
+        train_y_proba = _predict_proba_or_none(best_estimator, train_inputs)
         y_proba = None
         if y_test is not None:
             assert test_inputs is not None
-            y_proba = _predict_proba_or_none(estimator, test_inputs)
+            y_proba = _predict_proba_or_none(best_estimator, test_inputs)
 
         # Build and return the ExperimentResult; no persistence here.
         return ExperimentResult(
@@ -315,8 +305,8 @@ class Experiment:
             y_proba=y_proba,
             train_metrics=train_metrics,
             test_metrics=test_metrics,
-            best_params=optimal_estimator.best_params_,
-            best_model=estimator,
+            best_params=best_params,
+            best_model=best_estimator,
             train_true_y=y_train,
             test_true_y=y_test,
             train_index=train_index,

@@ -199,6 +199,16 @@ def test_run_preprocessing_train_only_raises(split_train_only, preprocessing):
         _call_run(exp, X_train, y_train, X_test, y_test)
 
 
+def test_run_best_model_carries_no_refit_metadata(split_with_test):
+    """The direct-fit path leaves no GridSearchCV-shaped attributes on best_model."""
+    X_train, y_train, X_test, y_test = split_with_test
+    result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
+
+    assert not hasattr(result.best_model, "best_estimator_")
+    assert not hasattr(result.best_model, "best_params_")
+    assert not hasattr(result.best_model, "refit_time_")
+
+
 def test_run_preprocessing_does_not_mutate_inputs(split_with_test):
     """input_preprocessing='std' operates on copies; caller's arrays are unchanged."""
     exp = _make_experiment(input_preprocessing="std")
