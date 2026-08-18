@@ -5,7 +5,11 @@ import pytest
 from numpy.testing import assert_array_equal
 
 import skordinal.utils.validation as val_mod
-from skordinal.utils.validation import check_ordinal_targets, validate_thresholds
+from skordinal.utils.validation import (
+    _rank_encode_labels,
+    check_ordinal_targets,
+    validate_thresholds,
+)
 
 _ALL_HELPERS = [
     check_ordinal_targets,
@@ -112,3 +116,109 @@ def test_vt_invalid_raises(thresholds, match):
     """Each invalid threshold vector raises ValueError with a specific message."""
     with pytest.raises(ValueError, match=match):
         validate_thresholds(thresholds)
+
+
+@pytest.mark.parametrize(
+    "y, classes, expected",
+    [
+        (np.array([1, 3, 5, 3, 1]), np.array([1, 3, 5]), [0, 1, 2, 1, 0]),
+        ([1, 3, 5, 3, 1], [1, 3, 5], [0, 1, 2, 1, 0]),
+        (np.array([1.0, 5.0, 3.0]), np.array([1.0, 3.0, 5.0]), [0, 2, 1]),
+    ],
+    ids=["ndarray", "list", "float"],
+)
+def test_rel_known_encoding(y, classes, expected):
+    """Exact ranks, np.intp dtype, and a clean round-trip through classes."""
+    encoded = _rank_encode_labels(y, classes)
+    assert_array_equal(encoded, expected)
+    assert encoded.dtype == np.intp
+    assert_array_equal(np.asarray(classes)[encoded], y)
+
+
+def test_rel_above_max_returns_length_without_raising():
+    """A label above the highest known class encodes to len(classes)."""
+    encoded = _rank_encode_labels(np.array([1, 3, 6]), np.array([1, 3, 5]))
+    assert_array_equal(encoded, [0, 1, 3])
+
+
+@pytest.mark.parametrize(
+    "y, match",
+    [
+        (np.array([1, 2, 3]), r"\[2\]"),
+        (np.array([0, 3, 5]), r"\[0\]"),
+        (np.array([-7, 1]), r"\[-7\]"),
+    ],
+    ids=["interior-gap", "below-min", "below-min-negative"],
+)
+def test_rel_unknown_label_raises(y, match):
+    """Only labels above the last class escape. Every other unknown raises."""
+    with pytest.raises(
+        ValueError,
+        match=r"y contains labels not present in the given label set: " + match,
+    ):
+        _rank_encode_labels(y, np.array([1, 3, 5]))
+
+
+def test_rel_unknown_labels_reported_sorted_and_deduped():
+    """Offending labels are listed ascending and deduplicated, with the label set."""
+    with pytest.raises(ValueError, match=r"label set: \[2, 4\]; labels=\[1, 3, 5\]\."):
+        _rank_encode_labels(np.array([4, 2, 4, 2]), np.array([1, 3, 5]))
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf], ids=["nan", "inf", "-inf"])
+def test_rel_non_finite_float_raises(bad):
+    """NaN and both infinities are rejected before any encoding happens."""
+    with pytest.raises(ValueError, match=r"^y contains non-finite values\.$"):
+        _rank_encode_labels(np.array([1.0, bad]), np.array([1.0, 3.0, 5.0]))
+
+
+def test_rel_empty_y_returns_empty():
+    """An empty y encodes to an empty np.intp array without raising."""
+    encoded = _rank_encode_labels(np.array([], dtype=int), np.array([1, 3, 5]))
+    assert encoded.shape == (0,)
+    assert encoded.dtype == np.intp
+
+
+@pytest.mark.parametrize(
+    "y, expected, match",
+    [
+        (np.array([7, 7]), [0, 0], None),
+        (np.array([9]), [1], None),
+        (np.array([1]), None, r"labels not present.*\[1\].*labels=\[7\]"),
+    ],
+    ids=["exact", "above", "below"],
+)
+def test_rel_single_element_classes(y, expected, match):
+    """A one-class label set exercises the degenerate clip bound correctly."""
+    classes = np.array([7])
+    if match is None:
+        assert_array_equal(_rank_encode_labels(y, classes), expected)
+    else:
+        with pytest.raises(ValueError, match=match):
+            _rank_encode_labels(y, classes)
+
+
+def test_rel_input_name_swaps_both_messages():
+    """input_name= replaces the leading 'y' in the non-finite and unknown errors."""
+    classes = np.array([1, 3, 5])
+    with pytest.raises(ValueError, match=r"y_true contains non-finite values"):
+        _rank_encode_labels(np.array([1.0, np.inf]), classes, input_name="y_true")
+    with pytest.raises(ValueError, match=r"y_true contains labels not present"):
+        _rank_encode_labels(np.array([1, 2, 3]), classes, input_name="y_true")
+
+
+def test_rel_string_labels_encode():
+    """Non-numeric labels encode by rank and still reject unknown values."""
+    classes = np.array(["a", "b", "c"])
+    assert_array_equal(_rank_encode_labels(np.array(["a", "c"]), classes), [0, 2])
+    with pytest.raises(ValueError, match=r"label set: \['bb'\]"):
+        _rank_encode_labels(np.array(["bb"]), classes)
+
+
+def test_rel_is_private():
+    """The rank encoder stays off both public surfaces."""
+    import skordinal.utils as utils_pkg
+
+    assert "_rank_encode_labels" not in val_mod.__all__
+    assert "_rank_encode_labels" not in utils_pkg.__all__
+    assert not hasattr(utils_pkg, "_rank_encode_labels")
