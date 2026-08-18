@@ -250,6 +250,19 @@ def test_load_dataset_empty_csv_raises(tmp_path):
         load_dataset(path)
 
 
+@pytest.mark.parametrize(
+    "bad_target",
+    ["nan", "inf", "1e300", "9223372036854775808", "2.7"],
+    ids=["nan", "inf", "int64-overflow", "int64-max-plus-one", "fractional"],
+)
+def test_load_dataset_invalid_target_raises(tmp_path, bad_target):
+    """A non-integer target raises instead of casting to a corrupt class label."""
+    path = tmp_path / "bad_target.csv"
+    path.write_text(f"x_0,x_1,y\n1.0,2.0,0\n3.0,4.0,{bad_target}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="not integer class labels"):
+        load_dataset(path)
+
+
 def test_cv_fallback_era():
     """CV fallback on ``era`` yields 3 folds (ids, counts, classes)."""
     bunches = list(load_partitions("era", resamples=3))

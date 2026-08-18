@@ -20,6 +20,22 @@ DATA_MODULE = "skordinal.datasets.data"
 DESCR_MODULE = "skordinal.datasets.descr"
 
 
+def _validate_target_column(y_raw, path):
+    """Raise ValueError unless every target value is an exact int64 integer."""
+    # A float64 casts losslessly to int64 when it is integral and strictly
+    # under 2**63 in magnitude, a bound that also evaluates False for NaN
+    # and inf. The bound cannot be np.iinfo(np.int64).max, which rounds up
+    # to 2**63 as a float64
+    valid = (y_raw == np.round(y_raw)) & (np.abs(y_raw) < 2.0**63)
+    if not valid.all():
+        bad = np.unique(y_raw[~valid])
+        raise ValueError(
+            f"Target column of {path} contains {int((~valid).sum())} value(s) "
+            f"that are not integer class labels (e.g. {bad[:5].tolist()}). "
+            "Targets must be integers within the int64 range."
+        )
+
+
 def _read_csv_any(path):
     """Read an ordinal-classification CSV, auto-detecting the header style."""
     with open(path, "r", encoding="utf-8", newline="") as fh:
@@ -79,7 +95,9 @@ def _read_csv_any(path):
     # columns are the features and the last column is the target
     table = np.asarray(data_rows, dtype=np.float64)
     X = np.ascontiguousarray(table[:, :n_features])
-    y = table[:, -1].astype(np.int64)
+    y_raw = table[:, -1]
+    _validate_target_column(y_raw, path)
+    y = y_raw.astype(np.int64)
     return X, y, feature_names, header_class_names
 
 
@@ -336,6 +354,10 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     ------
     FileNotFoundError
         When the resolved path does not exist.
+    ValueError
+        When the CSV is empty, or when the target column holds a value that
+        is not an exact ``int64`` integer (a fractional value, ``NaN``,
+        ``inf``, or a magnitude beyond the ``int64`` range).
 
     Examples
     --------
@@ -473,8 +495,10 @@ def load_partitions(
     FileNotFoundError
         When the CSV cannot be located.
     ValueError
-        When ``resamples < 2`` and CV masks must be generated, or when a
-        mask length does not match the number of samples.
+        When ``resamples < 2`` and CV masks must be generated, when a
+        mask length does not match the number of samples, or when the
+        target column holds a value that is not an exact ``int64``
+        integer.
     KeyError
         When a keyed masks file exists but does not contain the expected key.
     IndexError
