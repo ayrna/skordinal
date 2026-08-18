@@ -23,6 +23,9 @@ from skordinal.utils.extmath import (
 )
 from skordinal.utils.validation import check_ordinal_targets
 
+# Per-class probability floor used in the objective
+_PROBA_FLOOR = 1e-15
+
 
 class NNPOM(ClassifierMixin, BaseEstimator):
     """Neural Network based on Proportional Odd Model (NNPOM).
@@ -522,9 +525,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         z2 = np.matmul(a1, theta1.T)
         a2 = expit(z2)
 
-        z3 = np.tile(thresholds, (n_samples, 1)) - np.tile(
-            np.matmul(a2, theta2.T), (1, n_classes - 1)
-        )
+        z3 = thresholds - np.matmul(a2, theta2.T)
         a3T = expit(z3)
         a3 = np.append(a3T, np.ones((n_samples, 1)), axis=1)
         h = np.concatenate(
@@ -532,21 +533,19 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         )
 
         # Guard against zero probabilities: log(0) and -1/0 would produce NaN.
-        out = np.maximum(h, 1e-15)
+        out = np.maximum(h, _PROBA_FLOOR)
 
         # Calculate penalty (L2 regularization)
-        p = np.sum((theta1[:, 1:] ** 2).sum() + (theta2[:, 0:] ** 2).sum())
+        p = (theta1[:, 1:] ** 2).sum() + (theta2**2).sum()
 
         # Cross entropy
         J = np.sum(-np.log(out[np.where(Y == 1)]), axis=0) / n_samples + alpha * p / (
             2 * n_samples
         )
 
-        # Error derivative
-        error_der = np.zeros(Y.shape)
-        error_der[np.where(Y != 0)] = np.divide(
-            -Y[np.where(Y != 0)], out[np.where(Y != 0)]
-        )
+        # Error derivative, zeroed where the floor flattens the objective
+        error_der = -Y / out
+        error_der[h <= _PROBA_FLOOR] = 0.0
 
         # Calculate sigmas
         f_gradients = np.multiply(a3T, (1 - a3T))
