@@ -40,8 +40,14 @@ class SVOREX(ClassifierMixin, BaseEstimator):
     tol : float, default=0.001
         Set tolerance of termination criterion.
 
-    gamma : float, default=1
-        Kernel coefficient for the RBF and polynomial kernels.
+    gamma : {'scale', 'auto'} or float, default='scale'
+        Kernel coefficient for the RBF kernel. Ignored by the linear
+        and polynomial kernels.
+
+        - ``'scale'``: ``1 / (n_features * X.var())``. Falls back to
+          ``1.0`` when ``X.var() == 0``.
+        - ``'auto'``: ``1 / n_features``.
+        - float: used as-is. Must be strictly positive.
 
     Attributes
     ----------
@@ -69,7 +75,10 @@ class SVOREX(ClassifierMixin, BaseEstimator):
         "kernel": [StrOptions({"rbf", "linear", "poly"})],
         "degree": [Interval(Integral, 1, None, closed="left")],
         "tol": [Interval(Real, 0.0, None, closed="neither")],
-        "gamma": [Interval(Real, 0.0, None, closed="neither")],
+        "gamma": [
+            StrOptions({"scale", "auto"}),
+            Interval(Real, 0.0, None, closed="neither"),
+        ],
     }
 
     def __init__(
@@ -78,7 +87,7 @@ class SVOREX(ClassifierMixin, BaseEstimator):
         kernel: str = "rbf",
         degree: int = 2,
         tol: float = 0.001,
-        gamma: float = 1,
+        gamma: float | str = "scale",
     ) -> None:
         self.C = C
         self.kernel = kernel
@@ -120,8 +129,18 @@ class SVOREX(ClassifierMixin, BaseEstimator):
             arg = "-P {}".format(self.degree)
         # kernel == "rbf" maps to the C core's default (gaussian); no flag emitted.
 
+        # Resolve gamma to a scalar before passing it to the C backend
+        n_features = X.shape[1]
+        if self.gamma == "scale":
+            x_var = X.var()
+            gamma_value = 1.0 / (n_features * x_var) if x_var != 0.0 else 1.0
+        elif self.gamma == "auto":
+            gamma_value = 1.0 / n_features
+        else:
+            gamma_value = float(self.gamma)
+
         options = "svorex {} -T {} -K {} -C {}".format(
-            arg, str(self.tol), str(self.gamma), str(self.C)
+            arg, str(self.tol), str(gamma_value), str(self.C)
         )
         self.model_ = svorex.fit((y_encoded + 1).tolist(), X.tolist(), options)
         return self

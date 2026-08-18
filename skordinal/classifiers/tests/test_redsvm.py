@@ -214,3 +214,21 @@ def test_redsvm_gamma_scale_zero_variance(X, y):
         classifier = REDSVM(gamma="scale", kernel="rbf").fit(X_constant, y)
 
     assert set(classifier.predict(X_constant)).issubset(set(classifier.classes_))
+
+
+@pytest.mark.parametrize(
+    "gamma, expected_gamma",
+    [
+        ("auto", lambda X: 1.0 / X.shape[1]),
+        ("scale", lambda X: 1.0 / (X.shape[1] * X.var())),
+    ],
+    ids=["auto", "scale"],
+)
+def test_redsvm_gamma_string_resolves_like_numeric(gamma, expected_gamma):
+    """A string gamma predicts the same as the numeric value it resolves to."""
+    X_train, X_test, y_train, _ = make_balance_scale_split()
+
+    resolved = REDSVM(gamma=gamma).fit(X_train, y_train)
+    explicit = REDSVM(gamma=expected_gamma(X_train)).fit(X_train, y_train)
+
+    np.testing.assert_array_equal(resolved.predict(X_test), explicit.predict(X_test))

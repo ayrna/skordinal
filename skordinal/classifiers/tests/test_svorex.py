@@ -1,6 +1,7 @@
 """Tests for the SVOREX classifier."""
 
 import inspect
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -59,6 +60,7 @@ def test_svorex_predict_matches_expected(kernel):
         ("tol", -1e-5),
         ("kernel", "unknown"),
         ("gamma", -1),
+        ("gamma", "low"),
     ],
 )
 def test_svorex_hyperparameter_value_validation(X, y, param_name, invalid_value):
@@ -76,7 +78,6 @@ def test_svorex_hyperparameter_value_validation(X, y, param_name, invalid_value)
         ("kernel", 5),
         ("degree", 2.5),
         ("tol", "tight"),
-        ("gamma", "low"),
     ],
 )
 def test_svorex_hyperparameter_type_validation(X, y, param_name, invalid_value):
@@ -185,3 +186,31 @@ def test_svorex_label_roundtrip(labels):
 
     assert np.array_equal(classifier.classes_, np.unique(labels_array))
     assert set(classifier.predict(X)).issubset(set(np.unique(labels_array)))
+
+
+@pytest.mark.parametrize(
+    "gamma, expected_gamma",
+    [
+        ("auto", lambda X: 1.0 / X.shape[1]),
+        ("scale", lambda X: 1.0 / (X.shape[1] * X.var())),
+    ],
+    ids=["auto", "scale"],
+)
+def test_svorex_gamma_string_resolves_like_numeric(gamma, expected_gamma):
+    """A string gamma predicts the same as the numeric value it resolves to."""
+    X_train, X_test, y_train, _ = make_balance_scale_split()
+
+    resolved = SVOREX(gamma=gamma).fit(X_train, y_train)
+    explicit = SVOREX(gamma=expected_gamma(X_train)).fit(X_train, y_train)
+
+    np.testing.assert_array_equal(resolved.predict(X_test), explicit.predict(X_test))
+
+
+def test_svorex_gamma_scale_zero_variance(X, y):
+    """Test that gamma='scale' handles zero-variance input without dividing by zero."""
+    X_constant = np.ones_like(X)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        classifier = SVOREX(gamma="scale", kernel="rbf").fit(X_constant, y)
+
+    assert set(classifier.predict(X_constant)).issubset(set(classifier.classes_))
