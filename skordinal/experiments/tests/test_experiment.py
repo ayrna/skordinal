@@ -190,13 +190,18 @@ def test_run_timing_with_cv(split_with_test):
     assert result.best_params.get("C") in _CONF_CV.param_grid["C"]
 
 
-@pytest.mark.parametrize("preprocessing", ["std", "norm"])
-def test_run_preprocessing_train_only_raises(split_train_only, preprocessing):
-    """input_preprocessing with X_test=None raises ValueError."""
-    exp = _make_experiment(input_preprocessing=preprocessing)
+@pytest.mark.parametrize("input_preprocessing", ["std", "norm"])
+def test_run_preprocessing_train_only_does_not_raise(
+    split_train_only, input_preprocessing
+):
+    """input_preprocessing with X_test=None runs without transforming None."""
+    exp = _make_experiment(input_preprocessing=input_preprocessing)
     X_train, y_train, X_test, y_test = split_train_only
-    with pytest.raises(ValueError):
-        _call_run(exp, X_train, y_train, X_test, y_test)
+
+    result = _call_run(exp, X_train, y_train, X_test, y_test)
+
+    assert result.test_predicted_y is None
+    assert math.isnan(result.test_metrics["mean_absolute_error_test"])
 
 
 def test_run_best_model_carries_no_refit_metadata(split_with_test):

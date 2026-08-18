@@ -77,8 +77,8 @@ class Experiment:
         Optional feature preprocessing applied to every partition before
         fitting: ``"norm"`` applies min-max normalisation and ``"std"`` applies
         z-score standardisation. Both scalers are fitted on the training split
-        only, then applied to both train and test splits. ``None`` means no
-        preprocessing.
+        only, then applied to the train split and, when present, the test
+        split. ``None`` means no preprocessing.
 
     random_state : int or None, default=None
         Seed used for two sources of randomness: the base estimator and the
@@ -207,14 +207,17 @@ class Experiment:
         train_inputs: np.ndarray = X_train
         test_inputs: np.ndarray | None = X_test
 
-        if self.input_preprocessing == "norm":
-            scaler = preprocessing.MinMaxScaler().fit(train_inputs)
+        if self.input_preprocessing in {"norm", "std"}:
+            scaler_cls = (
+                preprocessing.MinMaxScaler
+                if self.input_preprocessing == "norm"
+                else preprocessing.StandardScaler
+            )
+            scaler = scaler_cls().fit(train_inputs)
             train_inputs = scaler.transform(train_inputs)
-            test_inputs = scaler.transform(cast(np.ndarray, X_test))
-        elif self.input_preprocessing == "std":
-            scaler = preprocessing.StandardScaler().fit(train_inputs)
-            train_inputs = scaler.transform(train_inputs)
-            test_inputs = scaler.transform(cast(np.ndarray, X_test))
+            # A train-only run has no test split to transform
+            if X_test is not None:
+                test_inputs = scaler.transform(X_test)
 
         # Select and fit the best estimator, keeping the refit metadata in
         # locals so nothing is ever injected onto the estimator itself
