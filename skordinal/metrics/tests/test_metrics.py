@@ -70,6 +70,15 @@ def test_check_metric_inputs_one_hot_argmax():
     assert np.array_equal(out_p, np.array([1, 0, 2]))
 
 
+def test_check_metric_inputs_column_vector_ravel():
+    """(n, 1) column vectors are raveled, not argmaxed to all-zeros."""
+    y_t_col = np.array([[0], [1], [2]])
+    y_p_col = np.array([[0], [2], [2]])
+    out_t, out_p = _check_metric_inputs(y_t_col, y_p_col)
+    assert np.array_equal(out_t, np.array([0, 1, 2]))
+    assert np.array_equal(out_p, np.array([0, 2, 2]))
+
+
 def test_check_metric_inputs_length_mismatch_raises():
     """Mismatched lengths raise ValueError."""
     with pytest.raises(ValueError):
@@ -89,6 +98,15 @@ def test_check_proba_inputs_requires_2d_proba():
 
     out_t_oh, _ = _check_proba_inputs(np.eye(3), y_p)
     assert np.array_equal(out_t_oh, y_t)
+
+
+def test_check_proba_inputs_column_vector_ravel():
+    """(n, 1) column vector y_true is raveled, not argmaxed to all-zeros."""
+    y_t_col = np.array([[0], [1], [2]])
+    y_p = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]])
+    out_t, out_p = _check_proba_inputs(y_t_col, y_p)
+    assert np.array_equal(out_t, np.array([0, 1, 2]))
+    npt.assert_allclose(out_p, y_p)
 
 
 def test_check_proba_inputs_rejects_unnormalised_rows():
