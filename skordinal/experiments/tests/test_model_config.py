@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from sklearn.ensemble import BaggingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -99,6 +100,12 @@ def test_build_returns_distinct_clone_without_mutating_source():
     assert built is not cfg.estimator
     assert cfg.estimator.random_state == 0
 
+    nested = ModelConfig(
+        BaggingClassifier(estimator=DecisionTreeClassifier(random_state=0))
+    )
+    nested.build(7)
+    assert nested.estimator.estimator.random_state == 0
+
 
 @pytest.mark.parametrize(
     "estimator, check",
@@ -111,36 +118,35 @@ def test_build_returns_distinct_clone_without_mutating_source():
             Pipeline([("scaler", StandardScaler()), ("clf", DecisionTreeClassifier())]),
             lambda built: built.named_steps["clf"].random_state == 7,
         ),
-    ],
-    ids=["direct_estimator", "pipeline_clf_step"],
-)
-def test_build_forwards_random_state(estimator, check):
-    """``build(7)`` sets the seed on the clone (direct or Pipeline)."""
-    cfg = ModelConfig(estimator)
-    built = cfg.build(7)
-    assert check(built)
-
-
-@pytest.mark.parametrize(
-    "estimator, check",
-    [
-        (
-            StandardScaler(),
-            lambda built: "random_state" not in built.get_params(),
-        ),
         (
             Pipeline([("scaler", StandardScaler()), ("model", LogisticRegression())]),
-            lambda built: built.named_steps["model"].random_state is None,
+            lambda built: built.named_steps["model"].random_state == 7,
+        ),
+        (
+            BaggingClassifier(estimator=DecisionTreeClassifier()),
+            lambda built: built.random_state == 7 and built.estimator.random_state == 7,
         ),
     ],
-    ids=["no_random_state", "pipeline_step_not_clf"],
+    ids=[
+        "direct_estimator",
+        "pipeline_clf_step",
+        "pipeline_step_not_clf",
+        "own_and_nested_random_state",
+    ],
 )
-def test_build_ignores_random_state_when_absent(estimator, check):
-    """``build(7)`` returns a clone and injects no seed when none applies."""
+def test_build_forwards_random_state(estimator, check):
+    """``build(7)`` seeds every matching parameter on the clone."""
     cfg = ModelConfig(estimator)
     built = cfg.build(7)
-    assert built is not cfg.estimator
     assert check(built)
+
+
+def test_build_ignores_random_state_when_absent():
+    """``build(7)`` returns a clone and injects no seed when none applies."""
+    cfg = ModelConfig(StandardScaler())
+    built = cfg.build(7)
+    assert built is not cfg.estimator
+    assert "random_state" not in built.get_params()
 
 
 def test_build_none_seed_preserves_defaults():
