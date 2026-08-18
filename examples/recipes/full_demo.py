@@ -2,6 +2,7 @@
 
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
+from sklearn.calibration import CalibratedClassifierCV
 
 from skordinal.classifiers import REDSVM, SVOREX, OrdinalDecomposition
 from skordinal.experiments import ModelConfig
@@ -31,11 +32,11 @@ RECIPE = {
             OrdinalDecomposition(
                 dtype="ordered_partitions",
                 decision_method="frank_hall",
-                base_classifier=SVC(probability=True),
+                base_classifier=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
             ),
             param_grid={
-                "base_classifier__C": [0.01, 0.1, 1, 10],
-                "base_classifier__gamma": [0.01, 0.1, 1, 10],
+                "base_classifier__estimator__C": [0.01, 0.1, 1, 10],
+                "base_classifier__estimator__gamma": [0.01, 0.1, 1, 10],
             },
         ),
         "LR": ModelConfig(

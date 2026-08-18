@@ -107,7 +107,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
                 {"exponential_loss", "hinge_loss", "logarithmic_loss", "frank_hall"}
             )
         ],
-        "base_classifier": [str],
+        "base_classifier": [str, BaseEstimator],
         "parameters": [dict, None],
     }
 

@@ -141,3 +141,6 @@ dmypy.json
 # Profiling
 *.lprof
 *.prof
+
+# Tests
+results/

@@ -7,7 +7,7 @@ from importlib import import_module
 from typing import Any
 
 import numpy as np
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import get_ordinal_scorer
@@ -126,6 +126,14 @@ def load_classifier(
     'GridSearchCV'
 
     """
+
+    # Check if the classifier_name is already an instance of BaseEstimator
+    if isinstance(classifier_name, BaseEstimator):
+        estimator = clone(classifier_name)
+        if param_grid:
+            estimator.set_params(**param_grid)
+        return estimator
+
     classifier_cls = get_classifier_by_name(classifier_name)
 
     if param_grid is None:
