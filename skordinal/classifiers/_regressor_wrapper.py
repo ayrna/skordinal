@@ -48,6 +48,12 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         Names of features seen during fit. Defined only when X has feature
         names that are all strings.
 
+    Notes
+    -----
+    The regressor is trained on the rank encoding of the labels, not their
+    raw values, so gaps between label values (e.g. ``[1, 3, 7]``) do not
+    bias it toward larger numeric gaps.
+
     References
     ----------
     .. [1] P. A. Gutiérrez, M. Pérez-Ortiz, J. Sánchez-Monedero,
@@ -124,11 +130,24 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         NotFittedError
             If the estimator has not been fitted yet.
 
+        ValueError
+            If the wrapped regressor returns a NaN prediction.
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
 
         y_cont = self.estimator_.predict(X)
+
+        if np.isnan(y_cont).any():
+            raise ValueError(
+                "The wrapped regressor returned NaN predictions. "
+                "RegressorWrapper cannot map NaN to a rank."
+            )
+
+        # Clip so unbounded output maps to the nearest extreme class
+        max_rank = self.classes_.size - 1
+        y_cont = np.clip(y_cont, 0.0, max_rank)
+
         ranks = np.arange(self.classes_.size, dtype=float)
         idx = np.abs(y_cont[:, None] - ranks[None, :]).argmin(axis=1)
         return self.classes_[idx]

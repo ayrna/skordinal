@@ -137,3 +137,41 @@ def test_regressor_wrapper_label_roundtrip(labels):
 
     assert np.array_equal(classifier.classes_, np.unique(labels_array))
     assert set(classifier.predict(X)).issubset(set(np.unique(labels_array)))
+
+
+def test_regressor_wrapper_predict_raises_on_nan_output(X, y, monkeypatch):
+    """Test that a NaN regressor prediction raises a ValueError."""
+
+    def predict_nan(self, X):
+        return np.full(len(X), np.nan)
+
+    monkeypatch.setattr(LinearRegression, "predict", predict_nan)
+    classifier = RegressorWrapper(LinearRegression()).fit(X, y)
+
+    with pytest.raises(ValueError, match="cannot map NaN to a rank"):
+        classifier.predict(X)
+
+
+@pytest.mark.parametrize(
+    "raw_output, expected_class_fn",
+    [
+        (np.inf, lambda classes: classes.max()),
+        (-np.inf, lambda classes: classes.min()),
+    ],
+)
+def test_regressor_wrapper_predict_clips_infinite_output_to_extreme_class(
+    X, y, monkeypatch, raw_output, expected_class_fn
+):
+    """Test that an infinite regressor prediction maps to the nearest extreme class."""
+
+    def predict_constant(self, X):
+        return np.full(len(X), raw_output)
+
+    monkeypatch.setattr(LinearRegression, "predict", predict_constant)
+    classifier = RegressorWrapper(LinearRegression()).fit(X, y)
+
+    predictions = classifier.predict(X)
+
+    npt.assert_array_equal(
+        predictions, np.full(len(X), expected_class_fn(classifier.classes_))
+    )
