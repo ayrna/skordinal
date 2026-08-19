@@ -286,15 +286,24 @@ def test_weighted_kappa():
     npt.assert_almost_equal(weighted_kappa(y_true, y_pred), 0.6703, decimal=4)
 
 
-def test_spearmans_rho():
-    """spearmans_rho returns the correct rank correlation for a known sequence."""
-    y_true = np.array([1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3])
-    y_pred = np.array([1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3])
-    npt.assert_almost_equal(spearmans_rho(y_true, y_pred), 0.6429, decimal=4)
+@pytest.mark.parametrize(
+    "y_true, y_pred, expected",
+    [
+        (
+            [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3],
+            [1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3],
+            0.6429,
+        ),
+        ([0, 0, 1, 2, 3, 0, 0], [0, 1, 1, 2, 3, 0, 1], 0.8465),
+    ],
+)
+def test_spearmans_rho(y_true, y_pred, expected):
+    """spearmans_rho returns the correct rank correlation for known sequences."""
+    npt.assert_almost_equal(spearmans_rho(y_true, y_pred), expected, decimal=4)
 
 
 def test_spearmans_rho_constant_input():
-    """spearmans_rho returns 0.0 when y_true is constant (zero numerator)."""
+    """spearmans_rho returns 0.0 when one of the inputs is constant."""
     npt.assert_equal(spearmans_rho(np.array([1, 1, 1, 1]), np.array([0, 1, 2, 3])), 0.0)
 
 
