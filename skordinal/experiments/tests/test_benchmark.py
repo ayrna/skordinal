@@ -167,6 +167,55 @@ def test_protocol_attrs_stored(tmp_path):
     assert b.verbose is False
 
 
+def test_run_default_seed_reproducible_across_constructions(tmp_path):
+    """Two separately-constructed runs with the default random_state match."""
+
+    def _run(results_dir):
+        b = Benchmark(
+            _SVC_CONF,
+            datasets=[_BUNDLED_DS],
+            eval_metrics=["mean_absolute_error"],
+            results_path=results_dir,
+            resamples=3,
+            cv=2,
+            verbose=False,
+        )
+        b.run()
+        df = pd.read_csv(results_dir / "SVM" / _BUNDLED_DS / "report.csv", index_col=0)
+        return df.drop(columns=[c for c in df.columns if c.startswith("time_")])
+
+    df_a = _run(tmp_path / "a")
+    df_b = _run(tmp_path / "b")
+    pd.testing.assert_frame_equal(df_a, df_b)
+
+
+def test_run_all_models_see_identical_partitions_with_random_state_none(tmp_path):
+    """random_state=None resolves once, so every model sees identical partitions."""
+    configs = {
+        "SVM1": ModelConfig(SVC(), param_grid={"C": [1]}),
+        "SVM2": ModelConfig(SVC(), param_grid={"C": [1]}),
+    }
+    results_dir = tmp_path / "out"
+    b = Benchmark(
+        configs,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=results_dir,
+        resamples=3,
+        cv=2,
+        verbose=False,
+        random_state=None,
+    )
+    assert isinstance(b.random_state, int)
+    b.run()
+
+    def _pattern_ids(label):
+        seed_dir = results_dir / label / _BUNDLED_DS / "predictions_by_seed" / "seed_0"
+        return pd.read_csv(seed_dir / "test_predictions.csv")["Pattern ID"].values
+
+    np.testing.assert_array_equal(_pattern_ids("SVM1"), _pattern_ids("SVM2"))
+
+
 def test_run_and_summarize_bundled_dataset(tmp_path):
     """run() + summarize() over a bundled dataset write the expected on-disk layout."""
     results_dir = tmp_path / "runs"
