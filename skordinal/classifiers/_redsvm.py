@@ -42,11 +42,14 @@ class REDSVM(ClassifierMixin, BaseEstimator):
     degree : int, default=3
         Set degree in kernel function.
 
-    gamma : {'scale', 'auto'} or float, default='auto'
-        Kernel coefficient determining the influence of individual training samples:
-        - 'scale': 1 / (n_features * X.var())
-        - 'auto': 1 / n_features
-        - float: Must be non-negative.
+    gamma : {'scale', 'auto'} or float, default='scale'
+        Kernel coefficient for the RBF, polynomial, sigmoid, laplacian and
+        exponential kernels.
+
+        - ``'scale'``: ``1 / (n_features * X.var())``. Falls back to
+          ``1.0`` when ``X.var() == 0``.
+        - ``'auto'``: ``1 / n_features``.
+        - float: used as-is. Must be strictly positive.
 
     coef0 : float, default=0
         Set coef0 in kernel function.
@@ -115,7 +118,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         C: float = 1,
         kernel: str = "rbf",
         degree: int = 3,
-        gamma: float | str = "auto",
+        gamma: float | str = "scale",
         coef0: float = 0,
         shrinking: bool = True,
         tol: float = 0.001,
@@ -157,13 +160,15 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         X, y = validate_data(self, X, y)
         self.classes_, y_encoded = check_ordinal_targets(y)
 
-        # Set default gamma value if not specified
-        gamma_value = self.gamma
-        if self.gamma == "auto":
-            gamma_value = 1.0 / X.shape[1]
-        elif self.gamma == "scale":
+        # Resolve gamma to a scalar before passing it to the C++ backend
+        n_features = X.shape[1]
+        if self.gamma == "scale":
             x_var = X.var()
-            gamma_value = 1.0 / (X.shape[1] * x_var) if x_var != 0.0 else 1.0
+            gamma_value = 1.0 / (n_features * x_var) if x_var != 0.0 else 1.0
+        elif self.gamma == "auto":
+            gamma_value = 1.0 / n_features
+        else:
+            gamma_value = float(self.gamma)
 
         # Map kernel type
         kernel_type_mapping = {
