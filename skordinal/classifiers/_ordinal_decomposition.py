@@ -11,7 +11,7 @@ from sklearn.utils._param_validation import StrOptions
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.model_selection import load_classifier
-from skordinal.utils.extmath import losses_to_proba
+from skordinal.utils.extmath import cumproba_to_proba, losses_to_proba
 from skordinal.utils.validation import check_ordinal_targets
 
 
@@ -472,7 +472,8 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         Returns the probability for each pattern of dataset to belong to each one of
         the original targets. Transforms from n-1 subproblems to the original ordinal
-        problem with n targets.
+        problem with n targets. Non-monotonic binary outputs are repaired by isotonic
+        regression before differencing.
 
         Parameters
         ----------
@@ -482,18 +483,9 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
         Returns
         -------
         y_proba : ndarray of shape (n_samples, n_classes)
-            Class membership probabilities for each sample.
+            Class membership probabilities for each sample. Each row is non-negative
+            and sums to one.
 
         """
-        y_proba = np.empty([(predictions.shape[0]), (predictions.shape[1] + 1)])
-
-        # Probabilities of each set to belong to the first ordinal class
-        y_proba[:, 0] = 1 - predictions[:, 0]
-
-        # Probabilities for the central classes
-        y_proba[:, 1:-1] = predictions[:, :-1] - predictions[:, 1:]
-
-        # Probabilities of each set to belong to the last class
-        y_proba[:, -1] = predictions[:, -1]
-
-        return y_proba
+        # Binary outputs are P(Y > k), the complement of the cumulative P(Y <= k)
+        return cumproba_to_proba(1.0 - predictions, repair=True)
