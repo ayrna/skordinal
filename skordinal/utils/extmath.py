@@ -52,7 +52,7 @@ def params_to_thresholds(params):
     """
     params = np.asarray(params, dtype=float).ravel()
     if params.size == 0:
-        raise ValueError("params must contain at least one element")
+        raise ValueError("params must contain at least one element.")
 
     t_sq = np.empty_like(params)
     t_sq[0] = params[0]
@@ -103,7 +103,7 @@ def thresholds_to_params(thresholds):
     """
     thresholds = np.asarray(thresholds, dtype=float).ravel()
     if thresholds.size == 0:
-        raise ValueError("thresholds must contain at least one element")
+        raise ValueError("thresholds must contain at least one element.")
 
     params = np.empty_like(thresholds)
     params[0] = thresholds[0]
@@ -161,14 +161,14 @@ def thresholds_grad(params, grad_thresholds):
     """
     params = np.asarray(params, dtype=float).ravel()
     if params.size == 0:
-        raise ValueError("params must contain at least one element")
+        raise ValueError("params must contain at least one element.")
 
     grad_thresholds = np.asarray(grad_thresholds, dtype=float).ravel()
     if grad_thresholds.size != params.size:
         raise ValueError(
             "params and grad_thresholds must have the same shape "
             "(number of elements), got sizes "
-            f"{params.size} and {grad_thresholds.size}"
+            f"{params.size} and {grad_thresholds.size}."
         )
 
     n_params = params.size
@@ -190,7 +190,7 @@ def _check_cumproba(cumproba):
     if cumproba.min() < 0.0 or cumproba.max() > 1.0:
         raise ValueError(
             f"cumproba entries must lie in [0, 1], got range "
-            f"[{cumproba.min():.4g}, {cumproba.max():.4g}]"
+            f"[{cumproba.min():.4g}, {cumproba.max():.4g}]."
         )
 
     return cumproba
@@ -367,7 +367,7 @@ def cumproba_to_proba(cumproba, repair=True):
         if (diffs < 0.0).any():
             raise ValueError(
                 f"cumproba rows must be non-decreasing, got minimum diff "
-                f"{diffs.min():.4g}"
+                f"{diffs.min():.4g}."
             )
         class_proba[:, 0] = cumproba[:, 0]
         class_proba[:, 1:-1] = diffs
@@ -438,13 +438,13 @@ def normalize_proba_rows(scores, *, floor=np.finfo(np.float64).tiny):
     True
     """
     if not 0.0 < floor < np.inf:
-        raise ValueError(f"floor must be strictly positive and finite, got {floor!r}")
+        raise ValueError(f"floor must be strictly positive and finite, got {floor!r}.")
 
     scores = np.array(scores, dtype=np.float64)
     np.clip(scores, floor, None, out=scores)
     row_sums = scores.sum(axis=1, keepdims=True)
     if not np.isfinite(row_sums).all():
-        raise ValueError("scores must be finite and row sums must not overflow")
+        raise ValueError("scores must be finite and row sums must not overflow.")
     scores /= row_sums
 
     # Clip to the smallest positive float64 and re-normalise; the first
@@ -493,7 +493,7 @@ def losses_to_proba(losses):
     """
     losses = np.asarray(losses, dtype=np.float64)
     if not (losses >= 0.0).all():
-        raise ValueError("losses must be non-negative and not NaN")
+        raise ValueError("losses must be non-negative and not NaN.")
 
     tiny = np.finfo(np.float64).tiny
     return softmax(1.0 / (losses + tiny), copy=False)

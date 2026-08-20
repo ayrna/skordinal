@@ -72,14 +72,16 @@ def check_ordinal_targets(
     )
 
     if y.ndim != 1:
-        raise ValueError(f"y must be a 1D array, got shape {y.shape}")
+        raise ValueError(f"y must be a 1D array, got shape {y.shape}.")
 
     check_classification_targets(y)
 
     classes, y_encoded = np.unique(y, return_inverse=True)
 
     if classes.size < 2:
-        raise ValueError("y must contain at least 2 unique classes, got 1 class")
+        raise ValueError(
+            f"y must contain at least 2 unique classes, got {classes.size}."
+        )
 
     return classes, y_encoded.astype(np.intp)
 
@@ -148,16 +150,18 @@ def validate_thresholds(thresholds: ArrayLike) -> None:
     thresholds = np.asarray(thresholds, dtype=float)
 
     if thresholds.ndim != 1:
-        raise ValueError(f"thresholds must be a 1D array, got shape {thresholds.shape}")
+        raise ValueError(
+            f"thresholds must be a 1D array, got shape {thresholds.shape}."
+        )
 
     if thresholds.size < 1:
-        raise ValueError("thresholds must have length >= 1, got 0")
+        raise ValueError("thresholds must have length >= 1, got 0.")
 
     if not np.isfinite(thresholds).all():
-        raise ValueError("thresholds must be finite, got non-finite values")
+        raise ValueError("thresholds must be finite, got non-finite values.")
 
     diffs = np.diff(thresholds)
     if (diffs <= 0).any():
         raise ValueError(
-            f"thresholds must be strictly increasing, got differences {diffs!r}"
+            f"thresholds must be strictly increasing, got differences {diffs!r}."
         )
