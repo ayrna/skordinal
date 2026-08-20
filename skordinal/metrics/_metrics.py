@@ -514,7 +514,8 @@ def kendalls_tau(y_true, y_pred):
 
     Measures the ordinal association between ``y_true`` and ``y_pred``
     using the number of concordant minus discordant pairs. Computed via
-    :func:`scipy.stats.kendalltau`.
+    :func:`scipy.stats.kendalltau`. Returns ``0.0`` when one of the
+    inputs is constant.
 
     Parameters
     ----------
@@ -545,6 +546,8 @@ def kendalls_tau(y_true, y_pred):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    if np.unique(y_true).size < 2 or np.unique(y_pred).size < 2:
+        return 0.0
     corr, _ = scipy.stats.kendalltau(y_true, y_pred)
     return float(corr)
 
