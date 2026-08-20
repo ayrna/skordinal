@@ -7,12 +7,12 @@ from numpy.testing import assert_array_equal
 from skordinal.utils.validation import (
     _rank_encode_labels,
     check_ordinal_targets,
-    validate_thresholds,
+    check_thresholds,
 )
 
 _ALL_HELPERS = [
     check_ordinal_targets,
-    validate_thresholds,
+    check_thresholds,
 ]
 _HELPER_NAMES = [f.__name__ for f in _ALL_HELPERS]
 
@@ -81,9 +81,9 @@ def test_cot_invalid_input_raises(y, match):
     ],
     ids=["generic", "binary-edge", "smallest-gap"],
 )
-def test_vt_valid_returns_none(thresholds):
+def test_ct_valid_returns_none(thresholds):
     """Valid threshold vectors return None."""
-    assert validate_thresholds(thresholds) is None
+    assert check_thresholds(thresholds) is None
 
 
 @pytest.mark.parametrize(
@@ -98,10 +98,10 @@ def test_vt_valid_returns_none(thresholds):
     ],
     ids=["equal", "decreasing", "inf", "nan", "empty", "2d"],
 )
-def test_vt_invalid_raises(thresholds, match):
+def test_ct_invalid_raises(thresholds, match):
     """Each invalid threshold vector raises ValueError with a specific message."""
     with pytest.raises(ValueError, match=match):
-        validate_thresholds(thresholds)
+        check_thresholds(thresholds)
 
 
 @pytest.mark.parametrize(

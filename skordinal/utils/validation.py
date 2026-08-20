@@ -115,7 +115,7 @@ def _rank_encode_labels(
     return idx
 
 
-def validate_thresholds(thresholds: ArrayLike) -> None:
+def check_thresholds(thresholds: ArrayLike) -> None:
     """Check that thresholds are strictly increasing and finite.
 
     A valid threshold vector must be 1-D, contain only finite values,
@@ -139,8 +139,8 @@ def validate_thresholds(thresholds: ArrayLike) -> None:
     Examples
     --------
     >>> import numpy as np
-    >>> from skordinal.utils.validation import validate_thresholds
-    >>> validate_thresholds(np.array([-1.0, 0.0, 1.0]))  # returns None
+    >>> from skordinal.utils.validation import check_thresholds
+    >>> check_thresholds(np.array([-1.0, 0.0, 1.0]))  # returns None
     """
     thresholds = np.asarray(thresholds, dtype=float)
 
