@@ -3,6 +3,7 @@
 import numpy as np
 from sklearn.isotonic import isotonic_regression
 from sklearn.utils import check_array
+from sklearn.utils.extmath import softmax
 
 
 def params_to_thresholds(params):
@@ -457,15 +458,13 @@ def normalize_proba_rows(scores, *, floor=np.finfo(np.float64).tiny):
 def losses_to_proba(losses):
     """Convert a per-class loss matrix to row-normalised probabilities.
 
-    The conversion is ``softmax(1 / (losses + tiny))``: each row is first
-    inverted (so that smaller losses become larger scores), then shifted by
-    the row max for numerical stability before exponentiation, then divided
-    by its row sum. Infinite losses are accepted, mapping to a zero
-    score for that class. The mapping is a heuristic kept for backward
-    compatibility: its argmax always matches the loss argmin, but the
-    probabilities are scale-sensitive — saturating toward the uniform
-    distribution for losses much larger than 1 — and should not be read
-    as calibrated.
+    Each row is first inverted (so that smaller losses become larger
+    scores), then passed through ``sklearn.utils.extmath.softmax``.
+    Infinite losses are accepted, mapping to a zero score for that
+    class. The mapping is a heuristic kept for backward compatibility:
+    its argmax always matches the loss argmin, but the probabilities are
+    scale-sensitive — saturating toward the uniform distribution for
+    losses much larger than 1 — and should not be read as calibrated.
 
     Parameters
     ----------
@@ -497,8 +496,4 @@ def losses_to_proba(losses):
         raise ValueError("losses must be non-negative and not NaN")
 
     tiny = np.finfo(np.float64).tiny
-    scores = 1.0 / (losses + tiny)
-    scores -= scores.max(axis=1, keepdims=True)
-    proba = np.exp(scores)
-    proba /= proba.sum(axis=1, keepdims=True)
-    return proba
+    return softmax(1.0 / (losses + tiny), copy=False)
