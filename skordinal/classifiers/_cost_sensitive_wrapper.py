@@ -12,9 +12,11 @@ from sklearn.base import (
     MetaEstimatorMixin,
     _fit_context,
     clone,
+    is_classifier,
 )
 from sklearn.linear_model import LogisticRegression
 from sklearn.utils._param_validation import HasMethods
+from sklearn.utils.metaestimators import available_if
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.utils.extmath import normalize_proba_rows
@@ -35,6 +37,25 @@ def _ordinal_weights(p: int, y_enc: np.ndarray) -> np.ndarray:
     return np.where(neg_mask, unnorm * (n_neg / S), 1.0)
 
 
+def _resolve_estimator(estimator):
+    """Return the base estimator, substituting the default when None."""
+    return estimator if estimator is not None else LogisticRegression()
+
+
+def _estimators_has(attr):
+    """Build an available_if predicate for a shared sub-estimator capability."""
+
+    def check(self):
+        target = (
+            self.estimators_[0]
+            if hasattr(self, "estimators_")
+            else _resolve_estimator(self.estimator)
+        )
+        return hasattr(target, attr)
+
+    return check
+
+
 class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
     """Cost-sensitive one-vs-rest meta-estimator for ordinal classification.
 
@@ -45,7 +66,7 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
 
     Parameters
     ----------
-    estimator : estimator instance or None, default=None
+    estimator : classifier instance or None, default=None
         Base binary classifier. Must implement a ``fit`` method that accepts a
         ``sample_weight`` keyword argument. If ``None``, a LogisticRegression
         with default hyperparameters is used.
@@ -64,6 +85,12 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
     feature_names_in_ : ndarray of shape (n_features_in_,)
         Names of features seen during fit. Defined only when X has feature
         names that are all strings.
+
+    Notes
+    -----
+    ``predict`` and ``predict_proba`` score sub-classifiers differently
+    (``decision_function`` vs. each one's calibrated probability) and are
+    not guaranteed to agree, the same asymmetry as ``sklearn.svm.SVC``.
 
     References
     ----------
@@ -102,7 +129,8 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         Raises
         ------
         ValueError
-            If the base estimator's ``fit`` does not accept ``sample_weight``.
+            If the resolved base estimator is not a classifier, or if its
+            ``fit`` method does not accept ``sample_weight``.
 
         """
         X, y = validate_data(
@@ -112,7 +140,12 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         self.classes_, y_enc = check_ordinal_targets(y)
         K = self.classes_.size
 
-        base = self.estimator if self.estimator is not None else LogisticRegression()
+        base = _resolve_estimator(self.estimator)
+
+        if not is_classifier(base):
+            raise ValueError(
+                f"estimator must be a classifier; got {type(base).__name__}"
+            )
 
         if "sample_weight" not in inspect.signature(base.fit).parameters:
             raise ValueError(
@@ -177,6 +210,7 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
 
         return self.classes_[S.argmax(axis=1)]
 
+    @available_if(_estimators_has("predict_proba"))
     def predict_proba(self, X: ArrayLike) -> np.ndarray:
         """Return class-probability estimates for samples in X.
 
@@ -196,17 +230,12 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
             If the estimator has not been fitted yet.
 
         AttributeError
-            If any sub-estimator does not expose ``predict_proba``.
+            If the base estimator does not expose ``predict_proba``, in which
+            case this method is not present on the instance at all.
 
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
-
-        if not all(hasattr(e, "predict_proba") for e in self.estimators_):
-            raise AttributeError(
-                "predict_proba is only available when every base estimator "
-                "implements predict_proba."
-            )
 
         n = X.shape[0]
         K = len(self.estimators_)

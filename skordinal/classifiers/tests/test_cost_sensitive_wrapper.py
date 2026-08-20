@@ -7,8 +7,9 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 from sklearn.dummy import DummyClassifier
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 
 from skordinal.classifiers import CostSensitiveWrapper
 
@@ -57,11 +58,18 @@ def test_cost_sensitive_wrapper_fit_input_validation(X, y):
         classifier.fit(X, [])
 
 
-def test_cost_sensitive_wrapper_requires_sample_weight_support(X, y):
-    """Test that a base estimator without sample_weight support is rejected."""
-    classifier = CostSensitiveWrapper(KNeighborsClassifier())
+@pytest.mark.parametrize(
+    "estimator, match",
+    [
+        (LinearRegression(), "must be a classifier"),  # not a classifier
+        (KNeighborsClassifier(), "sample_weight"),  # classifier without sample_weight
+    ],
+)
+def test_cost_sensitive_wrapper_rejects_invalid_base_estimator(X, y, estimator, match):
+    """Test that fit rejects a base estimator that fails validation."""
+    classifier = CostSensitiveWrapper(estimator)
 
-    with pytest.raises(ValueError, match="sample_weight"):
+    with pytest.raises(ValueError, match=match):
         classifier.fit(X, y)
 
 
@@ -159,3 +167,22 @@ def test_cost_sensitive_wrapper_label_roundtrip(labels):
 
     assert np.array_equal(classifier.classes_, np.unique(labels_array))
     assert set(classifier.predict(X)).issubset(set(np.unique(labels_array)))
+
+
+@pytest.mark.parametrize(
+    "estimator, fitted, expected",
+    [
+        (None, False, True),  # default LogisticRegression, unfitted
+        (SVC(), False, False),  # no predict_proba, unfitted
+        (SVC(), True, False),  # no predict_proba, fitted
+    ],
+)
+def test_cost_sensitive_wrapper_predict_proba_availability(
+    X, y, estimator, fitted, expected
+):
+    """Test that hasattr(predict_proba) reflects the base estimator's capability."""
+    classifier = CostSensitiveWrapper(estimator)
+    if fitted:
+        classifier = classifier.fit(X, y)
+
+    assert hasattr(classifier, "predict_proba") is expected
