@@ -13,6 +13,7 @@ from skordinal.experiments._io import (
     _atomic_dump,
     _atomic_write,
     _check_path_component,
+    _ensure_parent,
     _format_proba_column,
     _parse_proba_column,
     _sweep_orphaned_temp_files,
@@ -52,6 +53,16 @@ def test_atomic_write_creates_missing_parent(tmp_path):
     target = tmp_path / "nested" / "f.csv"
     _atomic_write(target, "a,b\n1,2\n")
     assert target.read_text() == "a,b\n1,2\n"
+
+
+def test_ensure_parent_wraps_mkdir_failure(tmp_path, monkeypatch):
+    """A failing parent mkdir raises a clear, wrapped OSError."""
+    monkeypatch.setattr(
+        "skordinal.experiments._io.Path.mkdir",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("denied")),
+    )
+    with pytest.raises(OSError, match="Could not create folder"):
+        _ensure_parent(tmp_path / "nested" / "f.csv")
 
 
 def test_atomic_write_cleans_up_on_failure(tmp_path, monkeypatch):

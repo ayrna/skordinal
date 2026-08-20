@@ -24,9 +24,19 @@ def _check_path_component(name: Any, what: str) -> None:
         raise ValueError(f"{what} must not contain a path separator; got {name!r}.")
 
 
+def _ensure_parent(path: Path) -> None:
+    """Create path's parent directory, wrapping OSError with the failing path."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise OSError(
+            f"Could not create folder {path.parent} to store results."
+        ) from exc
+
+
 def _atomic_write(path: Path, content: str) -> None:
     """Write text to path atomically via a temp file, fsync and replace."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_parent(path)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
@@ -41,7 +51,7 @@ def _atomic_write(path: Path, content: str) -> None:
 
 def _atomic_dump(path: Path, obj: Any) -> None:
     """Serialise obj to path atomically via a temp file, fsync and replace."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    _ensure_parent(path)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
     try:
         # Close the mkstemp descriptor; joblib opens its own handle by path
