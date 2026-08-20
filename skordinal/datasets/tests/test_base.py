@@ -227,6 +227,15 @@ def test_load_dataset_as_frame(named_csv):
     assert bunch.frame is not None
 
 
+def test_load_dataset_as_frame_feature_named_target_raises(tmp_path):
+    """A feature column literally named ``target`` collides and raises."""
+    pytest.importorskip("pandas")
+    path = tmp_path / "collide.csv"
+    path.write_text("x_0,target,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="target"):
+        load_dataset(path, as_frame=True)
+
+
 @pytest.mark.parametrize("name", ["ds_home", "ds_home.csv"], ids=["stem", "filename"])
 def test_load_dataset_data_home(tmp_path, name):
     """Stem or filename resolves against an explicit ``data_home`` directory."""
