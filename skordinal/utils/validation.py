@@ -7,11 +7,6 @@ from numpy.typing import ArrayLike, NDArray
 from sklearn.utils import check_array
 from sklearn.utils.multiclass import check_classification_targets
 
-__all__ = [
-    "check_ordinal_targets",
-    "validate_thresholds",
-]
-
 
 def check_ordinal_targets(
     y: ArrayLike,
