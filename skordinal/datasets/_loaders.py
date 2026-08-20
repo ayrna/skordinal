@@ -26,7 +26,7 @@ def _load_csv_data(data_file_name, *, descr_file_name):
         n_features = int(header[1])
         target_names = np.array(header[2:])
         data = np.empty((n_samples, n_features), dtype=np.float64)
-        target = np.empty((n_samples,), dtype=np.int64)
+        target = np.empty((n_samples,), dtype=np.int32)
         for i, row in enumerate(reader):
             data[i] = np.asarray(row[:-1], dtype=np.float64)
             target[i] = int(row[-1])

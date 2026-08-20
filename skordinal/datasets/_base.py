@@ -15,25 +15,26 @@ import numpy as np
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import Bunch
 from sklearn.utils._param_validation import Interval, validate_params
+from sklearn.utils.multiclass import check_classification_targets
 
 DATA_MODULE = "skordinal.datasets.data"
 DESCR_MODULE = "skordinal.datasets.descr"
 
 
-def _validate_target_column(y_raw, path):
-    """Raise ValueError unless every target value is an exact int64 integer."""
-    # A float64 casts losslessly to int64 when it is integral and strictly
-    # under 2**63 in magnitude, a bound that also evaluates False for NaN
-    # and inf. The bound cannot be np.iinfo(np.int64).max, which rounds up
-    # to 2**63 as a float64
-    valid = (y_raw == np.round(y_raw)) & (np.abs(y_raw) < 2.0**63)
-    if not valid.all():
-        bad = np.unique(y_raw[~valid])
+def _cast_target_column(y_raw, path):
+    """Return the target column as int32, or raise ValueError."""
+    try:
+        # The sklearn check casts internally, warning on the values it rejects
+        with np.errstate(invalid="ignore"):
+            check_classification_targets(y_raw)
+    except ValueError as exc:
+        raise ValueError(f"Target column of {path} is invalid: {exc}") from exc
+    info = np.iinfo(np.int32)
+    if not ((y_raw >= info.min) & (y_raw <= info.max)).all():
         raise ValueError(
-            f"Target column of {path} contains {int((~valid).sum())} value(s) "
-            f"that are not integer class labels (e.g. {bad[:5].tolist()}). "
-            "Targets must be integers within the int64 range."
+            f"Target column of {path} is invalid: label outside the int32 range."
         )
+    return y_raw.astype(np.int32)
 
 
 def _read_csv_any(path):
@@ -95,9 +96,7 @@ def _read_csv_any(path):
     # columns are the features and the last column is the target
     table = np.asarray(data_rows, dtype=np.float64)
     X = np.ascontiguousarray(table[:, :n_features])
-    y_raw = table[:, -1]
-    _validate_target_column(y_raw, path)
-    y = y_raw.astype(np.int64)
+    y = _cast_target_column(table[:, -1], path)
     return X, y, feature_names, header_class_names
 
 
@@ -328,7 +327,7 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
         data : ndarray of shape (n_samples, n_features)
             Feature matrix (float64). A DataFrame when ``as_frame`` is True.
         target : ndarray of shape (n_samples,)
-            Integer target labels (int64). A Series when ``as_frame`` is True.
+            Integer target labels (int32). A Series when ``as_frame`` is True.
         frame : DataFrame or None
             Combined frame when ``as_frame`` is True; otherwise ``None``.
         feature_names : list of str
@@ -355,9 +354,8 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     FileNotFoundError
         When the resolved path does not exist.
     ValueError
-        When the CSV is empty, or when the target column holds a value that
-        is not an exact ``int64`` integer (a fractional value, ``NaN``,
-        ``inf``, or a magnitude beyond the ``int64`` range).
+        When the CSV is empty, or when the target column does not hold
+        integer class labels.
 
     Examples
     --------
@@ -464,11 +462,11 @@ def load_partitions(
         data_train : ndarray of shape (n_train, n_features)
             Training features (float64).
         target_train : ndarray of shape (n_train,)
-            Training targets (int64).
+            Training targets (int32).
         data_test : ndarray of shape (n_test, n_features)
             Test features (float64).
         target_test : ndarray of shape (n_test,)
-            Test targets (int64).
+            Test targets (int32).
         feature_names : list of str
             Feature column names.
         target_names : ndarray of str
@@ -497,8 +495,7 @@ def load_partitions(
     ValueError
         When ``resamples < 2`` and CV masks must be generated, when a
         mask length does not match the number of samples, or when the
-        target column holds a value that is not an exact ``int64``
-        integer.
+        target column does not hold integer class labels.
     KeyError
         When a keyed masks file exists but does not contain the expected key.
     IndexError

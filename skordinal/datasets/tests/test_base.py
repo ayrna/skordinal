@@ -131,7 +131,7 @@ def test_load_dataset_named_csv_bunch_contract(named_csv):
     assert bunch.target.shape == (5,)
     assert bunch.feature_names == ["x_0", "x_1"]
     assert bunch.n_classes == len(np.unique(bunch.target))
-    assert np.issubdtype(bunch.target.dtype, np.integer)
+    assert bunch.target.dtype == np.int32
     assert bunch.filename == named_csv.name
 
 
@@ -252,14 +252,14 @@ def test_load_dataset_empty_csv_raises(tmp_path):
 
 @pytest.mark.parametrize(
     "bad_target",
-    ["nan", "inf", "1e300", "9223372036854775808", "2.7"],
-    ids=["nan", "inf", "int64-overflow", "int64-max-plus-one", "fractional"],
+    ["nan", "inf", "1e300", "2147483648", "2.7"],
+    ids=["nan", "inf", "overflow", "int32-max-plus-one", "fractional"],
 )
 def test_load_dataset_invalid_target_raises(tmp_path, bad_target):
     """A non-integer target raises instead of casting to a corrupt class label."""
     path = tmp_path / "bad_target.csv"
     path.write_text(f"x_0,x_1,y\n1.0,2.0,0\n3.0,4.0,{bad_target}\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="not integer class labels"):
+    with pytest.raises(ValueError, match="Target column of .* is invalid"):
         load_dataset(path)
 
 

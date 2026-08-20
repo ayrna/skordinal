@@ -113,7 +113,7 @@ def make_ordinal_classification(
 
     y : ndarray of shape (n_samples,)
         Ordinal integer class labels in ``{0, 1, ..., n_classes-1}``,
-        dtype ``intp``. The realised label set may be incomplete: a
+        dtype ``int32``. The realised label set may be incomplete: a
         class bin can be empty when ``n_samples`` is small or
         ``weights`` is skewed, and a zero-weight boundary class may
         still receive the extreme sample.
@@ -164,6 +164,6 @@ def make_ordinal_classification(
     # Quantile cut points make the class frequencies follow `proportions`
     cut_percentiles = np.cumsum(proportions)[:-1] * 100.0
     thresholds = np.percentile(z, cut_percentiles)
-    y = np.searchsorted(thresholds, z).astype(np.intp)
+    y = np.searchsorted(thresholds, z).astype(np.int32)
 
     return X, y

@@ -18,7 +18,7 @@ from skordinal.datasets import make_ordinal_classification
     ids=["defaults", "small_noise_free", "many_classes_one_informative"],
 )
 def test_output_shape_and_dtype(n_samples, n_features, n_classes, n_informative, noise):
-    """X and y have the requested shapes and the documented float64/intp dtypes."""
+    """X and y have the requested shapes and the documented float64/int32 dtypes."""
     X, y = make_ordinal_classification(
         n_samples=n_samples,
         n_features=n_features,
@@ -30,7 +30,7 @@ def test_output_shape_and_dtype(n_samples, n_features, n_classes, n_informative,
     assert X.shape == (n_samples, n_features)
     assert y.shape == (n_samples,)
     assert X.dtype == np.float64
-    assert y.dtype == np.intp
+    assert y.dtype == np.int32
 
 
 @pytest.mark.parametrize("n_classes", [2, 3, 5, 10])
