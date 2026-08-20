@@ -196,13 +196,16 @@ def _check_cumproba(cumproba):
     return cumproba
 
 
-def _isotonic_repair(cumproba):
-    """Repair non-monotonic rows of an already validated cumproba matrix."""
+def _isotonic_repair(cumproba, diffs):
+    """Repair non-monotonic rows of an already validated cumproba matrix.
+
+    ``diffs`` is the caller's ``np.diff(cumproba, axis=1)``, passed in so
+    it is not recomputed here.
+    """
     repaired = cumproba.copy()
     # Refit only violating rows; isotonic regression leaves monotone
     # in-range rows unchanged
-    violating = np.flatnonzero((np.diff(cumproba, axis=1) < 0.0).any(axis=1))
-    for i in violating:
+    for i in np.flatnonzero((diffs < 0.0).any(axis=1)):
         repaired[i] = isotonic_regression(
             cumproba[i], y_min=0.0, y_max=1.0, increasing=True
         )
@@ -250,7 +253,7 @@ def repair_cumproba(cumproba):
     array([[0.3, 0.3, 0.7]])
     """
     cumproba = _check_cumproba(cumproba)
-    return _isotonic_repair(cumproba)
+    return _isotonic_repair(cumproba, np.diff(cumproba, axis=1))
 
 
 def proba_to_cumproba(proba):
@@ -374,9 +377,16 @@ def cumproba_to_proba(cumproba, repair=True):
         class_proba[:, -1] = 1.0 - cumproba[:, -1]
         return class_proba
 
-    repaired = _isotonic_repair(cumproba)
+    # Reuse the scan diffs when no row needs repairing, which is the
+    # common case for threshold models
+    repaired = cumproba
+    diffs = np.diff(cumproba, axis=1)
+    if (diffs < 0.0).any():
+        repaired = _isotonic_repair(cumproba, diffs)
+        diffs = np.diff(repaired, axis=1)
+
     class_proba[:, 0] = repaired[:, 0]
-    class_proba[:, 1:-1] = np.diff(repaired, axis=1)
+    class_proba[:, 1:-1] = diffs
     class_proba[:, -1] = 1.0 - repaired[:, -1]
 
     np.clip(class_proba, 0.0, None, out=class_proba)
