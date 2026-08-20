@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ._results import _atomic_write
+from ._io import _atomic_write
 
 
 def _check_split(split, *, allow_both):
