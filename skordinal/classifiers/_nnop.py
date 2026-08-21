@@ -197,7 +197,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
         )[:, np.newaxis]
 
         results_optimization = scipy.optimize.fmin_l_bfgs_b(
-            func=self._nnop_cost_function,
+            func=self._objective,
             x0=initial_nn_params.ravel(),
             args=(
                 self.n_features_in_,
@@ -443,7 +443,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         return W
 
-    def _nnop_cost_function(
+    def _objective(
         self,
         nn_params: np.ndarray,
         n_features: int,

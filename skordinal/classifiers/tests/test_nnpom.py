@@ -235,8 +235,8 @@ def test_fit_no_nan_with_near_zero_probabilities():
     assert set(clf.predict(X_reg)).issubset(set(clf.classes_))
 
 
-def test_nnpom_cost_function_gradient_matches_finite_difference():
-    """The analytic cost gradient matches a finite-difference approximation."""
+def test_nnpom_objective_gradient_matches_finite_difference():
+    """The analytic objective gradient matches a finite-difference approximation."""
     rng = np.random.default_rng(0)
     n_samples, n_features, n_hidden, n_classes = 30, 4, 3, 3
     X_data = rng.standard_normal((n_samples, n_features))
@@ -251,13 +251,13 @@ def test_nnpom_cost_function_gradient_matches_finite_difference():
     clf = NNPOM()
 
     def cost(nn_params):
-        J, _ = clf._nnpom_cost_function(
+        J, _ = clf._objective(
             nn_params, n_features, n_hidden, n_classes, X_data, Y, 0.01
         )
         return J
 
     def grad(nn_params):
-        _, g = clf._nnpom_cost_function(
+        _, g = clf._objective(
             nn_params, n_features, n_hidden, n_classes, X_data, Y, 0.01
         )
         return g
@@ -266,7 +266,7 @@ def test_nnpom_cost_function_gradient_matches_finite_difference():
     assert err < 1e-4
 
 
-def test_nnpom_cost_function_gradient_is_zero_in_clamped_region():
+def test_nnpom_objective_gradient_is_zero_in_clamped_region():
     """A fully clamped objective is flat, so its gradient must vanish."""
     n_samples, n_features, n_hidden, n_classes = 30, 4, 3, 3
     rng = np.random.default_rng(0)
@@ -282,9 +282,7 @@ def test_nnpom_cost_function_gradient_is_zero_in_clamped_region():
     )
 
     clf = NNPOM()
-    cost, grad = clf._nnpom_cost_function(
-        x0, n_features, n_hidden, n_classes, X_data, Y, 0.0
-    )
+    cost, grad = clf._objective(x0, n_features, n_hidden, n_classes, X_data, Y, 0.0)
 
     np.testing.assert_allclose(cost, -np.log(1e-15))
     np.testing.assert_array_equal(grad, np.zeros_like(grad))
