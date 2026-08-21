@@ -339,9 +339,13 @@ class POM(ClassifierMixin, BaseEstimator):
         proba = cumproba_to_proba(self._cumproba(X), repair=True)
         return self.classes_[proba.argmax(axis=1)]
 
+    def _project(self, X):
+        """Compute the raw latent projection for pre-validated X."""
+        return X @ self.coef_
+
     def _cumproba(self, X):
         """Compute raw cumulative probabilities on pre-validated X."""
-        f = X @ self.coef_  # (n,)
+        f = self._project(X)  # (n,)
         eta = self.thresholds_[np.newaxis, :] - f[:, np.newaxis]  # (n, K-1)
         # Predict path only needs the CDF; skip the density computation
         return self._link_cdf_pdf(eta, need_pdf=False)[0]

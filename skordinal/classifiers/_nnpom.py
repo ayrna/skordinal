@@ -284,23 +284,8 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False)
-        n_samples = X.shape[0]
-        n_classes = len(self.classes_)
-
-        a1 = np.append(np.ones((n_samples, 1)), X, axis=1)
-        z2 = np.matmul(a1, self.theta1_.T)
-        a2 = expit(z2)
-        projected = np.matmul(a2, self.theta2_.T)
-
-        z3 = np.tile(self.thresholds_, (n_samples, 1)) - np.tile(
-            projected, (1, n_classes - 1)
-        )
-        a3T = expit(z3)
-        a3 = np.append(a3T, np.ones((n_samples, 1)), axis=1)
-        a3[:, 1:] = a3[:, 1:] - a3[:, 0:-1]
-        y_pred = self.classes_[a3.argmax(1)]
-
-        return y_pred
+        proba = cumproba_to_proba(self._cumproba(X), repair=True)
+        return self.classes_[proba.argmax(axis=1)]
 
     def predict_cumproba(self, X: ArrayLike) -> np.ndarray:
         """Cumulative class probabilities for each sample.
@@ -363,12 +348,16 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         X = validate_data(self, X, reset=False)
         return cumproba_to_proba(self._cumproba(X), repair=True)
 
-    def _cumproba(self, X: np.ndarray) -> np.ndarray:
-        """Compute raw cumulative probabilities on pre-validated X."""
+    def _project(self, X: np.ndarray) -> np.ndarray:
+        """Compute the raw latent projection for pre-validated X."""
         a1 = np.append(np.ones((X.shape[0], 1)), X, axis=1)
         a2 = expit(np.matmul(a1, self.theta1_.T))
-        projected = np.matmul(a2, self.theta2_.T)
-        return expit(self.thresholds_ - projected)
+        return np.matmul(a2, self.theta2_.T).ravel()
+
+    def _cumproba(self, X: np.ndarray) -> np.ndarray:
+        """Compute raw cumulative probabilities on pre-validated X."""
+        projected = self._project(X)  # (n,)
+        return expit(self.thresholds_ - projected[:, np.newaxis])
 
     def _unpack_parameters(
         self,
