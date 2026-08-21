@@ -5,13 +5,14 @@ from __future__ import annotations
 import warnings
 from collections import OrderedDict
 from time import perf_counter
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 from sklearn import preprocessing
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import get_ordinal_scorer
+from skordinal.metrics._metrics import _LABEL_METRICS
 
 from ._model_config import ModelConfig
 from ._results import ExperimentResult
@@ -19,8 +20,12 @@ from ._results import ExperimentResult
 
 def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Compute a single ordinal metric by name."""
-    scorer = cast(Any, get_ordinal_scorer(metric_name.strip()))
-    return scorer._score_func(y_true, y_pred, **scorer._kwargs)
+    key = metric_name.strip()
+    if key not in _LABEL_METRICS:
+        raise ValueError(
+            f"Unknown metric name: {metric_name!r}. Available: {sorted(_LABEL_METRICS)}."
+        )
+    return _LABEL_METRICS[key](y_true, y_pred)
 
 
 def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
@@ -59,7 +64,8 @@ class Experiment:
     eval_metrics : list of str
         Metric names to compute for every partition (e.g.
         ``["mean_absolute_error", "average_mean_absolute_error"]``). Names
-        must be recognised by ``skordinal.metrics.get_ordinal_scorer``.
+        must match a ``skordinal.metrics`` metric that scores predicted
+        labels, which excludes ``ranked_probability_score``.
 
     tuning_metric : str, default="neg_mean_absolute_error"
         Metric used as the cross-validation scoring criterion when selecting

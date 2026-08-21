@@ -2,7 +2,12 @@
 
 import numpy as np
 import scipy.stats
-from sklearn.metrics import confusion_matrix, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    mean_absolute_error,
+    recall_score,
+)
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils._param_validation import validate_params
 
@@ -811,3 +816,20 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
     correct = mask * conf_mat
 
     return float(np.sum(correct) / np.sum(conf_mat))
+
+
+_LABEL_METRICS = {
+    "accuracy_off1_score": accuracy_off1_score,
+    "accuracy_score": accuracy_score,
+    "average_mean_absolute_error": average_mean_absolute_error,
+    "geometric_mean": geometric_mean,
+    "gmsec": gmsec,
+    "kendalls_tau": kendalls_tau,
+    "maximum_mean_absolute_error": maximum_mean_absolute_error,
+    "mean_absolute_error": mean_absolute_error,
+    "mean_extreme_sensitivity": mean_extreme_sensitivity,
+    "mean_zero_one_error": mean_zero_one_error,
+    "minimum_sensitivity": minimum_sensitivity,
+    "spearmans_rho": spearmans_rho,
+    "weighted_kappa": weighted_kappa,
+}
