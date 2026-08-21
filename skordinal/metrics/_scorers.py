@@ -44,26 +44,32 @@ _SCORERS = {
 }
 
 
-@validate_params({"name": [str]}, prefer_skip_nested_validation=True)
-def get_ordinal_scorer(name):
-    """Return a scikit-learn-compatible scorer by name.
+@validate_params({"scoring": [str, callable, None]}, prefer_skip_nested_validation=True)
+def get_ordinal_scorer(scoring):
+    """Return a scikit-learn-compatible scorer.
+
+    Every registered scorer is greater-is-better, matching the
+    scikit-learn convention: a metric where a lower value is better is
+    registered only under its ``neg_``-prefixed name.
 
     Parameters
     ----------
-    name : str
-        Scorer name. Use :func:`get_ordinal_scorer_names` for the full list.
-        Leading and trailing whitespace is stripped before lookup.
+    scoring : str, callable or None
+        Scorer name. Use :func:`get_ordinal_scorer_names` for the full
+        list. Leading and trailing whitespace is stripped before lookup.
+        A callable is returned as is, and ``None`` returns ``None``,
+        matching :func:`sklearn.metrics.get_scorer`.
 
     Returns
     -------
-    scorer : callable
+    scorer : callable or None
         A scorer compatible with :class:`~sklearn.model_selection.GridSearchCV`
         and :func:`~sklearn.model_selection.cross_val_score`.
 
     Raises
     ------
     ValueError
-        If ``name`` is not a registered scorer name.
+        If ``scoring`` is a string that is not a registered scorer name.
 
     Notes
     -----
@@ -78,16 +84,18 @@ def get_ordinal_scorer(name):
     True
 
     """
-    key = name.strip()
+    if not isinstance(scoring, str):
+        return scoring
+    key = scoring.strip()
     if key in _SCORERS:
         return copy.deepcopy(_SCORERS[key])
     if f"neg_{key}" in _SCORERS:
         raise ValueError(
-            f"Unknown scorer name: {name!r}. A scorer must be "
+            f"Unknown scorer name: {scoring!r}. A scorer must be "
             f"greater-is-better, so a loss is only registered as 'neg_{key}'."
         )
     raise ValueError(
-        f"Unknown scorer name: {name!r}. Available: {get_ordinal_scorer_names()}."
+        f"Unknown scorer name: {scoring!r}. Available: {get_ordinal_scorer_names()}."
     )
 
 

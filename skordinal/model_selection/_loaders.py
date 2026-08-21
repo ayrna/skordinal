@@ -142,9 +142,7 @@ def load_classifier(
     param_grid = prepare_param_grid(classifier_cls, param_grid, random_state)
 
     if is_searchcv(param_grid):
-        scorer = (
-            get_ordinal_scorer(cv_metric) if isinstance(cv_metric, str) else cv_metric
-        )
+        scorer = get_ordinal_scorer(cv_metric)
         cv = StratifiedKFold(
             n_splits=cv_n_folds, shuffle=True, random_state=random_state
         )

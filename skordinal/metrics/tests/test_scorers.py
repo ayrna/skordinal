@@ -110,16 +110,29 @@ def test_scorer_drives_gridsearchcv(name, labels):
         assert gs.best_score_ >= 0
 
 
-def test_get_ordinal_scorer_rejects_non_string():
-    """A non-string name is rejected at the parameter boundary."""
-    with pytest.raises(InvalidParameterError):
-        get_ordinal_scorer(123)
+def test_get_ordinal_scorer_passes_through_callable_and_none():
+    """A callable is returned as is and None returns None, as in sklearn."""
+
+    def scorer(estimator, X, y):
+        return 0.0
+
+    assert get_ordinal_scorer(scorer) is scorer
+    assert get_ordinal_scorer(None) is None
 
 
-def test_get_ordinal_scorer_value_error():
-    """Unknown name raises ValueError mentioning the requested name."""
-    with pytest.raises(ValueError, match="roc_auc"):
-        get_ordinal_scorer("roc_auc")
+@pytest.mark.parametrize(
+    "name, exception, match",
+    [
+        (123, InvalidParameterError, "must be an instance of"),
+        ("roc_auc", ValueError, "roc_auc"),
+        ("mean_absolute_error", ValueError, "neg_mean_absolute_error"),
+    ],
+    ids=["wrong_type", "unknown_name", "unnegated_loss"],
+)
+def test_get_ordinal_scorer_rejects(name, exception, match):
+    """Bad input raises, and a bare loss name points at its neg_ form."""
+    with pytest.raises(exception, match=match):
+        get_ordinal_scorer(name)
 
 
 def test_whitespace_stripped():

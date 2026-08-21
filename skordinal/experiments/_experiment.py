@@ -229,11 +229,7 @@ class Experiment:
         # locals so nothing is ever injected onto the estimator itself
         base = self.model.build(self.random_state)
         if self.model.needs_search:
-            scorer = (
-                get_ordinal_scorer(self.tuning_metric)
-                if isinstance(self.tuning_metric, str)
-                else self.tuning_metric
-            )
+            scorer = get_ordinal_scorer(self.tuning_metric)
             splitter = StratifiedKFold(
                 n_splits=self.cv, shuffle=True, random_state=self.random_state
             )
