@@ -59,7 +59,7 @@ def test_cot_non_contiguous_labels():
         ([], None),
         (np.array([[1, 2], [3, 4]]), r"y must be a 1D array"),
         # "1 class" singular, not "1 classes"
-        ([1, 1, 1], r"y must contain at least 2 unique classes, got 1 class$"),
+        ([1, 1, 1], r"y must contain at least 2 unique classes, got 1 class\.$"),
         (np.array(["a", "b"], dtype=object), None),
         ([np.nan, 1.0, 2.0], None),
     ],
