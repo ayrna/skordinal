@@ -68,6 +68,11 @@ class REDSVM(ClassifierMixin, BaseEstimator):
     classes_ : ndarray of shape (n_classes,)
         Array that contains all different class labels found in the original dataset.
 
+    thresholds_ : ndarray of shape (n_classes - 1,)
+        Fitted ordered thresholds partitioning the latent projection into
+        class regions.  ``predict`` assigns
+        ``classes_[(predict_projection(X)[:, None] >= thresholds_).sum(axis=1)]``.
+
     model_ : object
         Fitted estimator.
 
@@ -196,6 +201,8 @@ class REDSVM(ClassifierMixin, BaseEstimator):
             str(1 if self.shrinking else 0),
         )
         self.model_ = svm.fit((y_encoded + 1).tolist(), X.tolist(), options)
+        # the backend folds rho[0] into the projection; rho[1:] are the cutpoints
+        self.thresholds_ = np.asarray(self.model_["rho"][1:], dtype=np.float64)
 
         return self
 
@@ -224,5 +231,37 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False)
-        y_pred = np.array(svm.predict(X.tolist(), self.model_))
-        return self.classes_[y_pred.astype(int) - 1]
+        y_pred, _ = svm.predict(X.tolist(), self.model_)
+        return self.classes_[np.asarray(y_pred).astype(int) - 1]
+
+    def predict_projection(self, X: ArrayLike) -> np.ndarray:
+        """Return the raw latent projection for each sample.
+
+        The projection ``f(x)`` is the raw latent projection (ordinal-axis
+        score) that ``thresholds_`` partitions into class regions, on the
+        same scale.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Test patterns array, where n_samples is the number of samples and
+            n_features is the number of features.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw projection for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+
+        ValueError
+            If input is invalid.
+
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        _, projection = svm.predict(X.tolist(), self.model_)
+        return np.asarray(projection, dtype=np.float64)

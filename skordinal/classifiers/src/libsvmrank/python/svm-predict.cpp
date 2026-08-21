@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits>
 
 #include "svm-module-functions.hpp"
 #include "svm.h"
@@ -14,6 +15,8 @@
 PyObject* predictLabels(PyObject* features, struct svm_model *model)
 {
 	PyObject* predicted_labels = Py_BuildValue("[]"), *list_el = NULL;
+	PyObject* projections = Py_BuildValue("[]"), *proj_el = NULL;
+	double projection;
 	int feature_number, testing_instance_number;
 	int instance_index;
 	double **ptr_instance;
@@ -56,6 +59,8 @@ PyObject* predictLabels(PyObject* features, struct svm_model *model)
 		{
 			double res;
 			svm_predict_values(model, x, &res);
+			/* svm_predict_values already subtracted rho[0] */
+			projection = res;
 			if(svm_type == ONE_CLASS)
 				predict_label =  (res>0)?1:-1;
 			else if (svm_type == C_RNK || svm_type == SVORIM){
@@ -75,6 +80,8 @@ PyObject* predictLabels(PyObject* features, struct svm_model *model)
 		{
 			double *dec_values = (double *) malloc(sizeof(double) * nr_class*(nr_class-1)/2);
 			svm_predict_values(model, x, dec_values);
+			/* one-vs-one voting has no single latent axis */
+			projection = std::numeric_limits<double>::quiet_NaN();
 
 			int i;
 			int *vote = (int *) malloc(sizeof(int)* nr_class);
@@ -102,6 +109,10 @@ PyObject* predictLabels(PyObject* features, struct svm_model *model)
 			free(dec_values);
 		}
 
+		proj_el = Py_BuildValue("d", projection);
+		PyList_Append(projections, proj_el);
+		Py_DECREF(proj_el);
+
 		list_el = Py_BuildValue("d", predict_label);
 		PyList_Append(predicted_labels, list_el);
 		//PyList_Append increment the passed in PyObjects references so is necesary
@@ -116,7 +127,7 @@ PyObject* predictLabels(PyObject* features, struct svm_model *model)
 		free(ptr_instance[i]);
 	free(ptr_instance);
 
-	return predicted_labels;
+	return Py_BuildValue("(NN)", predicted_labels, projections);
 }
 
 /* Interface function of Python*/
