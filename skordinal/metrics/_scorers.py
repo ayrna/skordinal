@@ -43,8 +43,6 @@ _SCORERS = {
     "weighted_kappa": make_scorer(weighted_kappa),
 }
 
-__all__ = ["get_ordinal_scorer", "list_ordinal_scorers"]
-
 
 @validate_params({"name": [str]}, prefer_skip_nested_validation=True)
 def get_ordinal_scorer(name):
