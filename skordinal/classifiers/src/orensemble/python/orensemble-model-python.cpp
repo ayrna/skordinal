@@ -52,6 +52,24 @@ boostrankParams *pythonToParams(PyObject *paramsPyton)
     return ret;
 }
 
+/* AggRank keeps one set of n_rank-1 thresholds per iteration; take the set
+   at the aggregation size prediction will use */
+static PyObject *thresholdsToPython(const lemga::AggRank *model, const boostrankParams &params)
+{
+    UINT iter = params.n_iter;
+    if (iter > model->aggregation_size())
+        iter = model->aggregation_size();
+
+    PyObject *thresholds = Py_BuildValue("[]"), *el = NULL;
+    for (UINT k = 1; k < model->get_n_rank(); ++k)
+    {
+        el = Py_BuildValue("d", (double)model->threshold(iter, k));
+        PyList_Append(thresholds, el);
+        Py_DECREF(el);
+    }
+    return thresholds;
+}
+
 PyObject *modelAndParamsToPython(const lemga::AggRank *model, const boostrankParams &params)
 {
 
@@ -59,14 +77,18 @@ PyObject *modelAndParamsToPython(const lemga::AggRank *model, const boostrankPar
 
     PyObject *paramsPython = paramsToPython(params);
 
+    PyObject *thresholdsPython = thresholdsToPython(model, params);
+
     PyObject *ret = Py_BuildValue(
-        "{s:O, s:O}",
+        "{s:O, s:O, s:O}",
         "model", modelPython,
-        "params", paramsPython
+        "params", paramsPython,
+        "thresholds", thresholdsPython
     );
 
     Py_DECREF(modelPython);
     Py_DECREF(paramsPython);
+    Py_DECREF(thresholdsPython);
 
     return ret;
 }

@@ -69,6 +69,11 @@ class ORBoost(ClassifierMixin, BaseEstimator):
         Feature names seen during ``fit``. Defined only when ``X`` is a
         ``pandas.DataFrame``.
 
+    thresholds_ : ndarray of shape (n_classes - 1,)
+        Fitted ordered thresholds partitioning the ensemble score into class
+        regions.  ``predict`` assigns
+        ``classes_[(predict_projection(X)[:, None] >= thresholds_).sum(axis=1)]``.
+
     model_ : dict
         Model state returned by the C++ backend after fitting, with
         keys ``'model'`` (learned parameters) and ``'params'``
@@ -172,6 +177,8 @@ class ORBoost(ClassifierMixin, BaseEstimator):
             K,
             self.n_estimators,
         )
+        # reported at the aggregation size predict uses
+        self.thresholds_ = np.asarray(self.model_["thresholds"], dtype=np.float64)
         return self
 
     def predict(self, X):
@@ -194,6 +201,33 @@ class ORBoost(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, dtype=np.float64)
-        y_pred = _orensemble_lib.predict(X.tolist(), self.model_)
+        y_pred, _ = _orensemble_lib.predict(X.tolist(), self.model_)
         # Map the backend's 1-indexed ranks back to labels in classes_
         return self.classes_[np.array(y_pred, dtype=int) - 1]
+
+    def predict_projection(self, X):
+        """Return the raw latent projection for each sample.
+
+        The aggregated ensemble score ``f(x)`` is the raw latent
+        projection (ordinal-axis score) that ``thresholds_`` partitions
+        into class regions, on the same scale.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Input samples.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw ensemble score for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
+        _, projection = _orensemble_lib.predict(X.tolist(), self.model_)
+        return np.asarray(projection, dtype=np.float64)

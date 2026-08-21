@@ -84,17 +84,24 @@ PyObject *predict(PyObject *self, PyObject *args)
     // std::cout << "Raw Ranking Loss: " << rl << std::endl;
     // std::cout << "Thresholded Ranking Loss: " << tl << std::endl;
 
+    /* out[i][0] is the rank, out[i][1] the ensemble score behind it */
     PyObject *predictedLabels = Py_BuildValue("[]"), *list_el = NULL;
+    PyObject *projections = Py_BuildValue("[]"), *proj_el = NULL;
     for (UINT i = 0; i < out.size(); ++i)
     {
         list_el = Py_BuildValue("i", (int)out[i][0]);
         PyList_Append(predictedLabels, list_el);
 
         Py_DECREF(list_el);
+
+        proj_el = Py_BuildValue("d", (double)out[i][1]);
+        PyList_Append(projections, proj_el);
+
+        Py_DECREF(proj_el);
     }
 
     delete pbag;
-    return predictedLabels;
+    return Py_BuildValue("(NN)", predictedLabels, projections);
 }
 
 int parseArgumentsPred(PyObject *args, PyObject **features, lemga::AggRank **model, boostrankParams &params)
