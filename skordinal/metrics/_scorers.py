@@ -51,7 +51,7 @@ def get_ordinal_scorer(name):
     Parameters
     ----------
     name : str
-        Scorer name. Use :func:`list_ordinal_scorers` for the full list.
+        Scorer name. Use :func:`get_ordinal_scorer_names` for the full list.
         Leading and trailing whitespace is stripped before lookup.
 
     Returns
@@ -87,11 +87,11 @@ def get_ordinal_scorer(name):
             f"greater-is-better, so a loss is only registered as 'neg_{key}'."
         )
     raise ValueError(
-        f"Unknown scorer name: {name!r}. Available: {list_ordinal_scorers()}."
+        f"Unknown scorer name: {name!r}. Available: {get_ordinal_scorer_names()}."
     )
 
 
-def list_ordinal_scorers():
+def get_ordinal_scorer_names():
     """Return the sorted list of registered ordinal scorer names.
 
     Returns
@@ -101,8 +101,8 @@ def list_ordinal_scorers():
 
     Examples
     --------
-    >>> from skordinal.metrics import list_ordinal_scorers
-    >>> all_scorers = list_ordinal_scorers()
+    >>> from skordinal.metrics import get_ordinal_scorer_names
+    >>> all_scorers = get_ordinal_scorer_names()
     >>> type(all_scorers)
     <class 'list'>
     >>> "neg_mean_absolute_error" in all_scorers

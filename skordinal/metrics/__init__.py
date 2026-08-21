@@ -16,7 +16,7 @@ from ._metrics import (
     spearmans_rho,
     weighted_kappa,
 )
-from ._scorers import get_ordinal_scorer, list_ordinal_scorers
+from ._scorers import get_ordinal_scorer, get_ordinal_scorer_names
 
 __all__ = [
     "accuracy_off1_score",
@@ -24,9 +24,9 @@ __all__ = [
     "average_mean_absolute_error",
     "geometric_mean",
     "get_ordinal_scorer",
+    "get_ordinal_scorer_names",
     "gmsec",
     "kendalls_tau",
-    "list_ordinal_scorers",
     "maximum_mean_absolute_error",
     "mean_absolute_error",
     "mean_extreme_sensitivity",

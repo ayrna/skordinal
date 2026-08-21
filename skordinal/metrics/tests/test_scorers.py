@@ -12,9 +12,9 @@ from skordinal.metrics import (
     average_mean_absolute_error,
     geometric_mean,
     get_ordinal_scorer,
+    get_ordinal_scorer_names,
     gmsec,
     kendalls_tau,
-    list_ordinal_scorers,
     maximum_mean_absolute_error,
     mean_absolute_error,
     mean_extreme_sensitivity,
@@ -63,9 +63,9 @@ def test_registered_scorer_contract(name, metric_fn, sign):
 
 def test_scorer_names_match_expected():
     """Names are exactly the pinned contract, sorted, in a fresh list."""
-    names = list_ordinal_scorers()
+    names = get_ordinal_scorer_names()
     assert names == sorted(entry[0] for entry in _EXPECTED_SCORERS)
-    assert list_ordinal_scorers() is not names
+    assert get_ordinal_scorer_names() is not names
 
 
 def test_scorers_not_in_public_all():
