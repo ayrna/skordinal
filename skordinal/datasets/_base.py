@@ -15,9 +15,26 @@ import numpy as np
 from sklearn.model_selection import StratifiedKFold
 from sklearn.utils import Bunch
 from sklearn.utils._param_validation import Interval, validate_params
+from sklearn.utils.multiclass import check_classification_targets
 
 DATA_MODULE = "skordinal.datasets.data"
 DESCR_MODULE = "skordinal.datasets.descr"
+
+
+def _cast_target_column(y_raw, path):
+    """Return the target column as int32, or raise ValueError."""
+    try:
+        # The sklearn check casts internally, warning on the values it rejects
+        with np.errstate(invalid="ignore"):
+            check_classification_targets(y_raw)
+    except ValueError as exc:
+        raise ValueError(f"Target column of {path} is invalid: {exc}") from exc
+    info = np.iinfo(np.int32)
+    if not ((y_raw >= info.min) & (y_raw <= info.max)).all():
+        raise ValueError(
+            f"Target column of {path} is invalid: label outside the int32 range."
+        )
+    return y_raw.astype(np.int32)
 
 
 def _read_csv_any(path):
@@ -79,7 +96,7 @@ def _read_csv_any(path):
     # columns are the features and the last column is the target
     table = np.asarray(data_rows, dtype=np.float64)
     X = np.ascontiguousarray(table[:, :n_features])
-    y = table[:, -1].astype(np.int64)
+    y = _cast_target_column(table[:, -1], path)
     return X, y, feature_names, header_class_names
 
 
@@ -310,7 +327,7 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
         data : ndarray of shape (n_samples, n_features)
             Feature matrix (float64). A DataFrame when ``as_frame`` is True.
         target : ndarray of shape (n_samples,)
-            Integer target labels (int64). A Series when ``as_frame`` is True.
+            Integer target labels (int32). A Series when ``as_frame`` is True.
         frame : DataFrame or None
             Combined frame when ``as_frame`` is True; otherwise ``None``.
         feature_names : list of str
@@ -336,6 +353,9 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     ------
     FileNotFoundError
         When the resolved path does not exist.
+    ValueError
+        When the CSV is empty, or when the target column does not hold
+        integer class labels.
 
     Examples
     --------
@@ -442,11 +462,11 @@ def load_partitions(
         data_train : ndarray of shape (n_train, n_features)
             Training features (float64).
         target_train : ndarray of shape (n_train,)
-            Training targets (int64).
+            Training targets (int32).
         data_test : ndarray of shape (n_test, n_features)
             Test features (float64).
         target_test : ndarray of shape (n_test,)
-            Test targets (int64).
+            Test targets (int32).
         feature_names : list of str
             Feature column names.
         target_names : ndarray of str
@@ -473,8 +493,9 @@ def load_partitions(
     FileNotFoundError
         When the CSV cannot be located.
     ValueError
-        When ``resamples < 2`` and CV masks must be generated, or when a
-        mask length does not match the number of samples.
+        When ``resamples < 2`` and CV masks must be generated, when a
+        mask length does not match the number of samples, or when the
+        target column does not hold integer class labels.
     KeyError
         When a keyed masks file exists but does not contain the expected key.
     IndexError
