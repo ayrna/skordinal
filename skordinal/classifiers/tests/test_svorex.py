@@ -158,10 +158,12 @@ def test_svorex_parameter_constraints_match_init_params():
 
 
 def test_svorex_predict_rejects_wrong_n_features(X, y):
-    """Test that predict rejects input with mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = SVOREX().fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -214,3 +216,23 @@ def test_svorex_gamma_scale_zero_variance(X, y):
         classifier = SVOREX(gamma="scale", kernel="rbf").fit(X_constant, y)
 
     assert set(classifier.predict(X_constant)).issubset(set(classifier.classes_))
+
+
+@pytest.mark.parametrize("kernel", ["linear", "rbf", "poly"])
+def test_svorex_projection_well_formed(kernel):
+    """predict_projection is well-formed and reproduces predict via thresholds_."""
+    X_train, X_test, y_train, _ = make_balance_scale_split()
+    clf = SVOREX(kernel=kernel).fit(X_train, y_train)
+
+    projection = clf.predict_projection(X_test)
+    assert projection.shape == (len(X_test),)
+    assert np.isfinite(projection).all()
+
+    assert clf.thresholds_.shape == (clf.classes_.size - 1,)
+    assert np.all(np.diff(clf.thresholds_) >= 0)
+
+    # recomputing predict cross-checks what the C actually returned
+    n_exceeded = (projection[:, np.newaxis] > clf.thresholds_[np.newaxis, :]).sum(
+        axis=1
+    )
+    npt.assert_array_equal(clf.predict(X_test), clf.classes_[n_exceeded])

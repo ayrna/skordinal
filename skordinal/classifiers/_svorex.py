@@ -54,6 +54,11 @@ class SVOREX(ClassifierMixin, BaseEstimator):
     classes_ : ndarray of shape (n_classes,)
         Array that contains all different class labels found in the original dataset.
 
+    thresholds_ : ndarray of shape (n_classes - 1,)
+        Fitted ordered thresholds partitioning the latent projection into
+        class regions.  ``predict`` assigns
+        ``classes_[(predict_projection(X)[:, None] > thresholds_).sum(axis=1)]``.
+
     model_ : object
         Fitted estimator.
 
@@ -143,6 +148,8 @@ class SVOREX(ClassifierMixin, BaseEstimator):
             arg, str(self.tol), str(gamma_value), str(self.C)
         )
         self.model_ = svorex.fit((y_encoded + 1).tolist(), X.tolist(), options)
+        # biasj are the backend's ordered cutpoints
+        self.thresholds_ = np.asarray(self.model_["biasj"], dtype=np.float64)
         return self
 
     def predict(self, X: ArrayLike) -> np.ndarray:
@@ -170,5 +177,37 @@ class SVOREX(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False)
-        y_pred = np.array(svorex.predict(X.tolist(), self.model_))
-        return self.classes_[y_pred.astype(int) - 1]
+        y_pred, _ = svorex.predict(X.tolist(), self.model_)
+        return self.classes_[np.asarray(y_pred).astype(int) - 1]
+
+    def predict_projection(self, X: ArrayLike) -> np.ndarray:
+        """Return the raw latent projection for each sample.
+
+        The kernel projection ``f(x)`` is the raw latent projection
+        (ordinal-axis score) that ``thresholds_`` partitions into class
+        regions, on the same scale.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            Test patterns array, where n_samples is the number of samples and
+            n_features is the number of features.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw kernel projection for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+
+        ValueError
+            If the input is invalid.
+
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        _, projection = svorex.predict(X.tolist(), self.model_)
+        return np.asarray(projection, dtype=np.float64)
