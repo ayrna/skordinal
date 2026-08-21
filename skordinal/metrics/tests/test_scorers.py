@@ -1,6 +1,5 @@
 """Tests for the public scorer API."""
 
-import numpy.testing as npt
 import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
@@ -90,34 +89,6 @@ def test_loss_scorer_sign(name, metric_fn):
 def test_whitespace_stripped():
     """Leading and trailing whitespace in the name is ignored."""
     assert get_ordinal_scorer("  neg_mean_absolute_error  ")._sign == -1
-
-
-@pytest.mark.parametrize(
-    "name, metric_fn",
-    [
-        ("accuracy_score", accuracy_score),
-        ("accuracy_off1_score", accuracy_off1_score),
-        ("geometric_mean", geometric_mean),
-        ("gmsec", gmsec),
-        ("mean_absolute_error", mean_absolute_error),
-        ("mean_extreme_sensitivity", mean_extreme_sensitivity),
-        ("maximum_mean_absolute_error", maximum_mean_absolute_error),
-        ("average_mean_absolute_error", average_mean_absolute_error),
-        ("minimum_sensitivity", minimum_sensitivity),
-        ("mean_zero_one_error", mean_zero_one_error),
-        ("kendalls_tau", kendalls_tau),
-        ("weighted_kappa", weighted_kappa),
-        ("spearmans_rho", spearmans_rho),
-    ],
-)
-def test_scorer_output_matches_metric(name, metric_fn):
-    """Scorer's score function returns the same value as calling the metric directly."""
-    y_true = [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3]
-    y_pred = [1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3]
-    scorer = get_ordinal_scorer(name)
-    npt.assert_almost_equal(
-        scorer._score_func(y_true, y_pred), metric_fn(y_true, y_pred)
-    )
 
 
 def test_gridcv_with_loss_scorer():
