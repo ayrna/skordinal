@@ -141,10 +141,12 @@ def test_nnpom_predict_invalid_input_raises_error(X, y):
 
 
 def test_nnpom_predict_raises_if_not_fitted(X):
-    """Test that predict raises NotFittedError if called before fit."""
+    """predict and predict_projection raise NotFittedError before fit."""
     classifier = NNPOM()
     with pytest.raises(NotFittedError):
         classifier.predict(X)
+    with pytest.raises(NotFittedError):
+        classifier.predict_projection(X)
 
 
 def test_nnpom_feature_names_in_when_dataframe(X, y):
@@ -165,10 +167,12 @@ def test_nnpom_parameter_constraints_match_init_params():
 
 
 def test_nnpom_predict_rejects_wrong_n_features(X, y):
-    """Test that predict rejects input with mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = NNPOM(n_hidden=4, max_iter=5).fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -320,3 +324,16 @@ def test_nnpom_convergence_warning_only_at_insufficient_max_iter(ordinal_data):
 
     message = str(record[0].message)
     assert re.search(rf"stopped after {clf.n_iter_} iterations?\b", message), message
+
+
+def test_nnpom_projection_well_formed(ordinal_data):
+    """predict_projection is well-formed and consistent with predict."""
+    X, y = ordinal_data
+    clf = NNPOM(n_hidden=4, max_iter=50, random_state=0).fit(X, y)
+
+    projection = clf.predict_projection(X)
+    assert projection.shape == (len(X),)
+    assert np.isfinite(projection).all()
+
+    order = np.argsort(projection)
+    assert np.all(np.diff(clf.predict(X)[order]) >= 0)

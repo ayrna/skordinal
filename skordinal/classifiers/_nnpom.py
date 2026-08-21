@@ -346,6 +346,32 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         X = validate_data(self, X, reset=False)
         return cumproba_to_proba(self._cumproba(X), repair=True)
 
+    def predict_projection(self, X: ArrayLike) -> np.ndarray:
+        """Return the raw latent projection for each sample.
+
+        The network's scalar output ``f(x)`` is the raw latent
+        projection (ordinal-axis score) that ``thresholds_`` partitions
+        into class regions.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw network output for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        return self._project(X)
+
     def _project(self, X: np.ndarray) -> np.ndarray:
         """Compute the raw latent projection for pre-validated X."""
         a1 = np.append(np.ones((X.shape[0], 1)), X, axis=1)

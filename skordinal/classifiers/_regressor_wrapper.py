@@ -38,6 +38,11 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
     classes_ : ndarray of shape (n_classes,)
         Class labels for each output.
 
+    thresholds_ : ndarray of shape (n_classes - 1,)
+        Ordered thresholds partitioning the projection into class regions,
+        at the midpoints between consecutive ranks (``0.5, 1.5, ...``).
+        Determined by ``n_classes`` alone, not learned from the data.
+
     estimator_ : regressor instance
         Fitted clone of the base estimator.
 
@@ -110,6 +115,9 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         self.estimator_ = clone(base)
         self.estimator_.fit(X, y_enc)
 
+        # nearest-rank rounding puts the boundaries at the rank midpoints
+        self.thresholds_ = np.arange(self.classes_.size - 1, dtype=np.float64) + 0.5
+
         return self
 
     def predict(self, X: ArrayLike) -> np.ndarray:
@@ -136,13 +144,7 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
 
-        y_cont = self.estimator_.predict(X)
-
-        if np.isnan(y_cont).any():
-            raise ValueError(
-                "The wrapped regressor returned NaN predictions. "
-                "RegressorWrapper cannot map NaN to a rank."
-            )
+        y_cont = self._project(X)
 
         # Clip so unbounded output maps to the nearest extreme class
         max_rank = self.classes_.size - 1
@@ -151,3 +153,47 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         ranks = np.arange(self.classes_.size, dtype=float)
         idx = np.abs(y_cont[:, None] - ranks[None, :]).argmin(axis=1)
         return self.classes_[idx]
+
+    def _project(self, X: np.ndarray) -> np.ndarray:
+        """Compute the raw regressor output on pre-validated X."""
+        y_cont = self.estimator_.predict(X)
+
+        if np.isnan(y_cont).any():
+            raise ValueError(
+                "The wrapped regressor returned NaN predictions. "
+                "RegressorWrapper cannot map NaN to a rank."
+            )
+
+        return y_cont
+
+    def predict_projection(self, X: ArrayLike) -> np.ndarray:
+        """Return the raw latent projection for each sample.
+
+        The wrapped regressor's continuous output on the zero-based rank
+        scale is the raw latent projection (ordinal-axis score) that
+        ``predict`` discretises by rounding to the nearest rank.  It is
+        returned **unclipped**, so values outside ``[0, n_classes - 1]``
+        are visible here even though ``predict`` folds them into the
+        extreme classes.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw regressor output for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the estimator has not been fitted yet.
+
+        ValueError
+            If the wrapped regressor returns a NaN prediction.
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
+        return self._project(X)
