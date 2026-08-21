@@ -13,7 +13,6 @@ from ._metrics import (
     mean_extreme_sensitivity,
     mean_zero_one_error,
     minimum_sensitivity,
-    ranked_probability_score,
     spearmans_rho,
     weighted_kappa,
 )
@@ -31,17 +30,6 @@ _SCORERS = {
     "neg_mean_zero_one_error": make_scorer(
         mean_zero_one_error, greater_is_better=False
     ),
-    "neg_ranked_probability_score": make_scorer(
-        ranked_probability_score, greater_is_better=False
-    ),
-    "average_mean_absolute_error": make_scorer(
-        average_mean_absolute_error, greater_is_better=False
-    ),
-    "mean_absolute_error": make_scorer(mean_absolute_error, greater_is_better=False),
-    "maximum_mean_absolute_error": make_scorer(
-        maximum_mean_absolute_error, greater_is_better=False
-    ),
-    "mean_zero_one_error": make_scorer(mean_zero_one_error, greater_is_better=False),
     "accuracy_score": make_scorer(accuracy_score),
     "accuracy_off1_score": make_scorer(accuracy_off1_score),
     "geometric_mean": make_scorer(geometric_mean),
@@ -88,6 +76,11 @@ def get_ordinal_scorer(name):
     key = name.strip()
     if key in _SCORERS:
         return _SCORERS[key]
+    if f"neg_{key}" in _SCORERS:
+        raise ValueError(
+            f"Unknown scorer name: {name!r}. A scorer must be "
+            f"greater-is-better, so a loss is only registered as 'neg_{key}'."
+        )
     raise ValueError(
         f"Unknown scorer name: {name!r}. Available: {list_ordinal_scorers()}."
     )
