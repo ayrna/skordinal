@@ -629,9 +629,10 @@ def weighted_kappa(y_true, y_pred, *, sample_weight=None):
 def spearmans_rho(y_true, y_pred):
     """Spearman's rank correlation coefficient between two ordinal vectors.
 
-    A non-parametric measure of monotonic association computed from
-    label values directly (treated as numerical scores). Returns ``0.0`` when one
-    of the inputs is constant.
+    A non-parametric measure of monotonic association between the ranks of
+    ``y_true`` and ``y_pred``, with average ranks assigned to ties. Computed
+    via :func:`scipy.stats.spearmanr`. Returns ``0.0`` when one of the inputs
+    is constant.
 
     Parameters
     ----------
@@ -659,18 +660,14 @@ def spearmans_rho(y_true, y_pred):
     >>> y_true = np.array([0, 0, 1, 2, 3, 0, 0])
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> spearmans_rho(y_true, y_pred)
-    0.9165444688834581
+    0.8464861424907173
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
-    y_true_centered = y_true - np.mean(y_true)
-    y_pred_centered = y_pred - np.mean(y_pred)
-    num = (y_true_centered * y_pred_centered).sum()
-    div = np.sqrt((y_true_centered**2).sum() * (y_pred_centered**2).sum())
-
-    if num == 0:
+    if np.unique(y_true).size < 2 or np.unique(y_pred).size < 2:
         return 0.0
-    return float(num / div)
+    corr, _ = scipy.stats.spearmanr(y_true, y_pred)
+    return float(corr)
 
 
 @validate_params(
