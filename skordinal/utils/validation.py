@@ -48,11 +48,11 @@ def check_ordinal_targets(
     Raises
     ------
     ValueError
-        If ``y`` is empty, multi-dimensional, has a non-numeric dtype,
-        or contains fewer than 2 unique classes. Upstream ``ValueError``
-        from ``check_array`` (e.g. NaN inputs, object arrays) and from
-        ``check_classification_targets`` (e.g. continuous targets) are
-        propagated unchanged.
+        If ``y`` is ``None``, empty, multi-dimensional, has a
+        non-numeric dtype, or contains fewer than 2 unique classes.
+        Upstream ``ValueError`` from ``check_array`` (e.g. NaN inputs,
+        object arrays) and from ``check_classification_targets`` (e.g.
+        continuous targets) are propagated unchanged.
 
     Examples
     --------
@@ -64,6 +64,9 @@ def check_ordinal_targets(
     >>> y_enc
     array([2, 0, 1, 0, 2])
     """
+    if y is None:
+        raise ValueError("requires y to be passed, but the target y is None.")
+
     y = check_array(
         y, ensure_2d=False, dtype="numeric", ensure_min_samples=1, input_name="y"
     )
@@ -76,9 +79,7 @@ def check_ordinal_targets(
     classes, y_encoded = np.unique(y, return_inverse=True)
 
     if classes.size < 2:
-        raise ValueError(
-            f"y must contain at least 2 unique classes, got {classes.size}"
-        )
+        raise ValueError("y must contain at least 2 unique classes, got 1 class")
 
     return classes, y_encoded.astype(np.intp)
 
