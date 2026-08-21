@@ -266,6 +266,30 @@ def test_nnpom_cost_function_gradient_matches_finite_difference():
     assert err < 1e-4
 
 
+def test_nnpom_cost_function_gradient_is_zero_in_clamped_region():
+    """A fully clamped objective is flat, so its gradient must vanish."""
+    n_samples, n_features, n_hidden, n_classes = 30, 4, 3, 3
+    rng = np.random.default_rng(0)
+    X_data = rng.standard_normal((n_samples, n_features))
+    Y = np.zeros((n_samples, n_classes))
+    Y[:, 0] = 1.0
+
+    saturating_projection = 75.0
+    theta1 = rng.standard_normal((n_hidden, n_features + 1)) * 0.01
+    theta2 = np.full((1, n_hidden), saturating_projection / n_hidden)
+    x0 = np.concatenate(
+        [theta1.flatten(order="F"), theta2.flatten(order="F"), [0.0, 1.0]]
+    )
+
+    clf = NNPOM()
+    cost, grad = clf._nnpom_cost_function(
+        x0, n_features, n_hidden, n_classes, X_data, Y, 0.0
+    )
+
+    np.testing.assert_allclose(cost, -np.log(1e-15))
+    np.testing.assert_array_equal(grad, np.zeros_like(grad))
+
+
 def test_nnpom_proba_and_cumproba_well_formed(ordinal_data):
     """predict_proba/predict_cumproba are well-formed and match predict."""
     X, y = ordinal_data
