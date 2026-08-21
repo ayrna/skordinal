@@ -91,7 +91,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
     theta2_ : ndarray of shape (1, n_hidden)
         Output layer weights (without bias, the biases will be the thresholds)
 
-    thresholds_ : ndarray of shape (1, n_classes - 1)
+    thresholds_ : ndarray of shape (n_classes - 1,)
         Class thresholds parameters
 
     Notes
@@ -249,9 +249,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         self.theta1_ = theta1
         self.theta2_ = theta2
-        self.thresholds_ = params_to_thresholds(thresholds_param.ravel()).reshape(
-            1, n_classes - 1
-        )
+        self.thresholds_ = params_to_thresholds(thresholds_param.ravel())
 
         # Scikit-learn compatibility
         self.n_layers_ = 3
@@ -357,7 +355,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
     def _cumproba(self, X: np.ndarray) -> np.ndarray:
         """Compute raw cumulative probabilities on pre-validated X."""
         projected = self._project(X)  # (n,)
-        return expit(self.thresholds_ - projected[:, np.newaxis])
+        return expit(self.thresholds_[np.newaxis, :] - projected[:, np.newaxis])
 
     def _unpack_parameters(
         self,
