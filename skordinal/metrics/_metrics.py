@@ -11,7 +11,8 @@ def _check_metric_inputs(y_true, y_pred):
     """Coerce metric inputs to 1-D arrays and validate length consistency.
 
     Two-dimensional inputs are interpreted as one-hot encoded labels and
-    collapsed via ``argmax`` along the last axis. Centralises the input
+    collapsed via ``argmax`` along the last axis, except a single-column
+    input, which is raveled to its original values. Centralises the input
     coercion that every public ordinal metric needs.
 
     Parameters
@@ -33,11 +34,19 @@ def _check_metric_inputs(y_true, y_pred):
         If ``y_true`` and ``y_pred`` have different lengths.
     """
     y_true_arr = np.asarray(y_true)
-    y_pred_arr = np.asarray(y_pred)
     if y_true_arr.ndim > 1:
-        y_true_arr = y_true_arr.argmax(axis=-1)
+        y_true_arr = (
+            y_true_arr.argmax(axis=-1)
+            if y_true_arr.shape[1] > 1
+            else y_true_arr.ravel()
+        )
+    y_pred_arr = np.asarray(y_pred)
     if y_pred_arr.ndim > 1:
-        y_pred_arr = y_pred_arr.argmax(axis=-1)
+        y_pred_arr = (
+            y_pred_arr.argmax(axis=-1)
+            if y_pred_arr.shape[1] > 1
+            else y_pred_arr.ravel()
+        )
     check_consistent_length(y_true_arr, y_pred_arr)
     return y_true_arr, y_pred_arr
 
@@ -45,9 +54,10 @@ def _check_metric_inputs(y_true, y_pred):
 def _check_proba_inputs(y_true, y_proba, *, sum_atol=1e-6):
     """Validate inputs for probabilistic ordinal metrics.
 
-    ``y_true`` may be 1-D class labels or a 2-D one-hot matrix.
-    ``y_proba`` must be a 2-D matrix coercible to ``float64`` whose rows
-    sum to approximately one.
+    ``y_true`` may be 1-D class labels or a 2-D one-hot matrix; a
+    single-column ``y_true`` is raveled instead of argmaxed. ``y_proba``
+    must be a 2-D matrix coercible to ``float64`` whose rows sum to
+    approximately one.
 
     Parameters
     ----------
@@ -73,7 +83,11 @@ def _check_proba_inputs(y_true, y_proba, *, sum_atol=1e-6):
     """
     y_true_arr = np.asarray(y_true)
     if y_true_arr.ndim > 1:
-        y_true_arr = y_true_arr.argmax(axis=-1)
+        y_true_arr = (
+            y_true_arr.argmax(axis=-1)
+            if y_true_arr.shape[1] > 1
+            else y_true_arr.ravel()
+        )
     y_proba_arr = check_array(
         y_proba, ensure_2d=True, dtype="float64", input_name="y_proba"
     )
