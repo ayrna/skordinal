@@ -74,9 +74,7 @@ def check_ordinal_targets(
     classes, y_encoded = np.unique(y, return_inverse=True)
 
     if classes.size < 2:
-        raise ValueError(
-            f"y must contain at least 2 unique classes, got {classes.size}."
-        )
+        raise ValueError("y must contain at least 2 unique classes, got 1 class.")
 
     return classes, y_encoded.astype(np.intp)
 
