@@ -75,6 +75,14 @@ def test_scorers_not_in_public_all():
     assert "_SCORERS" not in m.__all__
 
 
+def test_get_ordinal_scorer_returns_fresh_copy():
+    """Mutating a returned scorer does not affect subsequent lookups."""
+    first = get_ordinal_scorer("neg_mean_absolute_error")
+    assert get_ordinal_scorer("neg_mean_absolute_error") is not first
+    first._kwargs["sample_weight"] = None
+    assert "sample_weight" not in get_ordinal_scorer("neg_mean_absolute_error")._kwargs
+
+
 @pytest.mark.parametrize(
     "name, labels",
     [

@@ -1,5 +1,7 @@
 """Scorer registry for ordinal classification metrics."""
 
+import copy
+
 from sklearn.metrics import accuracy_score, make_scorer, mean_absolute_error
 from sklearn.utils._param_validation import validate_params
 
@@ -65,6 +67,11 @@ def get_ordinal_scorer(name):
     ValueError
         If ``name`` is not a registered scorer name.
 
+    Notes
+    -----
+    Returns a fresh copy of the registered scorer on every call, so
+    mutating the result does not affect subsequent lookups.
+
     Examples
     --------
     >>> from skordinal.metrics import get_ordinal_scorer
@@ -75,7 +82,7 @@ def get_ordinal_scorer(name):
     """
     key = name.strip()
     if key in _SCORERS:
-        return _SCORERS[key]
+        return copy.deepcopy(_SCORERS[key])
     if f"neg_{key}" in _SCORERS:
         raise ValueError(
             f"Unknown scorer name: {name!r}. A scorer must be "
