@@ -2,59 +2,23 @@
 
 from __future__ import annotations
 
-import os
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.metrics import confusion_matrix
 
-_TEMP_PREFIX = ".skordinal-tmp-"
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    """Write text to path atomically via a temp file, fsync and replace."""
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
-            fh.write(content)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
-
-
-def _atomic_dump(path: Path, obj: Any) -> None:
-    """Serialise obj to path atomically via a temp file, fsync and replace."""
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
-    try:
-        # Close the mkstemp descriptor; joblib opens its own handle by path
-        os.close(fd)
-        joblib.dump(obj, tmp)
-        with open(tmp, "rb") as fh:
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
-
-
-def _check_path_component(name: Any, what: str) -> None:
-    """Reject a path component that is empty, dotted or holds a separator."""
-    if not isinstance(name, str):
-        raise TypeError(f"{what} must be a str; got {type(name).__name__}.")
-    if name in ("", ".", ".."):
-        raise ValueError(f"{what} must not be empty or a dot segment; got {name!r}.")
-    if any(sep in name for sep in (os.sep, "/", os.altsep) if sep):
-        raise ValueError(f"{what} must not contain a path separator; got {name!r}.")
+from ._io import (
+    _atomic_dump,
+    _atomic_write,
+    _check_path_component,
+    _format_proba_column,
+    _sweep_orphaned_temp_files,
+)
 
 
 @dataclass(frozen=True)
@@ -139,13 +103,6 @@ class ExperimentResult:
     train_index: np.ndarray | None = None
     test_index: np.ndarray | None = None
     train_y_proba: np.ndarray | None = None
-
-
-def _format_proba_column(proba: np.ndarray) -> list[str]:
-    """Render probability rows as single-line ``"[p0, p1, ...]"`` cells."""
-    return [
-        "[" + ", ".join(repr(float(p)) for p in row) + "]" for row in np.asarray(proba)
-    ]
 
 
 def _write_split_files(
@@ -320,9 +277,7 @@ class Results:
             save_model=save_model,
         )
         # Clear any temp file left by a prior crash before writing new ones
-        for stray in base_dir.rglob(f"{_TEMP_PREFIX}*"):
-            if stray.is_file():
-                stray.unlink(missing_ok=True)
+        _sweep_orphaned_temp_files(base_dir)
         # Drop this resample's committed row so a crash mid-write cannot
         # leave a report row describing predictions no longer on disk
         self._uncommit_report_row(base_dir, result.resample_id)
