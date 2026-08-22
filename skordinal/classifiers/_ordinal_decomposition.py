@@ -161,6 +161,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
                 "When using Frank and Hall decision method, "
                 "ordered_partitions must be used"
             )
+        self._decision_method_ = decision
 
         # Give each train input its corresponding output label
         # for each binary classifier
@@ -206,9 +207,6 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
         ValueError
             If input is invalid.
 
-        AttributeError
-            If the specified loss method is not implemented.
-
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
@@ -216,7 +214,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
         # Getting predicted labels for dataset from each classifier
         predictions = self._get_predictions(X)
 
-        decision_method = self.decision_method.lower()
+        decision_method = self._decision_method_
         if decision_method == "exponential_loss":
             # Scaling predictions from [0,1] range to [-1,1]
             predictions = predictions * 2 - 1
@@ -241,15 +239,10 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
             losses = self._logarithmic_loss(predictions)
             y_pred = self.classes_[np.argmin(losses, axis=1)]
 
-        elif decision_method == "frank_hall":
+        else:  # frank_hall
             # Transforming from binary problems to the original problem
             y_proba = self._frank_hall_method(predictions)
             y_pred = self.classes_[np.argmax(y_proba, axis=1)]
-
-        else:
-            raise AttributeError(
-                'The specified loss method "%s" is not implemented' % decision_method
-            )
 
         return y_pred
 
@@ -277,9 +270,6 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
         ValueError
             If input is invalid.
 
-        AttributeError
-            If the specified loss method is not implemented.
-
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
@@ -287,7 +277,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
         # Getting predicted labels for dataset from each classifier
         predictions = self._get_predictions(X)
 
-        decision_method = self.decision_method.lower()
+        decision_method = self._decision_method_
         if decision_method == "exponential_loss":
             # Scaling predictions from [0,1] range to [-1,1]
             predictions = predictions * 2 - 1
@@ -312,14 +302,9 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
             losses = self._logarithmic_loss(predictions).astype(float)
             y_proba = losses_to_proba(losses)
 
-        elif decision_method == "frank_hall":
+        else:  # frank_hall
             # Transforming from binary problems to the original problem
             y_proba = self._frank_hall_method(predictions)
-
-        else:
-            raise AttributeError(
-                'The specified loss method "%s" is not implemented' % decision_method
-            )
 
         return y_proba
 
