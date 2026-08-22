@@ -123,19 +123,14 @@ typedef struct _Cache_List
 
 typedef struct _Alphas
 {
-	double alpha ;
-	double alpha_up ;               /*/ ai for input point */
-	double alpha_dw ;               /*/ ai' for input point */
+	double alpha ;                  /*/ effective coefficient: signed sum of alpha_j[], set by Check_Alphas */
+	double * alpha_j ;               /*/ per-threshold Lagrange multipliers, size classes-1 */
 	double f_cache ;                /*/ save Fi here if the pair is in Set Io */
 	double * kernel ;               /*/ diagonal entry */
-	/*/BOOL kernel_cache ;             // in kernel cache or not*/
-	/*/unsigned int cache_offset ;     // the offset in kernel cache matrix*/
-	/*/unsigned long int update_count ;// the count for entering the takestep*/
+
 	Data_Node * pair ;              /*/ point to the corresponding pair */
 	Cache_Node * cache ;            /*/ point to the Node in Cache List */
-	/*/Set_Name setname ;				// Set Name */
-	Set_Name setname_up ;           /*/ Set Name for ORDINAL*/ 
-	Set_Name setname_dw ;              
+	Set_Name * setname ;            /*/ Set Name per threshold, size classes-1 */
 
 } Alphas ;
 
@@ -164,11 +159,6 @@ typedef struct _smo_Settings
 	double * bj_low ;                  /*/ inf of bias*/
 	double * bj_up ;                   /*/ sup of bias 	*/
 	double * biasj ;
-	double * mu ;
-	double * bmu_low ;                  /*/ inf of bias*/
-	double * bmu_up ;                   /*/ sup of bias 	*/
-	long unsigned int * imu_low ;                  /*/ inf of bias*/
-	long unsigned int * imu_up ;                   /*/ sup of bias 	*/
 
 	double bias ;
 	
@@ -272,7 +262,6 @@ BOOL smo_LoadMatrix ( Data_List * pairs, char * inputfilename, int inputdim, int
 
 
 /*create and initialize the smo_Settings structure from def_Settings*/
-smo_Settings * Create_smo_Settings ( def_Settings * settings ) ;
 smo_Settings * Create_smo_Settings_Python ( def_Settings * settings ) ;
 void Clear_smo_Settings( smo_Settings * settings ) ;
 
@@ -288,6 +277,7 @@ BOOL Del_Cache_Node( Cache_List *, Alphas * ) ;
 Alphas * Create_Alphas( smo_Settings * ) ;
 BOOL Clean_Alphas ( Alphas *, smo_Settings * ) ;
 BOOL Check_Alphas ( Alphas *, smo_Settings * ) ;
+BOOL Finalize_Alphas ( Alphas *, smo_Settings * ) ;
 BOOL Clear_Alphas ( smo_Settings * ) ;
 
 /*/ calculate kerenl*/
@@ -296,27 +286,22 @@ double Calculate_Kernel( double * , double * , smo_Settings * ) ;
 double Calculate_Ordinal_Fi ( long unsigned int i, smo_Settings * settings ) ;/*/ i is index here*/
 
 /*/ get label*/
-Set_Name Get_Label ( Alphas * , smo_Settings * settings) ;
-Set_Name Get_UP_Label ( Alphas * alpha, smo_Settings * settings) ;
-Set_Name Get_DW_Label ( Alphas * alpha, smo_Settings * settings) ;
-Set_Name Get_Setname( double * , double * , smo_Settings * ) ;
+Set_Name Get_Ordinal_Label ( Alphas * , unsigned int, smo_Settings * settings) ;
 int Add_Label_Data_List ( Data_List * list, Data_Node * node ) ;
 
 /*/ compute Fi*/
 double Calculate_Fi( long unsigned int, smo_Settings * ) ;
 
-BOOL smo_routine ( smo_Settings * settings ) ;
+/*/ check the data in the cache*/
+BOOL Is_Io ( Alphas * alpha, smo_Settings * settings ) ;
+
 BOOL ordinal_examine_example ( Alphas * alpha, smo_Settings * settings ) ;
-unsigned int active_cross_threshold (smo_Settings * settings) ;
+unsigned int active_threshold ( smo_Settings * settings ) ;
 BOOL smo_routine_Python ( smo_Settings * settings ) ;
-BOOL svm_predict ( Data_List * test, smo_Settings * settings ) ;
 BOOL svm_predict_Python ( Data_List * test, smo_Settings * settings ) ;
 
-BOOL svm_saveresults ( Data_List * testlist, smo_Settings * settings );
 
 BOOL ordinal_takestep ( Alphas * alpha1, Alphas * alpha2, unsigned int threshold, smo_Settings * settings ) ;
-BOOL ordinal_cross_takestep ( Alphas * alpha4, unsigned int, Alphas * alpha5, unsigned int, smo_Settings * settings ) ;
-BOOL ordinal_cross_identical ( Alphas * alpha1, Alphas * alpha2, unsigned int threshold, smo_Settings * settings ) ;
 
 /*/timing routines*/
 void tstart(void) ;
