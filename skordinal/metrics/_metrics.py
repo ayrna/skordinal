@@ -833,3 +833,12 @@ _LABEL_METRICS = {
     "spearmans_rho": spearmans_rho,
     "weighted_kappa": weighted_kappa,
 }
+
+
+def _resolve_label_metric(name):
+    """Return the label metric registered under name, or raise ValueError."""
+    if name not in _LABEL_METRICS:
+        raise ValueError(
+            f"Unknown metric name: {name!r}. Available: {sorted(_LABEL_METRICS)}."
+        )
+    return _LABEL_METRICS[name]

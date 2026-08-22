@@ -12,7 +12,7 @@ from sklearn import preprocessing
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import get_ordinal_scorer
-from skordinal.metrics._metrics import _LABEL_METRICS
+from skordinal.metrics._metrics import _resolve_label_metric
 
 from ._model_config import ModelConfig
 from ._results import ExperimentResult
@@ -20,12 +20,7 @@ from ._results import ExperimentResult
 
 def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Compute a single ordinal metric by name."""
-    key = metric_name.strip()
-    if key not in _LABEL_METRICS:
-        raise ValueError(
-            f"Unknown metric name: {metric_name!r}. Available: {sorted(_LABEL_METRICS)}."
-        )
-    return _LABEL_METRICS[key](y_true, y_pred)
+    return _resolve_label_metric(metric_name.strip())(y_true, y_pred)
 
 
 def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
