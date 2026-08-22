@@ -290,11 +290,20 @@ def test_ranked_probability_score_out_of_range():
     )
 
 
-def test_kendalls_tau():
-    """kendalls_tau returns the correct rank correlation for a known sequence."""
-    y_true = np.array([1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3])
-    y_pred = np.array([1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3])
-    npt.assert_almost_equal(kendalls_tau(y_true, y_pred), 0.6240, decimal=4)
+@pytest.mark.parametrize(
+    "y_true, y_pred, expected",
+    [
+        (
+            [1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3],
+            [1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3],
+            0.6240,
+        ),
+        ([1, 1, 1, 1], [0, 1, 2, 3], 0.0),
+    ],
+)
+def test_kendalls_tau(y_true, y_pred, expected):
+    """kendalls_tau returns the correct rank correlation for known sequences."""
+    npt.assert_almost_equal(kendalls_tau(y_true, y_pred), expected, decimal=4)
 
 
 def test_weighted_kappa():
