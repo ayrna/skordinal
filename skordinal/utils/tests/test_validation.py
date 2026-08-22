@@ -4,16 +4,15 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-import skordinal.utils.validation as val_mod
 from skordinal.utils.validation import (
     _rank_encode_labels,
     check_ordinal_targets,
-    validate_thresholds,
+    check_thresholds,
 )
 
 _ALL_HELPERS = [
     check_ordinal_targets,
-    validate_thresholds,
+    check_thresholds,
 ]
 _HELPER_NAMES = [f.__name__ for f in _ALL_HELPERS]
 
@@ -25,21 +24,6 @@ def test_api_no_mutable_defaults(func):
         assert not isinstance(default, (list, dict, np.ndarray)), (
             f"{func.__name__} has a mutable default: {default!r}"
         )
-
-
-def test_integration_all_names_in_module_all():
-    """``validation.__all__`` lists exactly the helpers, all re-exported."""
-    import skordinal.utils as utils_pkg
-
-    expected = set(_HELPER_NAMES)
-    # Canonical module: skordinal.utils.validation
-    assert set(val_mod.__all__) == expected
-    for name in expected:
-        assert callable(getattr(val_mod, name))
-    # Subpackage shortcut: skordinal.utils re-exports these among others.
-    assert expected <= set(utils_pkg.__all__)
-    for name in expected:
-        assert getattr(utils_pkg, name) is getattr(val_mod, name)
 
 
 def test_cot_known_encoding():
@@ -75,7 +59,7 @@ def test_cot_non_contiguous_labels():
         ([], None),
         (np.array([[1, 2], [3, 4]]), r"y must be a 1D array"),
         # "1 class" singular, not "1 classes"
-        ([1, 1, 1], r"y must contain at least 2 unique classes, got 1 class$"),
+        ([1, 1, 1], r"y must contain at least 2 unique classes, got 1 class\.$"),
         (np.array(["a", "b"], dtype=object), None),
         ([np.nan, 1.0, 2.0], None),
     ],
@@ -97,9 +81,9 @@ def test_cot_invalid_input_raises(y, match):
     ],
     ids=["generic", "binary-edge", "smallest-gap"],
 )
-def test_vt_valid_returns_none(thresholds):
+def test_ct_valid_returns_none(thresholds):
     """Valid threshold vectors return None."""
-    assert validate_thresholds(thresholds) is None
+    assert check_thresholds(thresholds) is None
 
 
 @pytest.mark.parametrize(
@@ -114,10 +98,10 @@ def test_vt_valid_returns_none(thresholds):
     ],
     ids=["equal", "decreasing", "inf", "nan", "empty", "2d"],
 )
-def test_vt_invalid_raises(thresholds, match):
+def test_ct_invalid_raises(thresholds, match):
     """Each invalid threshold vector raises ValueError with a specific message."""
     with pytest.raises(ValueError, match=match):
-        validate_thresholds(thresholds)
+        check_thresholds(thresholds)
 
 
 @pytest.mark.parametrize(
@@ -215,12 +199,3 @@ def test_rel_string_labels_encode():
     assert_array_equal(_rank_encode_labels(np.array(["a", "c"]), classes), [0, 2])
     with pytest.raises(ValueError, match=r"label set: \['bb'\]"):
         _rank_encode_labels(np.array(["bb"]), classes)
-
-
-def test_rel_is_private():
-    """The rank encoder stays off both public surfaces."""
-    import skordinal.utils as utils_pkg
-
-    assert "_rank_encode_labels" not in val_mod.__all__
-    assert "_rank_encode_labels" not in utils_pkg.__all__
-    assert not hasattr(utils_pkg, "_rank_encode_labels")

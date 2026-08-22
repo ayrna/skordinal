@@ -3,6 +3,7 @@
 import numpy as np
 from sklearn.isotonic import isotonic_regression
 from sklearn.utils import check_array
+from sklearn.utils.extmath import softmax
 
 
 def params_to_thresholds(params):
@@ -51,7 +52,7 @@ def params_to_thresholds(params):
     """
     params = np.asarray(params, dtype=float).ravel()
     if params.size == 0:
-        raise ValueError("params must contain at least one element")
+        raise ValueError("params must contain at least one element.")
 
     t_sq = np.empty_like(params)
     t_sq[0] = params[0]
@@ -102,7 +103,7 @@ def thresholds_to_params(thresholds):
     """
     thresholds = np.asarray(thresholds, dtype=float).ravel()
     if thresholds.size == 0:
-        raise ValueError("thresholds must contain at least one element")
+        raise ValueError("thresholds must contain at least one element.")
 
     params = np.empty_like(thresholds)
     params[0] = thresholds[0]
@@ -160,14 +161,14 @@ def thresholds_grad(params, grad_thresholds):
     """
     params = np.asarray(params, dtype=float).ravel()
     if params.size == 0:
-        raise ValueError("params must contain at least one element")
+        raise ValueError("params must contain at least one element.")
 
     grad_thresholds = np.asarray(grad_thresholds, dtype=float).ravel()
     if grad_thresholds.size != params.size:
         raise ValueError(
             "params and grad_thresholds must have the same shape "
             "(number of elements), got sizes "
-            f"{params.size} and {grad_thresholds.size}"
+            f"{params.size} and {grad_thresholds.size}."
         )
 
     n_params = params.size
@@ -189,19 +190,22 @@ def _check_cumproba(cumproba):
     if cumproba.min() < 0.0 or cumproba.max() > 1.0:
         raise ValueError(
             f"cumproba entries must lie in [0, 1], got range "
-            f"[{cumproba.min():.4g}, {cumproba.max():.4g}]"
+            f"[{cumproba.min():.4g}, {cumproba.max():.4g}]."
         )
 
     return cumproba
 
 
-def _isotonic_repair(cumproba):
-    """Repair non-monotonic rows of an already validated cumproba matrix."""
+def _isotonic_repair(cumproba, diffs):
+    """Repair non-monotonic rows of an already validated cumproba matrix.
+
+    ``diffs`` is the caller's ``np.diff(cumproba, axis=1)``, passed in so
+    it is not recomputed here.
+    """
     repaired = cumproba.copy()
     # Refit only violating rows; isotonic regression leaves monotone
     # in-range rows unchanged
-    violating = np.flatnonzero((np.diff(cumproba, axis=1) < 0.0).any(axis=1))
-    for i in violating:
+    for i in np.flatnonzero((diffs < 0.0).any(axis=1)):
         repaired[i] = isotonic_regression(
             cumproba[i], y_min=0.0, y_max=1.0, increasing=True
         )
@@ -249,7 +253,7 @@ def repair_cumproba(cumproba):
     array([[0.3, 0.3, 0.7]])
     """
     cumproba = _check_cumproba(cumproba)
-    return _isotonic_repair(cumproba)
+    return _isotonic_repair(cumproba, np.diff(cumproba, axis=1))
 
 
 def proba_to_cumproba(proba):
@@ -366,16 +370,23 @@ def cumproba_to_proba(cumproba, repair=True):
         if (diffs < 0.0).any():
             raise ValueError(
                 f"cumproba rows must be non-decreasing, got minimum diff "
-                f"{diffs.min():.4g}"
+                f"{diffs.min():.4g}."
             )
         class_proba[:, 0] = cumproba[:, 0]
         class_proba[:, 1:-1] = diffs
         class_proba[:, -1] = 1.0 - cumproba[:, -1]
         return class_proba
 
-    repaired = _isotonic_repair(cumproba)
+    # Reuse the scan diffs when no row needs repairing, which is the
+    # common case for threshold models
+    repaired = cumproba
+    diffs = np.diff(cumproba, axis=1)
+    if (diffs < 0.0).any():
+        repaired = _isotonic_repair(cumproba, diffs)
+        diffs = np.diff(repaired, axis=1)
+
     class_proba[:, 0] = repaired[:, 0]
-    class_proba[:, 1:-1] = np.diff(repaired, axis=1)
+    class_proba[:, 1:-1] = diffs
     class_proba[:, -1] = 1.0 - repaired[:, -1]
 
     np.clip(class_proba, 0.0, None, out=class_proba)
@@ -437,13 +448,13 @@ def normalize_proba_rows(scores, *, floor=np.finfo(np.float64).tiny):
     True
     """
     if not 0.0 < floor < np.inf:
-        raise ValueError(f"floor must be strictly positive and finite, got {floor!r}")
+        raise ValueError(f"floor must be strictly positive and finite, got {floor!r}.")
 
     scores = np.array(scores, dtype=np.float64)
     np.clip(scores, floor, None, out=scores)
     row_sums = scores.sum(axis=1, keepdims=True)
     if not np.isfinite(row_sums).all():
-        raise ValueError("scores must be finite and row sums must not overflow")
+        raise ValueError("scores must be finite and row sums must not overflow.")
     scores /= row_sums
 
     # Clip to the smallest positive float64 and re-normalise; the first
@@ -457,15 +468,13 @@ def normalize_proba_rows(scores, *, floor=np.finfo(np.float64).tiny):
 def losses_to_proba(losses):
     """Convert a per-class loss matrix to row-normalised probabilities.
 
-    The conversion is ``softmax(1 / (losses + tiny))``: each row is first
-    inverted (so that smaller losses become larger scores), then shifted by
-    the row max for numerical stability before exponentiation, then divided
-    by its row sum. Infinite losses are accepted, mapping to a zero
-    score for that class. The mapping is a heuristic kept for backward
-    compatibility: its argmax always matches the loss argmin, but the
-    probabilities are scale-sensitive — saturating toward the uniform
-    distribution for losses much larger than 1 — and should not be read
-    as calibrated.
+    Each row is first inverted (so that smaller losses become larger
+    scores), then passed through ``sklearn.utils.extmath.softmax``.
+    Infinite losses are accepted, mapping to a zero score for that
+    class. The mapping is a heuristic kept for backward compatibility:
+    its argmax always matches the loss argmin, but the probabilities are
+    scale-sensitive — saturating toward the uniform distribution for
+    losses much larger than 1 — and should not be read as calibrated.
 
     Parameters
     ----------
@@ -494,11 +503,7 @@ def losses_to_proba(losses):
     """
     losses = np.asarray(losses, dtype=np.float64)
     if not (losses >= 0.0).all():
-        raise ValueError("losses must be non-negative and not NaN")
+        raise ValueError("losses must be non-negative and not NaN.")
 
     tiny = np.finfo(np.float64).tiny
-    scores = 1.0 / (losses + tiny)
-    scores -= scores.max(axis=1, keepdims=True)
-    proba = np.exp(scores)
-    proba /= proba.sum(axis=1, keepdims=True)
-    return proba
+    return softmax(1.0 / (losses + tiny), copy=False)
