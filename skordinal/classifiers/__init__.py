@@ -13,6 +13,7 @@ from ._pom import POM
 from ._redsvm import REDSVM
 from ._regressor_wrapper import RegressorWrapper
 from ._svorex import SVOREX
+from ._svorim import SVORIM
 
 __all__ = [
     "CostSensitiveWrapper",
@@ -28,4 +29,5 @@ __all__ = [
     "REDSVM",
     "RegressorWrapper",
     "SVOREX",
+    "SVORIM",
 ]
