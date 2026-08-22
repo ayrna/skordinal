@@ -9,6 +9,7 @@ from skordinal.classifiers import (
     NNPOM,
     REDSVM,
     SVOREX,
+    SVORIM,
     OrdinalDecomposition,
 )
 from skordinal.model_selection._validation import (
@@ -32,6 +33,7 @@ from skordinal.utils._testing import TEST_RANDOM_STATE
         (OrdinalDecomposition, False),
         (REDSVM, False),
         (SVOREX, False),
+        (SVORIM, False),
         (SVC, True),
         (LogisticRegression, True),
     ],
