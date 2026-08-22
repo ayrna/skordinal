@@ -105,7 +105,7 @@ ext-modules = [
             "skordinal/classifiers/src/svorex/smo_model_python.c",
             "skordinal/classifiers/src/svorex/smo_loadproblem_python.c",
             "skordinal/classifiers/src/svorex/smo_routine_python.c",
-        ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off"], libraries = ["m"]},
+        ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off", "-fvisibility=hidden"], libraries = ["m"]},
     {name = "skordinal.classifiers._orensemble", language = "c++", sources = [
             "skordinal/classifiers/src/orensemble/python/orensemble-module.cpp",
             "skordinal/classifiers/src/orensemble/python/orensemble-model-python.cpp",
