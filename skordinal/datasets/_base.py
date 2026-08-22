@@ -113,11 +113,15 @@ def _resolve_csv_path(name, data_home=None):
     return bundled_dir / f"{stem}.csv", DATA_MODULE
 
 
-def _load_descr(csv_path):
+def _load_descr(csv_path, data_module):
     """Return the ``.rst`` description for a CSV path, or None."""
     sidecar = csv_path.with_suffix(".rst")
     if sidecar.exists():
         return sidecar.read_text(encoding="utf-8")
+    if data_module is None:
+        # A path not resolved from the bundled directory must not inherit
+        # a bundled dataset's description just because the stem matches
+        return None
     bundled = Path(str(resources.files(DESCR_MODULE))) / f"{csv_path.stem}.rst"
     if bundled.exists():
         return bundled.read_text(encoding="utf-8")
@@ -383,7 +387,7 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     target_names = _resolve_target_names(header_class_names, target)
     n_classes = len(target_names)
 
-    descr = _load_descr(path)
+    descr = _load_descr(path, data_module_value)
     if descr is None:
         descr = (
             f"Dataset '{path.stem}': {data.shape[0]} samples, "

@@ -178,6 +178,13 @@ def test_load_dataset_bundled_era():
     assert len(bunch.DESCR) > 10
 
 
+def test_load_dataset_data_home_does_not_inherit_bundled_descr(tmp_path):
+    """A user's own ``era.csv`` must not inherit the bundled ERA DESCR."""
+    _write_csv(tmp_path, "era")
+    bunch = load_dataset("era", data_home=tmp_path)
+    assert bunch.DESCR.startswith("Dataset 'era'")
+
+
 @pytest.mark.parametrize(
     "csv_text, expected_feature_names, expected_shape",
     [
