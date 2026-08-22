@@ -139,6 +139,12 @@ def _convert_data_dataframe(caller_name, data, target, feature_names, target_col
         ImportError
     ) as exc:  # pragma: no cover - exercised in environments without pandas
         raise ImportError(f"{caller_name} with as_frame=True requires pandas.") from exc
+    collision = set(feature_names) & set(target_columns)
+    if collision:
+        raise ValueError(
+            f"{caller_name}: feature column {collision.pop()!r} collides with the "
+            "target column name."
+        )
     data_df = pd.DataFrame(data, columns=feature_names, copy=False)
     target_df = pd.DataFrame(target, columns=target_columns)
     combined_df = pd.concat([data_df, target_df], axis=1)
