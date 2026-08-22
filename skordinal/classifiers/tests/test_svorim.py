@@ -158,10 +158,12 @@ def test_svorim_parameter_constraints_match_init_params():
 
 
 def test_svorim_predict_rejects_wrong_n_features(X, y):
-    """Test that predict rejects input with mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = SVORIM().fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -216,15 +218,24 @@ def test_svorim_gamma_scale_zero_variance(X, y):
     assert set(classifier.predict(X_constant)).issubset(set(classifier.classes_))
 
 
-def test_svorim_thresholds_are_ordered():
-    """Test that fitted thresholds are non-decreasing, as SVORIM guarantees by
-    construction (no explicit ordering constraint is needed, unlike SVOREX)."""
-    X_train, _, y_train, _ = make_balance_scale_split()
+@pytest.mark.parametrize("kernel", ["linear", "rbf", "poly"])
+def test_svorim_projection_well_formed(kernel):
+    """predict_projection is well-formed and reproduces predict via thresholds_."""
+    X_train, X_test, y_train, _ = make_balance_scale_split()
+    clf = SVORIM(kernel=kernel).fit(X_train, y_train)
 
-    classifier = SVORIM(C=0.5, kernel="rbf", gamma=0.1, tol=0.002).fit(X_train, y_train)
+    projection = clf.predict_projection(X_test)
+    assert projection.shape == (len(X_test),)
+    assert np.isfinite(projection).all()
 
-    thresholds = classifier.model_["biasj"]
-    assert list(thresholds) == sorted(thresholds)
+    assert clf.thresholds_.shape == (clf.classes_.size - 1,)
+    assert np.all(np.diff(clf.thresholds_) >= 0)
+
+    # recomputing predict cross-checks what the C actually returned
+    n_exceeded = (projection[:, np.newaxis] > clf.thresholds_[np.newaxis, :]).sum(
+        axis=1
+    )
+    npt.assert_array_equal(clf.predict(X_test), clf.classes_[n_exceeded])
 
 
 def test_svorim_matches_svorex_when_binary():
@@ -255,14 +266,18 @@ def test_svorex_and_svorim_coexist_in_the_same_process():
     guards against symbol collisions between the two independently vendored
     C backends."""
     X_train, X_test, y_train, _ = make_balance_scale_split()
+    kwargs = {"C": 0.5, "kernel": "rbf", "gamma": 0.1, "tol": 0.002}
 
-    svorex_pred = (
-        SVOREX(C=0.5, kernel="rbf", gamma=0.1, tol=0.002)
-        .fit(X_train, y_train)
-        .predict(X_test)
-    )
-    y_expected = np.loadtxt(
-        Path(__file__).parent / "data" / "SVOREX" / "predictions_rbf.csv", dtype=int
-    )
+    # interleave so each backend allocates while the other holds live state
+    svorim = SVORIM(**kwargs).fit(X_train, y_train)
+    svorex = SVOREX(**kwargs).fit(X_train, y_train)
+    svorim_pred = svorim.predict(X_test)
+    svorex_pred = svorex.predict(X_test)
 
-    npt.assert_equal(svorex_pred, y_expected)
+    data_dir = Path(__file__).parent / "data"
+    npt.assert_equal(
+        svorex_pred, np.loadtxt(data_dir / "SVOREX" / "predictions_rbf.csv", dtype=int)
+    )
+    npt.assert_equal(
+        svorim_pred, np.loadtxt(data_dir / "SVORIM" / "predictions_rbf.csv", dtype=int)
+    )
