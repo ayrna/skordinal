@@ -39,7 +39,9 @@ def _cast_target_column(y_raw, path):
 
 def _read_csv_any(path):
     """Read an ordinal-classification CSV, auto-detecting the header style."""
-    with open(path, "r", encoding="utf-8", newline="") as fh:
+    # utf-8-sig strips a leading BOM instead of folding it into the first
+    # token, which would otherwise break header and integer detection
+    with open(path, "r", encoding="utf-8-sig", newline="") as fh:
         rows = list(csv.reader(fh))
 
     if not rows:
@@ -80,7 +82,9 @@ def _read_csv_any(path):
             # Metadata header holds n_samples, n_features then the class names
             n_features = int(r0[1])
             feature_names = [f"x{i}" for i in range(n_features)]
-            header_class_names = np.array(r0[2:])
+            # Only trust class-name tokens when at least one is present;
+            # otherwise fall back to the unique targets downstream
+            header_class_names = np.array(r0[2:]) if len(r0) > 2 else None
             data_rows = rows[1:]
         elif any(not _is_float(tok) for tok in r0):
             # Named header, with at least one non-numeric token
