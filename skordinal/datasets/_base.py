@@ -71,15 +71,19 @@ def _read_csv_any(path):
             return False
         return int(r0[1]) == len(r1) - 1
 
+    n_samples_declared = None
     if len(rows) < 2:
         # With only one row there is no header, so treat it as data
         r0 = rows[0]
+        if any(not _is_float(tok) for tok in r0):
+            raise ValueError(f"CSV file {path} has a header but no data rows.")
         data_rows = rows
         feature_names = [f"x{i}" for i in range(len(r0) - 1)]
     else:
         r0, r1 = rows[0], rows[1]
         if _is_metadata_header(r0, r1):
             # Metadata header holds n_samples, n_features then the class names
+            n_samples_declared = int(r0[0])
             n_features = int(r0[1])
             feature_names = [f"x{i}" for i in range(n_features)]
             # Only trust class-name tokens when at least one is present;
@@ -95,7 +99,24 @@ def _read_csv_any(path):
             feature_names = [f"x{i}" for i in range(len(r0) - 1)]
             data_rows = rows
 
+    if n_samples_declared is not None and len(data_rows) != n_samples_declared:
+        raise ValueError(
+            f"Metadata header of {path} declares {n_samples_declared} "
+            f"sample(s), but the file has {len(data_rows)} data row(s)."
+        )
+
     n_features = len(feature_names)
+    row_lengths = {len(row) for row in data_rows}
+    if len(row_lengths) > 1:
+        raise ValueError(
+            f"Rows of {path} have inconsistent lengths {sorted(row_lengths)}."
+        )
+    row_width = row_lengths.pop()
+    if row_width != n_features + 1:
+        raise ValueError(
+            f"Expected {n_features} feature column(s) plus 1 target column "
+            f"({n_features + 1} total) in {path}, but found {row_width}."
+        )
     # Parse every data row in one vectorised pass, the first n_features
     # columns are the features and the last column is the target
     table = np.asarray(data_rows, dtype=np.float64)

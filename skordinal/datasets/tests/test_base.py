@@ -306,6 +306,32 @@ def test_load_dataset_invalid_target_raises(tmp_path, bad_target):
         load_dataset(path)
 
 
+@pytest.mark.parametrize(
+    "csv_text, match",
+    [
+        ("3,2\n1.0,2.0,0\n3.0,4.0,1\n", "declares 3 sample.*file has 2 data row"),
+        ("1.0,2.0,0\n3.0,4.0\n5.0,6.0,2\n", "inconsistent lengths"),
+        (
+            "x_0,x_1,x_2,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n",
+            "Expected 3 feature column",
+        ),
+        ("x_0,x_1,y\n", "header but no data rows"),
+    ],
+    ids=[
+        "declared-count-mismatch",
+        "ragged-rows",
+        "wrong-column-count",
+        "header-only",
+    ],
+)
+def test_load_dataset_malformed_csv_raises(tmp_path, csv_text, match):
+    """A structurally malformed CSV raises ``ValueError`` naming the file."""
+    path = tmp_path / "malformed.csv"
+    path.write_text(csv_text, encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
+        load_dataset(path)
+
+
 def test_cv_fallback_era():
     """CV fallback on ``era`` yields 3 folds (ids, counts, classes)."""
     bunches = list(load_partitions("era", resamples=3))
