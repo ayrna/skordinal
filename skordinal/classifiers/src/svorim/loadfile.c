@@ -316,7 +316,7 @@ BOOL smo_LoadMatrix ( Data_List * pairs, char * inputfilename, int inputdim, int
 					if (node->target<1 || node->target>pairs->classes)
 					{
 						printf("Error : targets should be from 1 to %d.\n",(int)pairs->classes) ;
-						exit(1) ;
+						return FALSE ;
 					}
 					pairs->labels[node->target-1] = node->target ;
 					if (node->target-1==0)
@@ -333,13 +333,13 @@ BOOL smo_LoadMatrix ( Data_List * pairs, char * inputfilename, int inputdim, int
 				if (i!=(int)pairs->count||t0!=1||tr!=(int)pairs->classes)
 				{
 					printf("Error in data list.\n") ;
-					exit(1) ;
+					return FALSE ;
 				}
 			}
 			else
 			{
 				printf("fail to malloc for pairs->labels.\n") ;			
-				exit(1) ;
+				return FALSE ;
 			}
 		}
 		else 
