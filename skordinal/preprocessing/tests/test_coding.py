@@ -232,11 +232,25 @@ def test_coding_matrix_one_vs_previous_structural_property(K):
         npt.assert_array_equal(col[k + 2 :], 0)
 
 
-@pytest.mark.parametrize("invalid", [-1, 0, 2])
-def test_coding_matrix_raises_on_n_classes_below_three(invalid):
-    """n_classes < 3 raises ValueError."""
+@pytest.mark.parametrize("invalid", [-1, 0, 1])
+def test_coding_matrix_raises_on_n_classes_below_two(invalid):
+    """n_classes < 2 raises ValueError."""
     with pytest.raises(ValueError, match=r"n_classes"):
         build_coding_matrix(invalid, "ordered_partitions")
+
+
+@pytest.mark.parametrize(
+    "strategy, expected",
+    [
+        ("ordered_partitions", np.array([[-1], [1]])),
+        ("one_vs_next", np.array([[1], [-1]])),
+        ("one_vs_followers", np.array([[1], [-1]])),
+        ("one_vs_previous", np.array([[-1], [1]])),
+    ],
+)
+def test_coding_matrix_k2_reference(strategy, expected):
+    """K=2 yields a single well-formed binary subproblem for every strategy."""
+    npt.assert_array_equal(build_coding_matrix(2, strategy), expected)
 
 
 def test_coding_matrix_raises_on_unknown_decomposition():

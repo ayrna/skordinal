@@ -128,7 +128,7 @@ def binary_cumulative_to_ordinal(binary_preds, classes):
 
 @validate_params(
     {
-        "n_classes": [Interval(Integral, 3, None, closed="left")],
+        "n_classes": [Interval(Integral, 2, None, closed="left")],
         "decomposition": [StrOptions(set(_VALID_DECOMPOSITIONS))],
     },
     prefer_skip_nested_validation=True,
@@ -144,13 +144,13 @@ def build_coding_matrix(n_classes, decomposition):
     Parameters
     ----------
     n_classes : int
-        Number of ordinal classes (must be ``>= 3``).
+        Number of ordinal classes (must be ``>= 2``).
 
     decomposition : {'ordered_partitions', 'one_vs_next', 'one_vs_followers', 'one_vs_previous'}
         Decomposition strategy.
 
         - ``'ordered_partitions'``: subproblem ``k`` is
-          ``{0, ..., k} vs {k+1, ..., K-1}``. See [1]_.
+          ``{k+1, ..., K-1} vs {0, ..., k}``. See [1]_.
         - ``'one_vs_next'``: subproblem ``k`` is class ``k`` vs class
           ``k+1`` (other classes excluded).
         - ``'one_vs_followers'``: subproblem ``k`` is class ``k`` vs
@@ -166,12 +166,15 @@ def build_coding_matrix(n_classes, decomposition):
     Raises
     ------
     ValueError
-        If ``n_classes < 3`` or ``decomposition`` is not one of the
+        If ``n_classes < 2`` or ``decomposition`` is not one of the
         recognised strategies.
 
     Examples
     --------
     >>> from skordinal.preprocessing import build_coding_matrix
+    >>> build_coding_matrix(2, "ordered_partitions")
+    array([[-1],
+           [ 1]])
     >>> build_coding_matrix(4, "ordered_partitions")
     array([[-1, -1, -1],
            [ 1, -1, -1],
