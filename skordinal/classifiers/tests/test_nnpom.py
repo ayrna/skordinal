@@ -141,10 +141,12 @@ def test_nnpom_predict_invalid_input_raises_error(X, y):
 
 
 def test_nnpom_predict_raises_if_not_fitted(X):
-    """Test that predict raises NotFittedError if called before fit."""
+    """predict and predict_projection raise NotFittedError before fit."""
     classifier = NNPOM()
     with pytest.raises(NotFittedError):
         classifier.predict(X)
+    with pytest.raises(NotFittedError):
+        classifier.predict_projection(X)
 
 
 def test_nnpom_feature_names_in_when_dataframe(X, y):
@@ -165,10 +167,12 @@ def test_nnpom_parameter_constraints_match_init_params():
 
 
 def test_nnpom_predict_rejects_wrong_n_features(X, y):
-    """Test that predict rejects input with mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = NNPOM(n_hidden=4, max_iter=5).fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -235,8 +239,8 @@ def test_fit_no_nan_with_near_zero_probabilities():
     assert set(clf.predict(X_reg)).issubset(set(clf.classes_))
 
 
-def test_nnpom_cost_function_gradient_matches_finite_difference():
-    """The analytic cost gradient matches a finite-difference approximation."""
+def test_nnpom_objective_gradient_matches_finite_difference():
+    """The analytic objective gradient matches a finite-difference approximation."""
     rng = np.random.default_rng(0)
     n_samples, n_features, n_hidden, n_classes = 30, 4, 3, 3
     X_data = rng.standard_normal((n_samples, n_features))
@@ -251,13 +255,13 @@ def test_nnpom_cost_function_gradient_matches_finite_difference():
     clf = NNPOM()
 
     def cost(nn_params):
-        J, _ = clf._nnpom_cost_function(
+        J, _ = clf._objective(
             nn_params, n_features, n_hidden, n_classes, X_data, Y, 0.01
         )
         return J
 
     def grad(nn_params):
-        _, g = clf._nnpom_cost_function(
+        _, g = clf._objective(
             nn_params, n_features, n_hidden, n_classes, X_data, Y, 0.01
         )
         return g
@@ -266,7 +270,7 @@ def test_nnpom_cost_function_gradient_matches_finite_difference():
     assert err < 1e-4
 
 
-def test_nnpom_cost_function_gradient_is_zero_in_clamped_region():
+def test_nnpom_objective_gradient_is_zero_in_clamped_region():
     """A fully clamped objective is flat, so its gradient must vanish."""
     n_samples, n_features, n_hidden, n_classes = 30, 4, 3, 3
     rng = np.random.default_rng(0)
@@ -282,9 +286,7 @@ def test_nnpom_cost_function_gradient_is_zero_in_clamped_region():
     )
 
     clf = NNPOM()
-    cost, grad = clf._nnpom_cost_function(
-        x0, n_features, n_hidden, n_classes, X_data, Y, 0.0
-    )
+    cost, grad = clf._objective(x0, n_features, n_hidden, n_classes, X_data, Y, 0.0)
 
     np.testing.assert_allclose(cost, -np.log(1e-15))
     np.testing.assert_array_equal(grad, np.zeros_like(grad))
@@ -322,3 +324,16 @@ def test_nnpom_convergence_warning_only_at_insufficient_max_iter(ordinal_data):
 
     message = str(record[0].message)
     assert re.search(rf"stopped after {clf.n_iter_} iterations?\b", message), message
+
+
+def test_nnpom_projection_well_formed(ordinal_data):
+    """predict_projection is well-formed and consistent with predict."""
+    X, y = ordinal_data
+    clf = NNPOM(n_hidden=4, max_iter=50, random_state=0).fit(X, y)
+
+    projection = clf.predict_projection(X)
+    assert projection.shape == (len(X),)
+    assert np.isfinite(projection).all()
+
+    order = np.argsort(projection)
+    assert np.all(np.diff(clf.predict(X)[order]) >= 0)

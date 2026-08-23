@@ -124,10 +124,12 @@ def test_orboost_model_dict_present_after_fit(X, y):
 
 
 def test_orboost_predict_raises_if_not_fitted(X):
-    """Test that predict raises NotFittedError if called before fit."""
+    """predict and predict_projection raise NotFittedError before fit."""
     classifier = ORBoost()
     with pytest.raises(NotFittedError):
         classifier.predict(X)
+    with pytest.raises(NotFittedError):
+        classifier.predict_projection(X)
 
 
 def test_orboost_feature_names_in_when_dataframe(X, y):
@@ -142,10 +144,12 @@ def test_orboost_feature_names_in_when_dataframe(X, y):
 
 
 def test_orboost_predict_rejects_wrong_n_features(X, y):
-    """Test that predict rejects input with mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = ORBoost(n_estimators=5).fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -245,3 +249,22 @@ def test_orboost_fits_on_era_dataset():
     preds = classifier.predict(X)
     assert preds.shape == (len(X),)
     assert set(preds).issubset(set(classifier.classes_))
+
+
+def test_orboost_projection_well_formed(ordinal_dataset):
+    """predict_projection is well-formed and reproduces predict via thresholds_."""
+    X, y = ordinal_dataset
+    clf = ORBoost(n_estimators=20).fit(X, y)
+
+    projection = clf.predict_projection(X)
+    assert projection.shape == (len(X),)
+    assert np.isfinite(projection).all()
+
+    assert clf.thresholds_.shape == (clf.classes_.size - 1,)
+    assert np.all(np.diff(clf.thresholds_) >= 0)
+
+    # recomputing predict cross-checks what the C++ actually returned
+    n_reached = (projection[:, np.newaxis] >= clf.thresholds_[np.newaxis, :]).sum(
+        axis=1
+    )
+    np.testing.assert_array_equal(clf.predict(X), clf.classes_[n_reached])

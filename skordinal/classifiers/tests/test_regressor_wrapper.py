@@ -110,10 +110,12 @@ def test_regressor_wrapper_parameter_constraints_match_init_params():
 
 
 def test_regressor_wrapper_predict_rejects_wrong_n_features(X, y):
-    """Test that predict rejects input with mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = RegressorWrapper().fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -175,3 +177,21 @@ def test_regressor_wrapper_predict_clips_infinite_output_to_extreme_class(
     npt.assert_array_equal(
         predictions, np.full(len(X), expected_class_fn(classifier.classes_))
     )
+
+
+def test_regressor_wrapper_projection_is_the_wrapped_regressor_output(X, y):
+    """predict_projection returns the wrapped regressor's own output."""
+    clf = RegressorWrapper(LinearRegression()).fit(X, y)
+
+    projection = clf.predict_projection(X)
+    assert projection.shape == (len(X),)
+    assert np.isfinite(projection).all()
+
+    # the projection is the regressor output on the rank scale, unclipped
+    npt.assert_allclose(projection, clf.estimator_.predict(X))
+
+    # predict clips then rounds to nearest rank; ties fall to the lower class
+    max_rank = clf.classes_.size - 1
+    clipped = np.clip(projection, 0.0, max_rank)
+    n_exceeded = (clipped[:, np.newaxis] > clf.thresholds_[np.newaxis, :]).sum(axis=1)
+    npt.assert_array_equal(clf.predict(X), clf.classes_[n_exceeded])

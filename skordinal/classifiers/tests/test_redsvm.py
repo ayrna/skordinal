@@ -176,10 +176,12 @@ def test_redsvm_parameter_constraints_match_init_params():
 
 
 def test_redsvm_predict_rejects_wrong_n_features(X, y):
-    """Test that predict rejects input with mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = REDSVM().fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -232,3 +234,23 @@ def test_redsvm_gamma_string_resolves_like_numeric(gamma, expected_gamma):
     explicit = REDSVM(gamma=expected_gamma(X_train)).fit(X_train, y_train)
 
     np.testing.assert_array_equal(resolved.predict(X_test), explicit.predict(X_test))
+
+
+@pytest.mark.parametrize("kernel", ["linear", "rbf", "poly"])
+def test_redsvm_projection_well_formed(kernel):
+    """predict_projection is well-formed and reproduces predict via thresholds_."""
+    X_train, X_test, y_train, _ = make_balance_scale_split()
+    clf = REDSVM(kernel=kernel).fit(X_train, y_train)
+
+    projection = clf.predict_projection(X_test)
+    assert projection.shape == (len(X_test),)
+    assert np.isfinite(projection).all()
+
+    assert clf.thresholds_.shape == (clf.classes_.size - 1,)
+    assert np.all(np.diff(clf.thresholds_) >= 0)
+
+    # recomputing predict cross-checks what the C++ actually returned
+    n_reached = (projection[:, np.newaxis] >= clf.thresholds_[np.newaxis, :]).sum(
+        axis=1
+    )
+    npt.assert_array_equal(clf.predict(X_test), clf.classes_[n_reached])

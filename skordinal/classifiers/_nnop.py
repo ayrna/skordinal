@@ -197,7 +197,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
         )[:, np.newaxis]
 
         results_optimization = scipy.optimize.fmin_l_bfgs_b(
-            func=self._nnop_cost_function,
+            func=self._objective,
             x0=initial_nn_params.ravel(),
             args=(
                 self.n_features_in_,
@@ -443,7 +443,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         return W
 
-    def _nnop_cost_function(
+    def _objective(
         self,
         nn_params: np.ndarray,
         n_features: int,
@@ -500,9 +500,9 @@ class NNOP(ClassifierMixin, BaseEstimator):
         # Neural Network model
         a1 = np.append(np.ones((n_samples, 1)), X, axis=1)
         z2 = np.matmul(a1, theta1.T)
-        a2 = np.append(np.ones((n_samples, 1)), 1.0 / (1.0 + np.exp(-z2)), axis=1)
+        a2 = np.append(np.ones((n_samples, 1)), expit(z2), axis=1)
         z3 = np.matmul(a2, theta2.T)
-        h = np.append(1.0 / (1.0 + np.exp(-z3)), np.ones((n_samples, 1)), axis=1)
+        h = np.append(expit(z3), np.ones((n_samples, 1)), axis=1)
 
         # Final output
         out = h

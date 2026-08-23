@@ -91,7 +91,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
     theta2_ : ndarray of shape (1, n_hidden)
         Output layer weights (without bias, the biases will be the thresholds)
 
-    thresholds_ : ndarray of shape (1, n_classes - 1)
+    thresholds_ : ndarray of shape (n_classes - 1,)
         Class thresholds parameters
 
     Notes
@@ -210,7 +210,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         )[:, np.newaxis]
 
         results_optimization = scipy.optimize.fmin_l_bfgs_b(
-            func=self._nnpom_cost_function,
+            func=self._objective,
             x0=initial_nn_params.ravel(),
             args=(
                 self.n_features_in_,
@@ -249,9 +249,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         self.theta1_ = theta1
         self.theta2_ = theta2
-        self.thresholds_ = params_to_thresholds(thresholds_param.ravel()).reshape(
-            1, n_classes - 1
-        )
+        self.thresholds_ = params_to_thresholds(thresholds_param.ravel())
 
         # Scikit-learn compatibility
         self.n_layers_ = 3
@@ -284,23 +282,8 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False)
-        n_samples = X.shape[0]
-        n_classes = len(self.classes_)
-
-        a1 = np.append(np.ones((n_samples, 1)), X, axis=1)
-        z2 = np.matmul(a1, self.theta1_.T)
-        a2 = expit(z2)
-        projected = np.matmul(a2, self.theta2_.T)
-
-        z3 = np.tile(self.thresholds_, (n_samples, 1)) - np.tile(
-            projected, (1, n_classes - 1)
-        )
-        a3T = expit(z3)
-        a3 = np.append(a3T, np.ones((n_samples, 1)), axis=1)
-        a3[:, 1:] = a3[:, 1:] - a3[:, 0:-1]
-        y_pred = self.classes_[a3.argmax(1)]
-
-        return y_pred
+        proba = cumproba_to_proba(self._cumproba(X), repair=True)
+        return self.classes_[proba.argmax(axis=1)]
 
     def predict_cumproba(self, X: ArrayLike) -> np.ndarray:
         """Cumulative class probabilities for each sample.
@@ -363,12 +346,42 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         X = validate_data(self, X, reset=False)
         return cumproba_to_proba(self._cumproba(X), repair=True)
 
-    def _cumproba(self, X: np.ndarray) -> np.ndarray:
-        """Compute raw cumulative probabilities on pre-validated X."""
+    def predict_projection(self, X: ArrayLike) -> np.ndarray:
+        """Return the raw latent projection for each sample.
+
+        The network's scalar output ``f(x)`` is the raw latent
+        projection (ordinal-axis score) that ``thresholds_`` partitions
+        into class regions.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+            The input data.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw network output for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the model is not fitted yet.
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False)
+        return self._project(X)
+
+    def _project(self, X: np.ndarray) -> np.ndarray:
+        """Compute the raw latent projection for pre-validated X."""
         a1 = np.append(np.ones((X.shape[0], 1)), X, axis=1)
         a2 = expit(np.matmul(a1, self.theta1_.T))
-        projected = np.matmul(a2, self.theta2_.T)
-        return expit(self.thresholds_ - projected)
+        return np.matmul(a2, self.theta2_.T).ravel()
+
+    def _cumproba(self, X: np.ndarray) -> np.ndarray:
+        """Compute raw cumulative probabilities on pre-validated X."""
+        projected = self._project(X)  # (n,)
+        return expit(self.thresholds_[np.newaxis, :] - projected[:, np.newaxis])
 
     def _unpack_parameters(
         self,
@@ -457,7 +470,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         return W
 
-    def _nnpom_cost_function(
+    def _objective(
         self,
         nn_params: np.ndarray,
         n_features: int,

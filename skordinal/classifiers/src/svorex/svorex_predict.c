@@ -24,6 +24,7 @@ PyObject* predict(PyObject* self, PyObject* args)
 	Data_Node* testnode = NULL;
 	int feature_number, testing_instance_number, i, j;
 	PyObject* predicted_labels = NULL, *list_el = NULL;
+	PyObject* projections = NULL, *proj_el = NULL;
    	//Python parameters
    	PyObject* features = NULL;
 	PyObject* py_model = NULL;
@@ -97,6 +98,7 @@ PyObject* predict(PyObject* self, PyObject* args)
 	svm_predict_Python (testdata, model);
 
 	predicted_labels = Py_BuildValue("[]");
+	projections = Py_BuildValue("[]");
 	testnode = testdata->front ;
 	while (testnode!=NULL){
 		list_el = Py_BuildValue("d", testnode->guess);
@@ -105,6 +107,10 @@ PyObject* predict(PyObject* self, PyObject* args)
 		//to decrement them in order to let python free memory when the model 
 		//is not longer needed
 		Py_DECREF(list_el);
+		/* guess holds the rank, not the score: rebuild it from fx */
+		proj_el = Py_BuildValue("d", testnode->fx + model->bias);
+		PyList_Append(projections, proj_el);
+		Py_DECREF(proj_el);
 		testnode = testnode->next ;
 	}
 	
@@ -141,6 +147,6 @@ PyObject* predict(PyObject* self, PyObject* args)
 		return NULL;
 	}
 
-	return predicted_labels;
+	return Py_BuildValue("(NN)", predicted_labels, projections);
 }
 //end of svorex_predict.c 

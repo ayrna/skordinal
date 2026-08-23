@@ -339,9 +339,39 @@ class POM(ClassifierMixin, BaseEstimator):
         proba = cumproba_to_proba(self._cumproba(X), repair=True)
         return self.classes_[proba.argmax(axis=1)]
 
+    def predict_projection(self, X):
+        """Return the raw latent projection for each sample.
+
+        The linear projection ``f(x) = w^T x`` is the raw latent
+        projection (ordinal-axis score) that ``thresholds_`` partitions
+        into class regions.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Input patterns.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw linear projection for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the estimator has not been fitted yet.
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
+        return self._project(X)
+
+    def _project(self, X):
+        """Compute the raw latent projection for pre-validated X."""
+        return X @ self.coef_
+
     def _cumproba(self, X):
         """Compute raw cumulative probabilities on pre-validated X."""
-        f = X @ self.coef_  # (n,)
+        f = self._project(X)  # (n,)
         eta = self.thresholds_[np.newaxis, :] - f[:, np.newaxis]  # (n, K-1)
         # Predict path only needs the CDF; skip the density computation
         return self._link_cdf_pdf(eta, need_pdf=False)[0]

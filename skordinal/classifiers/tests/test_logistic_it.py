@@ -146,10 +146,12 @@ def test_logistic_it_predict_invalid_input_raises_error(X, y):
 
 
 def test_logistic_it_predict_raises_if_not_fitted(X):
-    """predict raises NotFittedError before fit."""
+    """predict and predict_projection raise NotFittedError before fit."""
     classifier = LogisticIT()
     with pytest.raises(NotFittedError):
         classifier.predict(X)
+    with pytest.raises(NotFittedError):
+        classifier.predict_projection(X)
 
 
 def test_logistic_it_feature_names_in_when_dataframe(X, y):
@@ -170,10 +172,12 @@ def test_logistic_it_parameter_constraints_match_init_params():
 
 
 def test_logistic_it_predict_rejects_wrong_n_features(X, y):
-    """predict rejects a mismatched n_features."""
+    """predict and predict_projection reject a mismatched n_features."""
     classifier = LogisticIT().fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
+    with pytest.raises(ValueError):
+        classifier.predict_projection(X[:, :-1])
 
 
 @pytest.mark.parametrize(
@@ -342,3 +346,30 @@ def test_logistic_it_large_magnitude_x_finite_probabilities():
 
     assert np.isfinite(proba).all()
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-12)
+
+
+def test_logistic_it_projection_well_formed(ordinal_data):
+    """predict_projection is well-formed and consistent with predict."""
+    X, y = ordinal_data
+    clf = LogisticIT().fit(X, y)
+
+    projection = clf.predict_projection(X)
+    assert projection.shape == (len(X),)
+    assert np.isfinite(projection).all()
+
+    order = np.argsort(projection)
+    assert np.all(np.diff(clf.predict(X)[order]) >= 0)
+
+
+def test_logistic_it_projection_linear_in_convex_combination(ordinal_data):
+    """predict_projection(a*x1+(1-a)*x2) == a*proj(x1)+(1-a)*proj(x2)."""
+    X, y = ordinal_data
+    clf = LogisticIT().fit(X, y)
+    alpha = 0.3
+    a, b = X[[0]], X[[1]]
+    combo = alpha * a + (1 - alpha) * b
+    np.testing.assert_allclose(
+        clf.predict_projection(combo),
+        alpha * clf.predict_projection(a) + (1 - alpha) * clf.predict_projection(b),
+        atol=1e-8,
+    )

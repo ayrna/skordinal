@@ -291,6 +291,32 @@ class LogisticAT(ClassifierMixin, BaseEstimator):
         labels_enc = (f[:, np.newaxis] > self.thresholds_[np.newaxis, :]).sum(axis=1)
         return self.classes_[labels_enc]
 
+    def predict_projection(self, X):
+        """Return the raw latent projection for each sample.
+
+        The linear projection ``f(x) = w^T x`` is the raw latent
+        projection (ordinal-axis score) that ``thresholds_`` partitions
+        into class regions.
+
+        Parameters
+        ----------
+        X : array-like of shape (n_samples, n_features)
+            Input patterns.
+
+        Returns
+        -------
+        projection : ndarray of shape (n_samples,)
+            Raw linear projection for each sample.
+
+        Raises
+        ------
+        NotFittedError
+            If the estimator has not been fitted yet.
+        """
+        check_is_fitted(self)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
+        return self._project(X)
+
     def _init_params(self, n_features, n_classes):
         """Build the initial packed parameter vector ``[w; t]``."""
         w = np.zeros(n_features)
