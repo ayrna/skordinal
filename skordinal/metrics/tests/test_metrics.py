@@ -23,7 +23,11 @@ from skordinal.metrics import (
     spearmans_rho,
     weighted_kappa,
 )
-from skordinal.metrics._metrics import _check_metric_inputs, _check_proba_inputs
+from skordinal.metrics._metrics import (
+    _check_metric_inputs,
+    _check_metric_weight,
+    _check_proba_inputs,
+)
 
 _WEIGHTED_METRICS = [
     accuracy_off1_score,
@@ -517,6 +521,44 @@ def test_metric_zero_weight_excludes_sample():
     score_unit = accuracy_off1_score(y_t, y_p, sample_weight=unit_w)
     score_zero = accuracy_off1_score(y_t, y_p, sample_weight=zero_w)
     assert score_zero > score_unit
+
+
+@pytest.mark.parametrize(
+    "weight, match",
+    [
+        (np.array([1.0, -1.0, 1.0]), "Negative"),
+        (np.array([1.0, np.inf, 1.0]), "infinity"),
+        (np.array([1.0, np.nan, 1.0]), "NaN"),
+        (np.zeros(3), "non-zero"),
+        (np.ones((3, 2)), "1D array"),
+        (np.ones(2), "expected"),
+    ],
+    ids=["negative", "inf", "nan", "all_zero", "2d", "length_mismatch"],
+)
+def test_check_metric_weight_rejects_invalid(weight, match):
+    """Negative, non-finite, all-zero, 2-D, or mis-length weights all raise."""
+    with pytest.raises(ValueError, match=match):
+        _check_metric_weight(np.array([0, 1, 2]), weight)
+
+
+def test_check_metric_weight_ravels_column_vector():
+    """A (n, 1) weight is raveled to the same result as its 1-D form."""
+    y_t = np.array([0, 1, 2])
+    w_1d = np.array([1.0, 2.0, 3.0])
+    w_col = w_1d.reshape(-1, 1)
+    out_1d = _check_metric_weight(y_t, w_1d)
+    out_col = _check_metric_weight(y_t, w_col)
+    npt.assert_array_equal(out_1d, out_col)
+
+
+@pytest.mark.parametrize("fn", _WEIGHTED_METRICS, ids=_WEIGHTED_METRIC_IDS)
+def test_metric_routes_sample_weight_through_the_check(fn):
+    """Every weighted metric rejects an all-zero sample_weight."""
+    y_t = np.array([0, 1, 2, 1, 0, 2])
+    y_p = np.array([0, 1, 1, 2, 0, 2])
+    x = _Y_PROBA_6 if fn is ranked_probability_score else y_p
+    with pytest.raises(ValueError, match="non-zero"):
+        fn(y_t, x, sample_weight=np.zeros(len(y_t)))
 
 
 @pytest.mark.parametrize(

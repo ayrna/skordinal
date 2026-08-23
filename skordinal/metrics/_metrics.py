@@ -10,6 +10,7 @@ from sklearn.metrics import (
 )
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils._param_validation import validate_params
+from sklearn.utils.validation import _check_sample_weight
 
 
 def _check_labels(arr, name):
@@ -23,6 +24,29 @@ def _check_labels(arr, name):
     if arr.ndim > 1:
         return arr.argmax(axis=-1) if arr.shape[1] > 1 else arr.ravel()
     return arr
+
+
+def _check_metric_weight(y_true, sample_weight):
+    """Validate, reshape, and cast a metric's sample weights to float64.
+
+    Every check is scikit-learn's own, so the messages match any other
+    estimator; the all-zero rejection backports, with its exact message,
+    the one ``_check_sample_weight`` itself performs from scikit-learn
+    1.9. A ``(n, 1)`` weight is raveled first, which scikit-learn refuses.
+    """
+    if sample_weight is None:
+        return None
+    weights = np.asarray(sample_weight)
+    if weights.ndim == 2 and weights.shape[1] == 1:
+        weights = weights.ravel()
+    weights = _check_sample_weight(
+        weights, y_true, dtype=np.float64, ensure_non_negative=True
+    )
+    # scikit-learn < 1.9 accepts an all-zero vector and lets the 0/0
+    # surface as nan downstream
+    if not weights.any():
+        raise ValueError("Sample weights must contain at least one non-zero number.")
+    return weights
 
 
 def _check_metric_inputs(y_true, y_pred):
@@ -182,6 +206,7 @@ def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).mean())
 
 
@@ -234,6 +259,7 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
     sum_by_class = cm.sum(axis=1)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -289,6 +315,7 @@ def gmsec(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
     return float(np.sqrt(sensitivities[0] * sensitivities[-1]))
 
@@ -335,6 +362,7 @@ def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
     return float((sensitivities[0] + sensitivities[-1]) / 2.0)
 
@@ -385,6 +413,7 @@ def maximum_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).max())
 
 
@@ -430,6 +459,7 @@ def minimum_sensitivity(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
     return float(np.min(sensitivities))
 
@@ -475,6 +505,7 @@ def mean_zero_one_error(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
     return float(1 - np.diagonal(cm).sum() / cm.sum())
 
@@ -569,6 +600,7 @@ def weighted_kappa(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
     n_class = cm.shape[0]
     costs = np.abs(np.arange(n_class)[:, None] - np.arange(n_class)[None, :])
@@ -693,6 +725,7 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     y_true, y_proba = _check_proba_inputs(y_true, y_proba)
     y_true = y_true.astype(np.intp)
     n_samples, n_classes = y_proba.shape
+    sample_weight = _check_metric_weight(y_true, sample_weight)
 
     in_range = (y_true >= 0) & (y_true < n_classes)
     y_oh = np.zeros_like(y_proba)
@@ -705,8 +738,7 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     per_sample = np.power(y_proba_cum - y_oh_cum, 2).sum(axis=1)
     per_sample[~in_range] = 1.0
 
-    weights = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
-    return float(np.average(per_sample, weights=weights))
+    return float(np.average(per_sample, weights=sample_weight))
 
 
 @validate_params(
@@ -760,6 +792,7 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     if labels is None:
         labels = np.unique(y_true)
 
