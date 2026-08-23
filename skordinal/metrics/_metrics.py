@@ -63,23 +63,38 @@ def _check_metric_inputs(y_true, y_pred):
     return y_true_arr, y_pred_arr
 
 
-def _check_proba_inputs(y_true, y_proba, *, sum_atol=1e-6):
+def _check_proba_inputs(y_true, y_proba):
     """Coerce and validate the inputs of a probabilistic ordinal metric.
 
     ``y_true`` is collapsed as in ``_check_metric_inputs``. ``y_proba``
-    must be a 2-D matrix coercible to ``float64`` whose rows sum to 1
-    within ``sum_atol``. Raises ``ValueError`` on a malformed ``y_true``, a
-    length mismatch, or a row that does not sum to 1.
+    must be coercible to ``float64`` with every entry in ``[0, 1]``; a 1-D
+    or single-column input is the positive-class probability of a binary
+    problem and is expanded to ``[1 - p, p]``, and rows must then sum to 1
+    within ``atol=1e-6, rtol=0``. Raises ``ValueError`` on a malformed
+    ``y_true``, a length mismatch, an out-of-range entry, or a row that
+    does not sum to 1.
     """
     y_true_arr = _check_labels(y_true, "y_true")
     y_proba_arr = check_array(
-        y_proba, ensure_2d=True, dtype="float64", input_name="y_proba"
+        y_proba, ensure_2d=False, dtype="float64", input_name="y_proba"
     )
+    if y_proba_arr.ndim == 1:
+        y_proba_arr = y_proba_arr.reshape(-1, 1)
     check_consistent_length(y_true_arr, y_proba_arr)
-    row_sums = y_proba_arr.sum(axis=1)
-    if not np.allclose(row_sums, 1.0, atol=sum_atol):
+
+    lo, hi = y_proba_arr.min(), y_proba_arr.max()
+    if lo < 0.0 or hi > 1.0:
         raise ValueError(
-            f"y_proba rows must sum to 1 (atol={sum_atol}); got row-sum "
+            f"y_proba entries must lie in [0, 1]; got range [{lo:.6g}, {hi:.6g}]"
+        )
+
+    if y_proba_arr.shape[1] == 1:
+        y_proba_arr = np.hstack([1.0 - y_proba_arr, y_proba_arr])
+
+    row_sums = y_proba_arr.sum(axis=1)
+    if not np.allclose(row_sums, 1.0, atol=1e-6, rtol=0):
+        raise ValueError(
+            "y_proba rows must sum to 1 (atol=1e-6, rtol=0); got row-sum "
             f"range [{row_sums.min():.6g}, {row_sums.max():.6g}]"
         )
     return y_true_arr, y_proba_arr
@@ -686,10 +701,12 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     y_true : array-like of shape (n_samples,)
         Ground truth labels encoded as 0-based integer indices.
 
-    y_proba : array-like of shape (n_samples, n_classes)
-        Predicted class probability distribution. Each row must sum to
-        approximately ``1`` (``atol=1e-6``); otherwise ``ValueError`` is
-        raised.
+    y_proba : array-like of shape (n_samples, n_classes), (n_samples, 1), or (n_samples,)
+        Predicted class probability distribution. A 1-D input, or a
+        single-column 2-D input, is treated as the positive-class
+        probability of a binary problem and expanded to two columns,
+        ``[1 - p, p]``. Every entry must lie in ``[0, 1]`` and each row
+        must sum to approximately ``1`` (``atol=1e-6, rtol=0``).
 
     sample_weight : array-like of shape (n_samples,), default=None
         Sample weights forwarded to :func:`numpy.average`.

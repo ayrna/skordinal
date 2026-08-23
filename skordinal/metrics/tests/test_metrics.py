@@ -158,11 +158,8 @@ def test_check_metric_inputs_rejects_malformed_shape(y_t, y_p, match):
         _check_metric_inputs(y_t, y_p)
 
 
-def test_check_proba_inputs_requires_2d_proba():
-    """1-D y_proba raises; valid 2-D passes; one-hot y_true is collapsed."""
-    with pytest.raises(ValueError):
-        _check_proba_inputs(np.array([0, 1]), np.array([0.6, 0.4]))
-
+def test_check_proba_inputs_2d_and_one_hot():
+    """A valid 2-D y_proba passes through; one-hot y_true is collapsed."""
     y_t = np.array([0, 1, 2])
     y_p = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]])
     out_t, out_p = _check_proba_inputs(y_t, y_p)
@@ -171,6 +168,25 @@ def test_check_proba_inputs_requires_2d_proba():
 
     out_t_oh, _ = _check_proba_inputs(np.eye(3), y_p)
     assert np.array_equal(out_t_oh, y_t)
+
+
+@pytest.mark.parametrize("as_column", [False, True], ids=["1d", "column"])
+def test_check_proba_inputs_expands_binary_proba(as_column):
+    """A 1-D or (n, 1) y_proba is expanded to the [1 - p, p] positive-class columns."""
+    y_t = np.array([0, 1])
+    p = np.array([0.7, 0.3])
+    proba_input = p.reshape(-1, 1) if as_column else p
+    out_t, out_p = _check_proba_inputs(y_t, proba_input)
+    assert np.array_equal(out_t, y_t)
+    npt.assert_allclose(out_p, np.column_stack([1.0 - p, p]))
+
+
+def test_check_proba_inputs_rejects_out_of_range_entries():
+    """A y_proba entry outside [0, 1] raises, even if rows still sum to 1."""
+    y_t = np.array([0, 1, 2])
+    y_p = np.array([[1.4, -0.4, 0.0], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]])
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        _check_proba_inputs(y_t, y_p)
 
 
 def test_check_proba_inputs_column_vector_ravel():
@@ -221,17 +237,24 @@ def test_correlation_metrics_reject_invalid_input(fn, y_t, y_p, match):
 def test_check_proba_inputs_rejects_unnormalised_rows():
     """Rows not summing to 1 raise ValueError mentioning row-sum."""
     y_t = np.array([0, 1, 2])
-    y_p_bad = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]]) * 2
+    y_p_bad = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]]) * 0.5
     with pytest.raises(ValueError, match="row"):
         _check_proba_inputs(y_t, y_p_bad)
 
 
-def test_check_proba_inputs_accepts_within_atol():
-    """Rows summing to 1 within atol are accepted without error."""
+@pytest.mark.parametrize(
+    "delta, raises", [(5e-7, False), (5e-6, True)], ids=["within_atol", "rtol_zero"]
+)
+def test_check_proba_inputs_row_sum_atol_boundary(delta, raises):
+    """A row-sum delta is accepted within atol and rejected past it, rtol being 0."""
     y_t = np.array([0, 1, 2])
     y_p = np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]])
-    y_p[0, 0] += 5e-7
-    _check_proba_inputs(y_t, y_p)
+    y_p[0, 0] += delta
+    if raises:
+        with pytest.raises(ValueError, match="row"):
+            _check_proba_inputs(y_t, y_p)
+    else:
+        _check_proba_inputs(y_t, y_p)
 
 
 def test_accuracy_score():
@@ -388,6 +411,15 @@ def test_ranked_probability_score():
     npt.assert_almost_equal(
         ranked_probability_score(y_true, y_pred), 0.506875, decimal=6
     )
+
+
+def test_ranked_probability_score_expands_binary_proba():
+    """1-D and (n, 1) y_proba give the same RPS as the explicit two-column form."""
+    y_true = np.array([1, 0])
+    p = np.array([0.8, 0.3])
+    expected = ranked_probability_score(y_true, np.column_stack([1.0 - p, p]))
+    npt.assert_allclose(ranked_probability_score(y_true, p), expected)
+    npt.assert_allclose(ranked_probability_score(y_true, p.reshape(-1, 1)), expected)
 
 
 def test_ranked_probability_score_out_of_range():
