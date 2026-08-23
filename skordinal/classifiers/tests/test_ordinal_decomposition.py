@@ -431,3 +431,31 @@ def test_ordinal_decomposition_label_roundtrip(labels):
 
     np.testing.assert_array_equal(classifier.classes_, np.unique(labels_array))
     assert set(classifier.predict(X)).issubset(set(np.unique(labels_array)))
+
+
+def test_ordinal_decomposition_decision_method_frozen_after_fit(X, y):
+    """Test that decision_method is frozen at fit time, not read live by predict."""
+    classifier = OrdinalDecomposition(decision_method="frank_hall").fit(X, y)
+    y_proba_before = classifier.predict_proba(X)
+
+    classifier.set_params(decision_method="hinge_loss")
+    npt.assert_allclose(classifier.predict_proba(X), y_proba_before)
+
+    # Refitting picks up the new decision_method
+    classifier.fit(X, y)
+    reference = OrdinalDecomposition(decision_method="hinge_loss").fit(X, y)
+    npt.assert_allclose(classifier.predict_proba(X), reference.predict_proba(X))
+
+
+def test_ordinal_decomposition_frank_hall_unreachable_by_set_params(X, y):
+    """Test that set_params cannot reach frank_hall over a one_vs_next coding matrix."""
+    classifier = OrdinalDecomposition(
+        dtype="one_vs_next", decision_method="hinge_loss"
+    ).fit(X, y)
+    y_proba_before = classifier.predict_proba(X)
+
+    classifier.set_params(decision_method="frank_hall")
+    npt.assert_allclose(classifier.predict_proba(X), y_proba_before)
+
+    with pytest.raises(ValueError, match="ordered_partitions must be used"):
+        classifier.fit(X, y)
