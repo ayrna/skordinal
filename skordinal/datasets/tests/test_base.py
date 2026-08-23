@@ -153,8 +153,18 @@ def test_load_dataset_named_csv_bunch_contract(named_csv):
             ["x0", "x1"],
             ["0", "1", "2"],
         ),
+        (
+            "3,2\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n",
+            ["x0", "x1"],
+            ["0", "1", "2"],
+        ),
     ],
-    ids=["metadata-header", "named-header", "no-header"],
+    ids=[
+        "metadata-header",
+        "named-header",
+        "no-header",
+        "metadata-header-no-class-names",
+    ],
 )
 def test_load_dataset_header_styles(
     tmp_path, csv_text, expected_feature_names, expected_target_names
@@ -168,6 +178,23 @@ def test_load_dataset_header_styles(
     assert bunch.data.shape == (3, 2)
 
 
+@pytest.mark.parametrize(
+    "csv_text, expected_feature_names",
+    [
+        ("3,2\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", ["x0", "x1"]),
+        ("x_0,x_1,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", ["x_0", "x_1"]),
+    ],
+    ids=["metadata-header", "named-header"],
+)
+def test_load_dataset_strips_bom(tmp_path, csv_text, expected_feature_names):
+    """A leading UTF-8 BOM is stripped, not folded into the first token."""
+    path = tmp_path / "bom.csv"
+    path.write_text(csv_text, encoding="utf-8-sig")
+    bunch = load_dataset(path)
+    assert bunch.feature_names == expected_feature_names
+    assert bunch.data.shape == (3, 2)
+
+
 def test_load_dataset_bundled_era():
     """Bundled ``era`` dataset loads with correct shape and rst DESCR."""
     bunch = load_dataset("era")
@@ -176,6 +203,13 @@ def test_load_dataset_bundled_era():
     # generated "Dataset '...':" fallback
     assert not bunch.DESCR.startswith("Dataset '")
     assert len(bunch.DESCR) > 10
+
+
+def test_load_dataset_data_home_does_not_inherit_bundled_descr(tmp_path):
+    """A user's own ``era.csv`` must not inherit the bundled ERA DESCR."""
+    _write_csv(tmp_path, "era")
+    bunch = load_dataset("era", data_home=tmp_path)
+    assert bunch.DESCR.startswith("Dataset 'era'")
 
 
 @pytest.mark.parametrize(
@@ -269,6 +303,32 @@ def test_load_dataset_invalid_target_raises(tmp_path, bad_target):
     path = tmp_path / "bad_target.csv"
     path.write_text(f"x_0,x_1,y\n1.0,2.0,0\n3.0,4.0,{bad_target}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="Target column of .* is invalid"):
+        load_dataset(path)
+
+
+@pytest.mark.parametrize(
+    "csv_text, match",
+    [
+        ("3,2\n1.0,2.0,0\n3.0,4.0,1\n", "declares 3 sample.*file has 2 data row"),
+        ("1.0,2.0,0\n3.0,4.0\n5.0,6.0,2\n", "inconsistent lengths"),
+        (
+            "x_0,x_1,x_2,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n",
+            "Expected 3 feature column",
+        ),
+        ("x_0,x_1,y\n", "header but no data rows"),
+    ],
+    ids=[
+        "declared-count-mismatch",
+        "ragged-rows",
+        "wrong-column-count",
+        "header-only",
+    ],
+)
+def test_load_dataset_malformed_csv_raises(tmp_path, csv_text, match):
+    """A structurally malformed CSV raises ``ValueError`` naming the file."""
+    path = tmp_path / "malformed.csv"
+    path.write_text(csv_text, encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
         load_dataset(path)
 
 
