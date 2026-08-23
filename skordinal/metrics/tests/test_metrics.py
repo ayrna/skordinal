@@ -85,6 +85,75 @@ def test_check_metric_inputs_length_mismatch_raises():
         _check_metric_inputs([0, 1, 2], [0, 1])
 
 
+@pytest.mark.parametrize(
+    "value, match", [(np.nan, "NaN"), (np.inf, "infinity")], ids=["nan", "inf"]
+)
+@pytest.mark.parametrize("which", ["y_true", "y_pred"])
+@pytest.mark.parametrize("shape", ["1d", "one_hot"])
+def test_check_metric_inputs_rejects_non_finite(value, match, which, shape):
+    """A non-finite value in either input raises before the argmax collapse hides it."""
+    y_t = np.array([0.0, 1.0, 2.0])
+    y_p = np.array([0.0, 1.0, 1.0])
+    if shape == "one_hot":
+        y_t = np.eye(3)
+        y_p = np.eye(3)[[0, 1, 1]]
+    arr = y_t if which == "y_true" else y_p
+    arr = arr.copy()
+    if arr.ndim == 1:
+        arr[0] = value
+    else:
+        arr[0, 0] = value
+    if which == "y_true":
+        y_t = arr
+    else:
+        y_p = arr
+    with pytest.raises(ValueError, match=match):
+        _check_metric_inputs(y_t, y_p)
+
+
+@pytest.mark.parametrize(
+    "y_t, match",
+    [
+        (np.array([0, 1, 2], dtype=np.int64), None),
+        (np.array([0, 1, 10**400], dtype=object), None),
+        (np.array(["low", "mid", "high"]), None),
+        (np.array([0, 1, np.nan], dtype=object), "NaN"),
+        (np.array([0.0, np.nan, "x"], dtype=object), "NaN"),
+        (np.array([0 + 0j, 1 + 0j, 2 + 0j]), "Complex"),
+    ],
+    ids=[
+        "int64",
+        "object_huge_int",
+        "strings",
+        "object_nan",
+        "object_mixed",
+        "complex",
+    ],
+)
+def test_check_metric_inputs_dtype_handling(y_t, match):
+    """Integer, huge-int and string labels pass; NaN and complex raise."""
+    y_p = np.array([0, 1, 1])
+    if match is None:
+        _check_metric_inputs(y_t, y_p)
+    else:
+        with pytest.raises(ValueError, match=match):
+            _check_metric_inputs(y_t, y_p)
+
+
+@pytest.mark.parametrize(
+    "y_t, y_p, match",
+    [
+        (np.zeros((2, 2, 3)), np.zeros((2, 2, 3)), "dim 3"),
+        (np.array([]), np.array([]), "0 sample"),
+    ],
+    ids=["3d", "empty"],
+)
+def test_check_metric_inputs_rejects_malformed_shape(y_t, y_p, match):
+    """A 3-D or empty input raises instead of collapsing to a plausible score."""
+    with pytest.raises(ValueError, match=match):
+        _check_metric_inputs(y_t, y_p)
+
+
 def test_check_proba_inputs_requires_2d_proba():
     """1-D y_proba raises; valid 2-D passes; one-hot y_true is collapsed."""
     with pytest.raises(ValueError):
@@ -107,6 +176,42 @@ def test_check_proba_inputs_column_vector_ravel():
     out_t, out_p = _check_proba_inputs(y_t_col, y_p)
     assert np.array_equal(out_t, np.array([0, 1, 2]))
     npt.assert_allclose(out_p, y_p)
+
+
+@pytest.mark.parametrize(
+    "y_t, y_p, match",
+    [
+        (
+            np.array([0.0, np.nan, 2.0]),
+            np.array([[0.7, 0.2, 0.1], [0.1, 0.6, 0.3], [0.2, 0.3, 0.5]]),
+            "NaN",
+        ),
+        (np.zeros((2, 2, 3)), np.full((2, 2), 0.5), "dim 3"),
+    ],
+    ids=["nan", "3d"],
+)
+def test_check_proba_inputs_routes_y_true_through_check_labels(y_t, y_p, match):
+    """The proba gateway rejects a malformed y_true before the argmax collapse."""
+    with pytest.raises(ValueError, match=match):
+        _check_proba_inputs(y_t, y_p)
+
+
+@pytest.mark.parametrize(
+    "fn", [kendalls_tau, spearmans_rho], ids=["kendalls_tau", "spearmans_rho"]
+)
+@pytest.mark.parametrize(
+    "y_t, y_p, match",
+    [
+        (np.array([0.0, 1.0, 2.0]), np.array([0.0, np.inf, 2.0]), "infinity"),
+        (np.zeros((2, 2, 3)), np.zeros((2, 2, 3)), "dim 3"),
+        (np.array([]), np.array([]), "0 sample"),
+    ],
+    ids=["inf", "3d", "empty"],
+)
+def test_correlation_metrics_reject_invalid_input(fn, y_t, y_p, match):
+    """kendalls_tau and spearmans_rho reject inf, 3-D and empty input."""
+    with pytest.raises(ValueError, match=match):
+        fn(y_t, y_p)
 
 
 def test_check_proba_inputs_rejects_unnormalised_rows():

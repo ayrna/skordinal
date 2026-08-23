@@ -12,87 +12,42 @@ from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils._param_validation import validate_params
 
 
-def _check_metric_inputs(y_true, y_pred):
-    """Coerce metric inputs to 1-D arrays and validate length consistency.
+def _check_labels(arr, name):
+    """Validate a label array and collapse a 2-D one to 1-D hard labels.
 
-    Two-dimensional inputs are interpreted as one-hot encoded labels and
-    collapsed via ``argmax`` along the last axis, except a single-column
-    input, which is raveled to its original values. Centralises the input
-    coercion that every public ordinal metric needs.
-
-    Parameters
-    ----------
-    y_true : array-like of shape (n_samples,) or (n_samples, n_classes)
-        Ground truth labels.
-
-    y_pred : array-like of shape (n_samples,) or (n_samples, n_classes)
-        Predicted labels or class scores.
-
-    Returns
-    -------
-    y_true : ndarray of shape (n_samples,)
-    y_pred : ndarray of shape (n_samples,)
-
-    Raises
-    ------
-    ValueError
-        If ``y_true`` and ``y_pred`` have different lengths.
+    ``dtype=None`` keeps string label sets usable. Validation runs before
+    the ``argmax``, which would otherwise mask a NaN behind its own index
+    and quietly turn a 3-D input into a 2-D one.
     """
-    y_true_arr = np.asarray(y_true)
-    if y_true_arr.ndim > 1:
-        y_true_arr = (
-            y_true_arr.argmax(axis=-1)
-            if y_true_arr.shape[1] > 1
-            else y_true_arr.ravel()
-        )
-    y_pred_arr = np.asarray(y_pred)
-    if y_pred_arr.ndim > 1:
-        y_pred_arr = (
-            y_pred_arr.argmax(axis=-1)
-            if y_pred_arr.shape[1] > 1
-            else y_pred_arr.ravel()
-        )
+    arr = check_array(arr, ensure_2d=False, dtype=None, input_name=name)
+    if arr.ndim > 1:
+        return arr.argmax(axis=-1) if arr.shape[1] > 1 else arr.ravel()
+    return arr
+
+
+def _check_metric_inputs(y_true, y_pred):
+    """Coerce a metric's targets to validated 1-D label arrays.
+
+    Either input may be 1-D labels or 2-D: a one-hot matrix is collapsed
+    via ``argmax`` along the last axis, a single column is raveled to its
+    original values. Raises ``ValueError`` if either is empty, more than
+    2-D, complex, holds a non-finite value, or if the two differ in length.
+    """
+    y_true_arr = _check_labels(y_true, "y_true")
+    y_pred_arr = _check_labels(y_pred, "y_pred")
     check_consistent_length(y_true_arr, y_pred_arr)
     return y_true_arr, y_pred_arr
 
 
 def _check_proba_inputs(y_true, y_proba, *, sum_atol=1e-6):
-    """Validate inputs for probabilistic ordinal metrics.
+    """Coerce and validate the inputs of a probabilistic ordinal metric.
 
-    ``y_true`` may be 1-D class labels or a 2-D one-hot matrix; a
-    single-column ``y_true`` is raveled instead of argmaxed. ``y_proba``
-    must be a 2-D matrix coercible to ``float64`` whose rows sum to
-    approximately one.
-
-    Parameters
-    ----------
-    y_true : array-like of shape (n_samples,) or (n_samples, n_classes)
-        Ground truth labels.
-
-    y_proba : array-like of shape (n_samples, n_classes)
-        Predicted class probability matrix.
-
-    sum_atol : float, default=1e-6
-        Absolute tolerance for the row-sum check.
-
-    Returns
-    -------
-    y_true : ndarray of shape (n_samples,)
-    y_proba : ndarray of shape (n_samples, n_classes), dtype float64
-
-    Raises
-    ------
-    ValueError
-        If ``y_true`` and ``y_proba`` have inconsistent length, or if any
-        row of ``y_proba`` does not sum to 1 within ``sum_atol``.
+    ``y_true`` is collapsed as in ``_check_metric_inputs``. ``y_proba``
+    must be a 2-D matrix coercible to ``float64`` whose rows sum to 1
+    within ``sum_atol``. Raises ``ValueError`` on a malformed ``y_true``, a
+    length mismatch, or a row that does not sum to 1.
     """
-    y_true_arr = np.asarray(y_true)
-    if y_true_arr.ndim > 1:
-        y_true_arr = (
-            y_true_arr.argmax(axis=-1)
-            if y_true_arr.shape[1] > 1
-            else y_true_arr.ravel()
-        )
+    y_true_arr = _check_labels(y_true, "y_true")
     y_proba_arr = check_array(
         y_proba, ensure_2d=True, dtype="float64", input_name="y_proba"
     )
