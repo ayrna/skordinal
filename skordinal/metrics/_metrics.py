@@ -66,15 +66,25 @@ def _check_metric_inputs(y_true, y_pred):
 def _check_proba_inputs(y_true, y_proba):
     """Coerce and validate the inputs of a probabilistic ordinal metric.
 
-    ``y_true`` is collapsed as in ``_check_metric_inputs``. ``y_proba``
-    must be coercible to ``float64`` with every entry in ``[0, 1]``; a 1-D
-    or single-column input is the positive-class probability of a binary
-    problem and is expanded to ``[1 - p, p]``, and rows must then sum to 1
-    within ``atol=1e-6, rtol=0``. Raises ``ValueError`` on a malformed
-    ``y_true``, a length mismatch, an out-of-range entry, or a row that
-    does not sum to 1.
+    ``y_true`` is collapsed as in ``_check_metric_inputs``, then required
+    to be integer-valued and returned as ``intp`` 0-based class indices.
+    ``y_proba`` must be coercible to ``float64`` with every entry in
+    ``[0, 1]``; a 1-D or single-column input is the positive-class
+    probability of a binary problem and is expanded to ``[1 - p, p]``, and
+    rows must then sum to 1 within ``atol=1e-6, rtol=0``. Raises
+    ``ValueError`` on a malformed or non-integer ``y_true``, a length
+    mismatch, an out-of-range entry, or a row that does not sum to 1.
     """
     y_true_arr = _check_labels(y_true, "y_true")
+    y_true_idx = y_true_arr.astype(np.intp)
+    # the intp cast truncates, so a non-integral float or object value would
+    # land on a different, valid class; a digit string keeps its parsed value
+    if y_true_arr.dtype.kind in "fO" and not np.array_equal(y_true_idx, y_true_arr):
+        raise ValueError(
+            "y_true must be integer-valued (0-based class indices); got "
+            "non-integer values."
+        )
+    y_true_arr = y_true_idx
     y_proba_arr = check_array(
         y_proba, ensure_2d=False, dtype="float64", input_name="y_proba"
     )
@@ -742,7 +752,6 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
 
     """
     y_true, y_proba = _check_proba_inputs(y_true, y_proba)
-    y_true = y_true.astype(np.intp)
     n_samples, n_classes = y_proba.shape
     sample_weight = _check_metric_weight(y_true, sample_weight)
 

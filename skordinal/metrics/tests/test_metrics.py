@@ -158,6 +158,22 @@ def test_check_metric_inputs_rejects_malformed_shape(y_t, y_p, match):
         _check_metric_inputs(y_t, y_p)
 
 
+@pytest.mark.parametrize(
+    "bad",
+    [
+        np.array([-0.5]),
+        np.array([0.5]),
+        np.array([1.7]),
+        np.array([0.5], dtype=object),
+    ],
+    ids=["negative_frac", "half", "above_one", "object_frac"],
+)
+def test_check_proba_inputs_rejects_non_integer_y_true(bad):
+    """A non-integer y_true raises instead of being truncated to a valid index."""
+    with pytest.raises(ValueError, match="integer-valued"):
+        _check_proba_inputs(bad, np.array([[0.1, 0.2, 0.7]]))
+
+
 def test_check_proba_inputs_2d_and_one_hot():
     """A valid 2-D y_proba passes through; one-hot y_true is collapsed."""
     y_t = np.array([0, 1, 2])
