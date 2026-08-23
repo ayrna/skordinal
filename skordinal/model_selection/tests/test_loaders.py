@@ -87,6 +87,12 @@ def test_load_classifier_with_searchcv():
     assert classifier.param_grid == expected_param_grid
 
 
+def test_load_classifier_with_searchcv_default_cv_metric():
+    """load_classifier's default cv_metric resolves to a registered scorer."""
+    classifier = load_classifier("SVC", param_grid={"C": [0.1, 1.0]}, cv_n_folds=2)
+    assert isinstance(classifier, GridSearchCV)
+
+
 def test_load_classifier_with_ensemble_method():
     """Test that load_classifier correctly handles ensemble methods."""
     param_grid = {

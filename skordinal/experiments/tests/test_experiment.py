@@ -228,14 +228,23 @@ def test_run_preprocessing_does_not_mutate_inputs(split_with_test):
 
 
 def test_run_metric_keys_for_each_eval_metric(split_with_test):
-    """Each eval metric yields a _train and a _test key in the result."""
+    """Each eval metric yields a _train and a _test key, reported unnegated."""
     X_train, y_train, X_test, y_test = split_with_test
     exp = _make_experiment(eval_metrics=["mean_absolute_error", "accuracy_score"])
     result = _call_run(exp, X_train, y_train, X_test, y_test)
 
     for name in ("mean_absolute_error", "accuracy_score"):
-        assert name + "_train" in result.train_metrics
-        assert name + "_test" in result.test_metrics
+        # mean_absolute_error is a loss, but reporting must not negate it
+        assert result.train_metrics[name + "_train"] >= 0
+        assert result.test_metrics[name + "_test"] >= 0
+
+
+def test_run_rejects_unknown_eval_metric(split_with_test):
+    """An unknown eval_metric name raises ValueError naming the metric."""
+    X_train, y_train, X_test, y_test = split_with_test
+    exp = _make_experiment(eval_metrics=["ranked_probability_score"])
+    with pytest.raises(ValueError, match="ranked_probability_score"):
+        _call_run(exp, X_train, y_train, X_test, y_test)
 
 
 def test_run_proba_absent_without_predict_proba(split_with_test):

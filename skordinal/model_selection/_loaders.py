@@ -75,7 +75,7 @@ def load_classifier(
     random_state: int | np.random.RandomState | None = None,
     n_jobs: int = 1,
     cv_n_folds: int = 3,
-    cv_metric: str | Callable[..., Any] = "mae",
+    cv_metric: str | Callable[..., Any] = "neg_mean_absolute_error",
     param_grid: dict[str, Any] | None = None,
 ) -> BaseEstimator | GridSearchCV:
     """Return a fully configured classifier, optionally with cross-validation.
@@ -98,8 +98,10 @@ def load_classifier(
     cv_n_folds : int, optional (default=3)
         Number of folds for cross-validation (only used if applicable).
 
-    cv_metric : str or callable, optional (default="mae")
-        Evaluation metric for cross-validation performance assessment.
+    cv_metric : str or callable, optional (default="neg_mean_absolute_error")
+        Evaluation metric for cross-validation performance assessment. A
+        string name must be recognised by
+        ``skordinal.metrics.get_ordinal_scorer``.
 
     param_grid : dict or None, optional (default=None)
         Hyperparameter grid. If multiple values are given, cross-validation will be applied.
@@ -142,9 +144,7 @@ def load_classifier(
     param_grid = prepare_param_grid(classifier_cls, param_grid, random_state)
 
     if is_searchcv(param_grid):
-        scorer = (
-            get_ordinal_scorer(cv_metric) if isinstance(cv_metric, str) else cv_metric
-        )
+        scorer = get_ordinal_scorer(cv_metric)
         cv = StratifiedKFold(
             n_splits=cv_n_folds, shuffle=True, random_state=random_state
         )

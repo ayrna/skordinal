@@ -1,5 +1,7 @@
 """Scorer registry for ordinal classification metrics."""
 
+import copy
+
 from sklearn.metrics import accuracy_score, make_scorer, mean_absolute_error
 from sklearn.utils._param_validation import validate_params
 
@@ -13,7 +15,6 @@ from ._metrics import (
     mean_extreme_sensitivity,
     mean_zero_one_error,
     minimum_sensitivity,
-    ranked_probability_score,
     spearmans_rho,
     weighted_kappa,
 )
@@ -31,17 +32,6 @@ _SCORERS = {
     "neg_mean_zero_one_error": make_scorer(
         mean_zero_one_error, greater_is_better=False
     ),
-    "neg_ranked_probability_score": make_scorer(
-        ranked_probability_score, greater_is_better=False
-    ),
-    "average_mean_absolute_error": make_scorer(
-        average_mean_absolute_error, greater_is_better=False
-    ),
-    "mean_absolute_error": make_scorer(mean_absolute_error, greater_is_better=False),
-    "maximum_mean_absolute_error": make_scorer(
-        maximum_mean_absolute_error, greater_is_better=False
-    ),
-    "mean_zero_one_error": make_scorer(mean_zero_one_error, greater_is_better=False),
     "accuracy_score": make_scorer(accuracy_score),
     "accuracy_off1_score": make_scorer(accuracy_off1_score),
     "geometric_mean": make_scorer(geometric_mean),
@@ -53,29 +43,38 @@ _SCORERS = {
     "weighted_kappa": make_scorer(weighted_kappa),
 }
 
-__all__ = ["get_ordinal_scorer", "list_ordinal_scorers"]
 
+@validate_params({"scoring": [str, callable, None]}, prefer_skip_nested_validation=True)
+def get_ordinal_scorer(scoring):
+    """Return a scikit-learn-compatible scorer.
 
-@validate_params({"name": [str]}, prefer_skip_nested_validation=True)
-def get_ordinal_scorer(name):
-    """Return a scikit-learn-compatible scorer by name.
+    Every registered scorer is greater-is-better, matching the
+    scikit-learn convention: a metric where a lower value is better is
+    registered only under its ``neg_``-prefixed name.
 
     Parameters
     ----------
-    name : str
-        Scorer name. Use :func:`list_ordinal_scorers` for the full list.
-        Leading and trailing whitespace is stripped before lookup.
+    scoring : str, callable or None
+        Scorer name. Use :func:`get_ordinal_scorer_names` for the full
+        list. Leading and trailing whitespace is stripped before lookup.
+        A callable is returned as is, and ``None`` returns ``None``,
+        matching :func:`sklearn.metrics.get_scorer`.
 
     Returns
     -------
-    scorer : callable
+    scorer : callable or None
         A scorer compatible with :class:`~sklearn.model_selection.GridSearchCV`
         and :func:`~sklearn.model_selection.cross_val_score`.
 
     Raises
     ------
     ValueError
-        If ``name`` is not a registered scorer name.
+        If ``scoring`` is a string that is not a registered scorer name.
+
+    Notes
+    -----
+    Returns a fresh copy of the registered scorer on every call, so
+    mutating the result does not affect subsequent lookups.
 
     Examples
     --------
@@ -85,15 +84,22 @@ def get_ordinal_scorer(name):
     True
 
     """
-    key = name.strip()
+    if not isinstance(scoring, str):
+        return scoring
+    key = scoring.strip()
     if key in _SCORERS:
-        return _SCORERS[key]
+        return copy.deepcopy(_SCORERS[key])
+    if f"neg_{key}" in _SCORERS:
+        raise ValueError(
+            f"Unknown scorer name: {scoring!r}. A scorer must be "
+            f"greater-is-better, so a loss is only registered as 'neg_{key}'."
+        )
     raise ValueError(
-        f"Unknown scorer name: {name!r}. Available: {list_ordinal_scorers()}."
+        f"Unknown scorer name: {scoring!r}. Available: {get_ordinal_scorer_names()}."
     )
 
 
-def list_ordinal_scorers():
+def get_ordinal_scorer_names():
     """Return the sorted list of registered ordinal scorer names.
 
     Returns
@@ -103,8 +109,8 @@ def list_ordinal_scorers():
 
     Examples
     --------
-    >>> from skordinal.metrics import list_ordinal_scorers
-    >>> all_scorers = list_ordinal_scorers()
+    >>> from skordinal.metrics import get_ordinal_scorer_names
+    >>> all_scorers = get_ordinal_scorer_names()
     >>> type(all_scorers)
     <class 'list'>
     >>> "neg_mean_absolute_error" in all_scorers

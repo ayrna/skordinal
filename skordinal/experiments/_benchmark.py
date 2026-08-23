@@ -43,8 +43,9 @@ class Benchmark:
 
     eval_metrics : list of str
         Metric names to compute for every resample (e.g.
-        ``["mean_absolute_error", "average_mean_absolute_error"]``).
-        Names must be recognised by ``skordinal.metrics.get_ordinal_scorer``.
+        ``["mean_absolute_error", "average_mean_absolute_error"]``). Names
+        must match a ``skordinal.metrics`` metric that scores predicted
+        labels, which excludes ``ranked_probability_score``.
 
     results_path : str or Path
         Directory where result files are written. Expanded and resolved to
