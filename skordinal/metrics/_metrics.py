@@ -714,12 +714,14 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     Returns
     -------
     score : float
-        Ranked probability score; lower is better.
+        Ranked probability score, in the range ``[0, n_classes - 1]``.
+        Lower is better.
 
     Notes
     -----
     Samples whose ``y_true`` falls outside ``[0, n_classes)`` are
-    counted with a per-sample contribution of ``1.0``.
+    counted with a per-sample contribution of ``n_classes - 1``, the
+    worst per-sample loss attainable by any in-range label.
 
     References
     ----------
@@ -753,7 +755,8 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     y_proba_cum = y_proba.cumsum(axis=1)
 
     per_sample = np.power(y_proba_cum - y_oh_cum, 2).sum(axis=1)
-    per_sample[~in_range] = 1.0
+    # n_classes - 1 cumulative steps, each contributing 1 squared
+    per_sample[~in_range] = float(n_classes - 1)
 
     return float(np.average(per_sample, weights=sample_weight))
 

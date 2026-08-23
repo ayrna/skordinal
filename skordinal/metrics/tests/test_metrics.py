@@ -422,13 +422,33 @@ def test_ranked_probability_score_expands_binary_proba():
     npt.assert_allclose(ranked_probability_score(y_true, p.reshape(-1, 1)), expected)
 
 
-def test_ranked_probability_score_out_of_range():
-    """y_true values outside [0, n_classes) contribute 1.0 per-sample RPS."""
-    y_true = np.array([0, 5, 1])
-    y_proba = np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.5], [0.0, 1.0, 0.0]])
+@pytest.mark.parametrize(
+    "y_true, y_proba, expected",
+    [
+        (
+            np.array([0, 5, 1]),
+            np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.5], [0.0, 1.0, 0.0]]),
+            2.0 / 3,
+        ),
+        (np.array([5]), np.array([[0.2, 0.2, 0.2, 0.2, 0.2]]), 4.0),
+    ],
+    ids=["3_classes_mixed", "5_classes_single"],
+)
+def test_ranked_probability_score_out_of_range(y_true, y_proba, expected):
+    """An out-of-range y_true is penalised by n_classes - 1, not a fixed constant."""
     npt.assert_almost_equal(
-        ranked_probability_score(y_true, y_proba), 1.0 / 3, decimal=6
+        ranked_probability_score(y_true, y_proba), expected, decimal=6
     )
+
+
+def test_ranked_probability_score_out_of_range_no_better_than_worst_in_range():
+    """An out-of-range label scores no better than the worst in-range one."""
+    y_proba = np.array([[0.0, 0.0, 1.0]])
+    out_of_range = ranked_probability_score(np.array([9]), y_proba)
+    worst_in_range = max(
+        ranked_probability_score(np.array([label]), y_proba) for label in range(3)
+    )
+    assert out_of_range >= worst_in_range
 
 
 @pytest.mark.parametrize(
