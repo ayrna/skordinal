@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skordinal"
-version = "0.0.1"
+version = "0.1.0rc1"
 description = "Ordinal classification for Python, scikit-learn compatible"
 readme = "README.md"
 requires-python = ">=3.10"
