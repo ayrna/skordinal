@@ -361,6 +361,16 @@ def test_per_dataset_masks(tmp_path):
     assert total == _N_SAMPLES
 
 
+def test_integer_mask_accepted(tmp_path):
+    """A masks file of 0/1 integers splits as if it held booleans."""
+    name = "ds_int_mask"
+    _write_csv(tmp_path, name)
+    _write_masks(tmp_path, name, [[1] * 14 + [0] * 6])
+    (bunch,) = list(load_partitions(name, resamples=1, data_home=tmp_path))
+    assert bunch.data_train.shape[0] == 14
+    assert bunch.data_test.shape[0] == 6
+
+
 @pytest.mark.parametrize(
     "place_in_parent",
     [False, True],
@@ -456,7 +466,7 @@ def _setup_bad_mask(tmp_path):
     """Return args for mask-length-mismatch error case."""
     name = "ds_calltime_badmask"
     _write_csv(tmp_path, name, n_samples=_N_SAMPLES)
-    bad_mask = [True] * (_N_SAMPLES - 1)
+    bad_mask = [True] * 13 + [False] * 6
     _write_masks(tmp_path, name, [bad_mask])
     return name, {}
 
@@ -508,6 +518,45 @@ def test_load_partitions_eager_errors(tmp_path, setup_fn, exc_type, match):
     name, extra_kwargs = setup_fn(tmp_path)
     with pytest.raises(exc_type, match=match):
         load_partitions(name, data_home=tmp_path, **extra_kwargs)
+
+
+@pytest.mark.parametrize(
+    "resamples, exc_type, match",
+    [
+        ([0, 0], ValueError, "duplicate ids"),
+        ([-1], ValueError, "non-negative"),
+        ([0.0], TypeError, "must be integers"),
+        ([True], TypeError, "must be integers"),
+    ],
+    ids=["duplicate", "negative", "float", "bool"],
+)
+def test_invalid_resample_ids(tmp_path, resamples, exc_type, match):
+    """Duplicate, negative and non-integer resample ids raise."""
+    name = "ds_bad_ids"
+    _write_csv(tmp_path, name)
+    with pytest.raises(exc_type, match=match):
+        load_partitions(name, resamples=resamples, data_home=tmp_path)
+
+
+@pytest.mark.parametrize(
+    "mask, match",
+    [
+        (["false"] * _N_SAMPLES, "boolean or integer"),
+        ([0.4] * _N_SAMPLES, "boolean or integer"),
+        ([None] * _N_SAMPLES, "boolean or integer"),
+        ([True] * _N_SAMPLES, "degenerate"),
+        ([False] * _N_SAMPLES, "degenerate"),
+        ([[True, False]] * _N_SAMPLES, "shape"),
+    ],
+    ids=["string", "float", "null", "all-true", "all-false", "nested"],
+)
+def test_invalid_masks(tmp_path, mask, match):
+    """Malformed masks raise instead of splitting the data silently."""
+    name = "ds_bad_mask"
+    _write_csv(tmp_path, name)
+    _write_masks(tmp_path, name, [mask])
+    with pytest.raises(ValueError, match=match):
+        load_partitions(name, resamples=1, data_home=tmp_path)
 
 
 def test_load_partitions_reads_csv_once(tmp_path, monkeypatch):
