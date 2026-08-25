@@ -309,6 +309,45 @@ def clear_data_home(data_home=None) -> None:
     shutil.rmtree(get_data_home(data_home))
 
 
+def _load_bundled(stem, feature_names, *, caller_name, return_X_y, as_frame):
+    """Load a bundled dataset CSV under a fixed set of column names.
+
+    Resolves against the bundled data module only, so a same-named file in
+    the working directory cannot shadow a shipped dataset the way it can in
+    ``load_dataset``.
+    """
+    path = Path(str(resources.files(DATA_MODULE))) / f"{stem}.csv"
+    # The metadata header carries no column names, so _read_csv_any generates
+    # x0..xd-1 and the caller supplies the real ones instead
+    data, target, _, header_class_names = _read_csv_any(path)
+    if len(feature_names) != data.shape[1]:
+        raise ValueError(
+            f"{caller_name}: {len(feature_names)} feature name(s) declared, "
+            f"but {path.name} has {data.shape[1]} feature column(s)."
+        )
+    feature_names = list(feature_names)
+    target_names = _resolve_target_names(header_class_names, target)
+
+    frame = None
+    if as_frame:
+        frame, data, target = _convert_data_dataframe(
+            caller_name, data, target, feature_names, ["target"]
+        )
+    if return_X_y:
+        return data, target
+    return Bunch(
+        data=data,
+        target=target,
+        frame=frame,
+        feature_names=feature_names,
+        target_names=target_names,
+        n_classes=len(target_names),
+        DESCR=_load_descr(path, DATA_MODULE),
+        filename=path.name,
+        data_module=DATA_MODULE,
+    )
+
+
 @validate_params(
     {
         "name": [str, os.PathLike],

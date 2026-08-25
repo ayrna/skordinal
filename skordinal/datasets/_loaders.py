@@ -1,89 +1,8 @@
 """Loaders for bundled ordinal classification datasets."""
 
-import csv
-from importlib import resources
-
-import numpy as np
-from sklearn.utils import Bunch
 from sklearn.utils._param_validation import validate_params
 
-DATA_MODULE = "skordinal.datasets.data"
-DESCR_MODULE = "skordinal.datasets.descr"
-
-
-def _load_csv_data(data_file_name, *, descr_file_name):
-    """Load a sklearn-style CSV with metadata header and a description file.
-
-    The CSV's first row stores ``n_samples,n_features,target_name_0,...``;
-    subsequent rows store ``feature_0,...,feature_d-1,target_int``.  Targets
-    are read as zero-indexed integers.
-    """
-    data_path = resources.files(DATA_MODULE) / data_file_name
-    with data_path.open("r", encoding="utf-8") as csv_file:
-        reader = csv.reader(csv_file)
-        header = next(reader)
-        n_samples = int(header[0])
-        n_features = int(header[1])
-        target_names = np.array(header[2:])
-        data = np.empty((n_samples, n_features), dtype=np.float64)
-        target = np.empty((n_samples,), dtype=np.int32)
-        for i, row in enumerate(reader):
-            data[i] = np.asarray(row[:-1], dtype=np.float64)
-            target[i] = int(row[-1])
-    descr = (resources.files(DESCR_MODULE) / descr_file_name).read_text(
-        encoding="utf-8"
-    )
-    return data, target, target_names, descr
-
-
-def _convert_data_dataframe(caller_name, data, target, feature_names, target_columns):
-    """Combine ``data`` and ``target`` into a pandas frame for ``as_frame=True``."""
-    try:
-        import pandas as pd
-    except (
-        ImportError
-    ) as exc:  # pragma: no cover - exercised in environments without pandas
-        raise ImportError(f"{caller_name} with as_frame=True requires pandas.") from exc
-    data_df = pd.DataFrame(data, columns=feature_names, copy=False)
-    target_df = pd.DataFrame(target, columns=target_columns)
-    combined_df = pd.concat([data_df, target_df], axis=1)
-    X = combined_df[feature_names]
-    y = combined_df[target_columns]
-    if y.shape[1] == 1:  # pragma: no branch
-        y = y.iloc[:, 0]
-    return combined_df, X, y
-
-
-def _bundle(
-    data,
-    target,
-    target_names,
-    descr,
-    feature_names,
-    filename,
-    *,
-    return_X_y,
-    as_frame,
-    caller_name,
-):
-    """Common return path for the public loaders."""
-    frame = None
-    if as_frame:
-        frame, data, target = _convert_data_dataframe(
-            caller_name, data, target, feature_names, ["target"]
-        )
-    if return_X_y:
-        return data, target
-    return Bunch(
-        data=data,
-        target=target,
-        frame=frame,
-        target_names=target_names,
-        DESCR=descr,
-        feature_names=feature_names,
-        filename=filename,
-        data_module=DATA_MODULE,
-    )
+from ._base import _load_bundled
 
 
 @validate_params(
@@ -94,7 +13,7 @@ def load_era(*, return_X_y=False, as_frame=False):
     """Load and return the ERA dataset (ordinal classification).
 
     Four ordinal input attributes describing job candidates; the target is
-    an overall acceptance level on a 1-9 scale (9 ordered classes).
+    an overall acceptance level on a 1-9 scale (9 ordered classes) [1]_.
 
     =================   ==============
     Classes                          9
@@ -127,6 +46,8 @@ def load_era(*, return_X_y=False, as_frame=False):
             ``["in1", "in2", "in3", "in4"]``.
         target_names : ndarray of str
             ``["1", "2", "3", "4", "5", "6", "7", "8", "9"]``.
+        n_classes : int
+            Number of ordered classes.
         frame : DataFrame of shape (1000, 5) or None
             ``None`` if ``as_frame=False``; otherwise a DataFrame
             combining ``data`` and ``target``.
@@ -144,6 +65,12 @@ def load_era(*, return_X_y=False, as_frame=False):
         column representing a feature. The second array of shape ``(1000,)``
         contains the ordinal target labels.
 
+    References
+    ----------
+    .. [1] A. Ben-David, "Automatic generation of symbolic multiattribute
+           ordinal knowledge-based DSSs: methodology and applications",
+           Decision Sciences, vol. 23, no. 6, pp. 1357-1372, 1992.
+
     Examples
     --------
     >>> from skordinal.datasets import load_era
@@ -153,28 +80,13 @@ def load_era(*, return_X_y=False, as_frame=False):
     >>> int(bunch.target.min()), int(bunch.target.max())
     (0, 8)
 
-    References
-    ----------
-    .. [1] A. Ben-David, "Automatic generation of symbolic multiattribute
-           ordinal knowledge-based DSSs: methodology and applications",
-           Decision Sciences, vol. 23, no. 6, pp. 1357-1372, 1992.
-
     """
-    filename = "era.csv"
-    data, target, target_names, descr = _load_csv_data(
-        filename, descr_file_name="era.rst"
-    )
-    feature_names = [f"in{i + 1}" for i in range(4)]
-    return _bundle(
-        data,
-        target,
-        target_names,
-        descr,
-        feature_names,
-        filename,
+    return _load_bundled(
+        "era",
+        [f"in{i + 1}" for i in range(4)],
+        caller_name="load_era",
         return_X_y=return_X_y,
         as_frame=as_frame,
-        caller_name="load_era",
     )
 
 
@@ -187,7 +99,7 @@ def load_esl(*, return_X_y=False, as_frame=False):
 
     Four ordinal psychometric scores assigned to industrial-job candidates
     by expert psychologists; the target is an overall fitness rating on a
-    1-9 scale (9 ordered classes).
+    1-9 scale (9 ordered classes) [1]_.
 
     =================   ==============
     Classes                          9
@@ -216,34 +128,25 @@ def load_esl(*, return_X_y=False, as_frame=False):
     (data, target) : tuple if ``return_X_y`` is True
         A tuple of two ndarrays; see :func:`load_era` for details.
 
-    Examples
-    --------
-    >>> from skordinal.datasets import load_esl
-    >>> load_esl().data.shape
-    (488, 4)
-
     References
     ----------
     .. [1] A. Ben-David, "Automatic generation of symbolic multiattribute
            ordinal knowledge-based DSSs: methodology and applications",
            Decision Sciences, vol. 23, no. 6, pp. 1357-1372, 1992.
 
+    Examples
+    --------
+    >>> from skordinal.datasets import load_esl
+    >>> load_esl().data.shape
+    (488, 4)
+
     """
-    filename = "esl.csv"
-    data, target, target_names, descr = _load_csv_data(
-        filename, descr_file_name="esl.rst"
-    )
-    feature_names = [f"in{i + 1}" for i in range(4)]
-    return _bundle(
-        data,
-        target,
-        target_names,
-        descr,
-        feature_names,
-        filename,
+    return _load_bundled(
+        "esl",
+        [f"in{i + 1}" for i in range(4)],
+        caller_name="load_esl",
         return_X_y=return_X_y,
         as_frame=as_frame,
-        caller_name="load_esl",
     )
 
 
@@ -256,7 +159,7 @@ def load_lev(*, return_X_y=False, as_frame=False):
 
     Four ordinal student-rating attributes collected in anonymous university
     course evaluations; the target is an overall lecturer rating on a
-    1-5 scale (5 ordered classes).
+    1-5 scale (5 ordered classes) [1]_.
 
     =================   ==============
     Classes                          5
@@ -285,34 +188,25 @@ def load_lev(*, return_X_y=False, as_frame=False):
     (data, target) : tuple if ``return_X_y`` is True
         A tuple of two ndarrays; see :func:`load_era` for details.
 
-    Examples
-    --------
-    >>> from skordinal.datasets import load_lev
-    >>> load_lev().data.shape
-    (1000, 4)
-
     References
     ----------
     .. [1] A. Ben-David, "Automatic generation of symbolic multiattribute
            ordinal knowledge-based DSSs: methodology and applications",
            Decision Sciences, vol. 23, no. 6, pp. 1357-1372, 1992.
 
+    Examples
+    --------
+    >>> from skordinal.datasets import load_lev
+    >>> load_lev().data.shape
+    (1000, 4)
+
     """
-    filename = "lev.csv"
-    data, target, target_names, descr = _load_csv_data(
-        filename, descr_file_name="lev.rst"
-    )
-    feature_names = [f"in{i + 1}" for i in range(4)]
-    return _bundle(
-        data,
-        target,
-        target_names,
-        descr,
-        feature_names,
-        filename,
+    return _load_bundled(
+        "lev",
+        [f"in{i + 1}" for i in range(4)],
+        caller_name="load_lev",
         return_X_y=return_X_y,
         as_frame=as_frame,
-        caller_name="load_lev",
     )
 
 
@@ -325,7 +219,7 @@ def load_swd(*, return_X_y=False, as_frame=False):
 
     Ten ordinal risk-assessment attributes filled in by qualified social
     workers for child-safety cases; the target is the ordinal risk level
-    used in family-court decisions, on a 1-4 scale (4 ordered classes).
+    used in family-court decisions, on a 1-4 scale (4 ordered classes) [1]_.
 
     =================   ==============
     Classes                          4
@@ -354,34 +248,25 @@ def load_swd(*, return_X_y=False, as_frame=False):
     (data, target) : tuple if ``return_X_y`` is True
         A tuple of two ndarrays; see :func:`load_era` for details.
 
-    Examples
-    --------
-    >>> from skordinal.datasets import load_swd
-    >>> load_swd().data.shape
-    (1000, 10)
-
     References
     ----------
     .. [1] A. Ben-David, "Automatic generation of symbolic multiattribute
            ordinal knowledge-based DSSs: methodology and applications",
            Decision Sciences, vol. 23, no. 6, pp. 1357-1372, 1992.
 
+    Examples
+    --------
+    >>> from skordinal.datasets import load_swd
+    >>> load_swd().data.shape
+    (1000, 10)
+
     """
-    filename = "swd.csv"
-    data, target, target_names, descr = _load_csv_data(
-        filename, descr_file_name="swd.rst"
-    )
-    feature_names = [f"in{i + 1}" for i in range(10)]
-    return _bundle(
-        data,
-        target,
-        target_names,
-        descr,
-        feature_names,
-        filename,
+    return _load_bundled(
+        "swd",
+        [f"in{i + 1}" for i in range(10)],
+        caller_name="load_swd",
         return_X_y=return_X_y,
         as_frame=as_frame,
-        caller_name="load_swd",
     )
 
 
@@ -392,9 +277,9 @@ def load_swd(*, return_X_y=False, as_frame=False):
 def load_balance_scale(*, return_X_y=False, as_frame=False):
     """Load and return the Balance Scale dataset (ordinal classification).
 
-    A synthetic dataset modelling Piaget-style balance-scale experiments.
-    Each sample describes the weight and distance of objects placed on the
-    left and right pans; the ordinal target indicates which way the scale
+    A synthetic dataset modelling Piaget-style balance-scale experiments
+    [1]_. Each sample describes the weight and distance of objects placed on
+    the left and right pans; the ordinal target indicates which way the scale
     tips: ``L`` (left), ``B`` (balanced), ``R`` (right).
 
     =================   ==============
@@ -426,6 +311,11 @@ def load_balance_scale(*, return_X_y=False, as_frame=False):
     (data, target) : tuple if ``return_X_y`` is True
         A tuple of two ndarrays; see :func:`load_era` for details.
 
+    References
+    ----------
+    .. [1] R. S. Siegler, "Three aspects of cognitive development",
+           Cognitive Psychology, vol. 8, pp. 481-520, 1976.
+
     Examples
     --------
     >>> from skordinal.datasets import load_balance_scale
@@ -435,30 +325,11 @@ def load_balance_scale(*, return_X_y=False, as_frame=False):
     >>> bunch.target_names.tolist()
     ['L', 'B', 'R']
 
-    References
-    ----------
-    .. [1] R. S. Siegler, "Three aspects of cognitive development",
-           Cognitive Psychology, vol. 8, pp. 481-520, 1976.
-
     """
-    filename = "balance_scale.csv"
-    data, target, target_names, descr = _load_csv_data(
-        filename, descr_file_name="balance_scale.rst"
-    )
-    feature_names = [
-        "left_weight",
-        "left_distance",
-        "right_weight",
-        "right_distance",
-    ]
-    return _bundle(
-        data,
-        target,
-        target_names,
-        descr,
-        feature_names,
-        filename,
+    return _load_bundled(
+        "balance_scale",
+        ["left_weight", "left_distance", "right_weight", "right_distance"],
+        caller_name="load_balance_scale",
         return_X_y=return_X_y,
         as_frame=as_frame,
-        caller_name="load_balance_scale",
     )
