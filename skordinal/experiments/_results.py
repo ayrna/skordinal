@@ -205,9 +205,10 @@ class Results:
     file's ``Target`` and ``Prediction`` columns.
     ``hyperparameter_configuration.csv`` records the best parameters per
     seed with the ``clf__`` pipeline prefix stripped; its ``Seed`` column
-    always holds the resample identifier. The root-level
-    ``train_summary.csv`` and ``test_summary.csv`` files are written by
-    ``save_summary`` and are absent until it is called.
+    always holds the resample identifier. ``report.csv`` is indexed by
+    ``resample_id``, in numeric order. The root-level ``train_summary.csv``
+    and ``test_summary.csv`` files are written by ``save_summary`` and are
+    absent until it is called.
 
     """
 
@@ -354,19 +355,24 @@ class Results:
             # Remove the commit marker entirely so exists() reports False
             csv_path.unlink()
             return
-        _atomic_write(csv_path, df.to_csv())
+        _atomic_write(csv_path, df.to_csv(index_label="resample_id"))
 
     def _append_report_row(self, result: ExperimentResult, base_dir: Path) -> None:
         """Append one metrics row to report.csv."""
         row: dict[str, Any] = {**result.train_metrics, **result.test_metrics}
 
         csv_path = base_dir / "report.csv"
-        df = pd.DataFrame([row], index=pd.Index([result.resample_id], dtype=str))
+        df = pd.DataFrame([row], index=pd.Index([str(result.resample_id)]))
         if csv_path.is_file():
             existing = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
-        _atomic_write(csv_path, df.to_csv())
+        try:
+            df = df.sort_index(key=lambda index: index.map(int))
+        except ValueError:
+            # Fall back to lexicographic order for non-integer ids
+            df = df.sort_index()
+        _atomic_write(csv_path, df.to_csv(index_label="resample_id"))
 
     def _upsert_hyperparameters(self, result: ExperimentResult, base_dir: Path) -> None:
         """Upsert one seed's row in the hyperparameter configuration CSV."""
@@ -417,7 +423,7 @@ class Results:
         self,
         classifier_name: str,
         dataset_name: str,
-        resample_id: str,
+        resample_id: int | str,
     ) -> bool:
         """Return whether a partition result has already been saved.
 
@@ -429,7 +435,7 @@ class Results:
         dataset_name : str
             Name of the dataset.
 
-        resample_id : str
+        resample_id : int or str
             Partition identifier (the CSV row index).
 
         Returns
@@ -444,19 +450,21 @@ class Results:
             If ``classifier_name`` or ``dataset_name`` is not a string.
 
         ValueError
-            If ``classifier_name`` or ``dataset_name`` is empty, a dot
-            segment, or contains a path separator.
+            If ``classifier_name``, ``dataset_name`` or a non-int
+            ``resample_id`` is empty, a dot segment, or contains a path
+            separator.
 
         Examples
         --------
         >>> from skordinal.experiments import Results
         >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
-        >>> results.exists("SVC", "toy", "0")  # doctest: +SKIP
+        >>> results.exists("SVC", "toy", 0)  # doctest: +SKIP
         False
 
         """
+        _check_resample_id(resample_id)
         csv_path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not csv_path.is_file():
             return False
         df = pd.read_csv(csv_path, index_col=0)
-        return resample_id in df.index.astype(str)
+        return str(resample_id) in df.index.astype(str)

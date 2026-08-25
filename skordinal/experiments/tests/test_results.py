@@ -576,6 +576,68 @@ def test_exists(tmp_path):
     )
     assert r.exists("SVC", "toy", "0") is True
     assert r.exists("SVC", "toy", "1") is False
+    # An int id must match the stringified CSV index just like its str form
+    assert r.exists("SVC", "toy", 0) is True
+    assert r.exists("SVC", "toy", 1) is False
+
+
+def test_exists_rejects_traversal_resample_id(tmp_path):
+    """exists() raises on a traversal-capable resample_id."""
+    with pytest.raises(ValueError, match="resample_id"):
+        Results(tmp_path).exists("SVC", "toy", "../../evil")
+
+
+def test_report_csv_index_label_and_numeric_order(tmp_path):
+    """report.csv's index column is labelled and rows sort numerically."""
+    r = Results(tmp_path)
+    for partition in (10, 2, 1):
+        r.save(
+            _make_result(
+                partition=partition,
+                dataset="ds",
+                configuration="clf",
+                best_params={},
+                train_metrics={"mae_train": 0.1},
+                test_metrics={"mae_test": 0.1},
+                train_predicted_y=np.array([1]),
+                test_predicted_y=np.array([1]),
+            ),
+            save_model=False,
+        )
+    csv_path = tmp_path / "clf" / "ds" / "report.csv"
+    assert csv_path.read_text().splitlines()[0].split(",")[0] == "resample_id"
+    df = pd.read_csv(csv_path, index_col=0)
+    assert list(df.index) == [1, 2, 10]
+
+
+def test_report_row_sort_preserves_pre_existing_duplicates(tmp_path):
+    """Sorting a report that already holds a duplicate row must not multiply it."""
+    _make_pair_csv(
+        tmp_path,
+        "clf",
+        "ds",
+        [{"mae_test": 0.1}, {"mae_test": 0.2}],
+    )
+    csv_path = tmp_path / "clf" / "ds" / "report.csv"
+    # Rewrite the index so row "1" is duplicated, as an older writer could leave it
+    df = pd.read_csv(csv_path, index_col=0)
+    df.index = pd.Index(["1", "1"])
+    df.to_csv(csv_path)
+
+    Results(tmp_path).save(
+        _make_result(
+            partition=2,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.3},
+            test_metrics={"mae_test": 0.3},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    assert pd.read_csv(csv_path, index_col=0).shape[0] == 3
 
 
 def test_save_removes_stale_artefacts(tmp_path):
