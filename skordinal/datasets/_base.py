@@ -125,6 +125,11 @@ def _read_csv_any(path):
     return X, y, feature_names, header_class_names
 
 
+def _bundled_csv_path(stem):
+    """Return the filesystem path of a bundled dataset CSV."""
+    return Path(str(resources.files(DATA_MODULE))) / f"{stem}.csv"
+
+
 def _resolve_csv_path(name, data_home=None):
     """Resolve a dataset name or path to its CSV file path."""
     name_str = str(name)
@@ -133,9 +138,7 @@ def _resolve_csv_path(name, data_home=None):
         return Path(data_home) / fname, None
     if Path(name_str).is_file():
         return Path(name_str), None
-    stem = name_str.removesuffix(".csv")
-    bundled_dir = Path(str(resources.files(DATA_MODULE)))
-    return bundled_dir / f"{stem}.csv", DATA_MODULE
+    return _bundled_csv_path(name_str.removesuffix(".csv")), DATA_MODULE
 
 
 def _load_descr(csv_path, data_module):
@@ -329,6 +332,66 @@ def clear_data_home(data_home=None) -> None:
     shutil.rmtree(get_data_home(data_home))
 
 
+def _bunch_from_csv(
+    path, data_module, *, caller_name, feature_names=None, return_X_y, as_frame
+):
+    """Build the loader return value from a resolved CSV path."""
+    if not path.exists():
+        raise FileNotFoundError(f"Dataset file not found: {path}")
+    data, target, csv_feature_names, header_class_names = _read_csv_any(path)
+    # A caller-supplied list overrides the generated x0..xd-1 names, since
+    # the metadata header carries no column names
+    if feature_names is None:
+        feature_names = csv_feature_names
+    elif len(feature_names) != data.shape[1]:
+        raise ValueError(
+            f"{caller_name}: {len(feature_names)} feature name(s) declared, "
+            f"but {path.name} has {data.shape[1]} feature column(s)."
+        )
+    target_names = _resolve_target_names(header_class_names, target)
+    n_classes = len(target_names)
+
+    descr = _load_descr(path, data_module)
+    if descr is None:
+        descr = (
+            f"Dataset '{path.stem}': {data.shape[0]} samples, "
+            f"{data.shape[1]} features, {n_classes} classes."
+        )
+
+    frame = None
+    if as_frame:
+        frame, data, target = _convert_data_dataframe(
+            caller_name, data, target, feature_names, ["target"]
+        )
+    if return_X_y:
+        return data, target
+    return Bunch(
+        data=data,
+        target=target,
+        frame=frame,
+        feature_names=feature_names,
+        target_names=target_names,
+        n_classes=n_classes,
+        DESCR=descr,
+        filename=path.name,
+        data_module=data_module,
+    )
+
+
+def _load_bundled(stem, feature_names, *, return_X_y, as_frame):
+    """Load a bundled dataset CSV under a fixed set of column names."""
+    # Resolve against the bundled data module only, so a same-named file in
+    # the working directory cannot shadow a shipped dataset
+    return _bunch_from_csv(
+        _bundled_csv_path(stem),
+        DATA_MODULE,
+        caller_name=f"load_{stem}",
+        feature_names=feature_names,
+        return_X_y=return_X_y,
+        as_frame=as_frame,
+    )
+
+
 @validate_params(
     {
         "name": [str, os.PathLike],
@@ -425,38 +488,12 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     (1000, 4)
     """
     path, data_module_value = _resolve_csv_path(name, data_home)
-    if not path.exists():
-        raise FileNotFoundError(f"Dataset file not found: {path}")
-
-    data, target, feature_names, header_class_names = _read_csv_any(path)
-    target_names = _resolve_target_names(header_class_names, target)
-    n_classes = len(target_names)
-
-    descr = _load_descr(path, data_module_value)
-    if descr is None:
-        descr = (
-            f"Dataset '{path.stem}': {data.shape[0]} samples, "
-            f"{data.shape[1]} features, {n_classes} classes."
-        )
-
-    filename = path.name
-    frame = None
-    if as_frame:
-        frame, data, target = _convert_data_dataframe(
-            "load_dataset", data, target, feature_names, ["target"]
-        )
-    if return_X_y:
-        return data, target
-    return Bunch(
-        data=data,
-        target=target,
-        frame=frame,
-        feature_names=feature_names,
-        target_names=target_names,
-        n_classes=n_classes,
-        DESCR=descr,
-        filename=filename,
-        data_module=data_module_value,
+    return _bunch_from_csv(
+        path,
+        data_module_value,
+        caller_name="load_dataset",
+        return_X_y=return_X_y,
+        as_frame=as_frame,
     )
 
 

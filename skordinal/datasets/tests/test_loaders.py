@@ -6,6 +6,7 @@ from sklearn.utils import Bunch
 
 from skordinal.datasets import (
     load_balance_scale,
+    load_dataset,
     load_era,
     load_esl,
     load_lev,
@@ -31,12 +32,14 @@ def test_loader_returns_bunch(loader):
         "target",
         "feature_names",
         "target_names",
+        "n_classes",
         "frame",
         "DESCR",
         "filename",
         "data_module",
     ):
         assert key in bunch
+    assert bunch.n_classes == len(bunch.target_names)
 
 
 @pytest.mark.parametrize("loader", ALL_LOADERS)
@@ -67,10 +70,11 @@ def test_loader_descr_nonempty(loader):
 
 
 @pytest.mark.parametrize("loader", ALL_LOADERS)
-def test_loader_data_dtype_float(loader):
-    """Feature matrix has floating-point dtype."""
+def test_loader_dtypes(loader):
+    """Feature matrix is float64 and the target is int32."""
     bunch = loader()
-    assert np.issubdtype(bunch.data.dtype, np.floating)
+    assert bunch.data.dtype == np.float64
+    assert bunch.target.dtype == np.int32
 
 
 @pytest.mark.parametrize("loader", ALL_LOADERS)
@@ -147,3 +151,29 @@ def test_load_balance_scale_feature_names():
         "right_weight",
         "right_distance",
     ]
+
+
+@pytest.mark.parametrize("loader", ALL_LOADERS)
+def test_loader_matches_load_dataset(loader):
+    """A bundled loader agrees with ``load_dataset`` on every shared field."""
+    stem = loader.__name__.removeprefix("load_")
+    wrapper = loader()
+    generic = load_dataset(stem)
+    np.testing.assert_array_equal(wrapper.data, generic.data)
+    np.testing.assert_array_equal(wrapper.target, generic.target)
+    np.testing.assert_array_equal(wrapper.target_names, generic.target_names)
+    assert wrapper.n_classes == generic.n_classes
+    assert wrapper.DESCR == generic.DESCR
+    assert wrapper.filename == generic.filename
+    assert wrapper.data_module == generic.data_module
+    # feature_names is the one field the wrapper overrides, since the metadata
+    # header carries no column names and load_dataset generates x0..xd-1
+    assert wrapper.feature_names != generic.feature_names
+
+
+def test_loader_ignores_cwd_file(tmp_path, monkeypatch):
+    """A same-named file in the working directory cannot shadow bundled data."""
+    (tmp_path / "era").write_text("junk\n", encoding="utf-8")
+    (tmp_path / "era.csv").write_text("1,1,a\n0.0,0\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert load_era().data.shape == (1000, 4)

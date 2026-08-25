@@ -16,7 +16,7 @@ from skordinal.datasets import (
     load_dataset,
     load_partitions,
 )
-from skordinal.datasets._base import _resolve_target_names
+from skordinal.datasets._base import _load_bundled, _resolve_target_names
 
 _NAMED_CSV = """\
 x_0,x_1,y
@@ -628,3 +628,9 @@ def test_resolve_target_names(header_class_names, target, expected):
     result = _resolve_target_names(header_class_names, target)
     assert list(result) == expected
     assert result.dtype.kind == "U"
+
+
+def test_load_bundled_rejects_feature_name_count_mismatch():
+    """Declaring the wrong number of column names for a bundled CSV raises."""
+    with pytest.raises(ValueError, match="feature name"):
+        _load_bundled("era", ["in1", "in2"], return_X_y=False, as_frame=False)
