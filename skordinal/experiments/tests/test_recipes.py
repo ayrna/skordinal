@@ -67,6 +67,7 @@ def test_validate_recipe_all_optional_keys_accepted():
         "n_jobs": 1,
         "input_preprocessing": "std",
         "random_state": 0,
+        "overwrite": True,
         "verbose": False,
     }
     validate_recipe(full)
