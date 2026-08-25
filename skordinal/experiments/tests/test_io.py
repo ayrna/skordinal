@@ -13,6 +13,7 @@ from skordinal.experiments._io import (
     _atomic_dump,
     _atomic_write,
     _check_path_component,
+    _check_resample_id,
     _ensure_parent,
     _format_proba_column,
     _parse_proba_column,
@@ -121,6 +122,19 @@ def test_check_path_component_rejects_non_str(bad):
     """_check_path_component rejects a non-string component."""
     with pytest.raises(TypeError):
         _check_path_component(bad, "classifier_name")
+
+
+@pytest.mark.parametrize("good", [0, -1, np.int64(3), "0"])
+def test_check_resample_id_accepts_int_like(good):
+    """_check_resample_id passes through ints, numpy ints and int-like strings."""
+    _check_resample_id(good)
+
+
+@pytest.mark.parametrize("bad", ["../../../../tmp/evil", "..", "", "a/b"])
+def test_check_resample_id_rejects_traversal(bad):
+    """_check_resample_id rejects a non-int id that fails path validation."""
+    with pytest.raises(ValueError, match="resample_id"):
+        _check_resample_id(bad)
 
 
 def test_sweep_orphaned_temp_files_ignores_missing_dir(tmp_path):

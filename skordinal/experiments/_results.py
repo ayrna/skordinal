@@ -17,6 +17,7 @@ from ._io import (
     _atomic_dump,
     _atomic_write,
     _check_path_component,
+    _check_resample_id,
     _format_proba_column,
     _sweep_orphaned_temp_files,
 )
@@ -242,15 +243,15 @@ class Results:
             a string.
 
         ValueError
-            If ``result.classifier_name`` or ``result.dataset_name`` is
-            empty, a dot segment, or contains a path separator, if
-            ``result`` lacks the true labels required for the ``Target``
-            column (``train_true_y``, or ``test_true_y`` when test
-            predictions are present), if a true or predicted label is not
-            one of ``best_model.classes_``, or if a probability matrix does
-            not hold one row per sample and one column per class. Files
-            already written for a preceding split are left in place;
-            nothing else is recorded for the partition.
+            If ``result.classifier_name``, ``result.dataset_name`` or a
+            non-int ``result.resample_id`` is empty, a dot segment, or
+            contains a path separator, if ``result`` lacks the true labels
+            required for the ``Target`` column (``train_true_y``, or
+            ``test_true_y`` when test predictions are present), if a true
+            or predicted label is not one of ``best_model.classes_``, or if
+            a probability matrix does not hold one row per sample and one
+            column per class. Files already written for a preceding split
+            are left in place; nothing else is recorded for the partition.
 
         OSError
             If a stale artefact cannot be removed or the folder cannot be
@@ -273,6 +274,7 @@ class Results:
                 "'result.test_true_y' is required to write the 'Target' "
                 "column of the test predictions file."
             )
+        _check_resample_id(result.resample_id)
 
         base_dir = self._pair_dir(result.classifier_name, result.dataset_name)
         seed_dir, model_path = self._resample_paths(base_dir, result.resample_id)

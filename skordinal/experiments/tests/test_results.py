@@ -621,19 +621,29 @@ def test_save_removes_stale_artefacts(tmp_path):
     assert df.shape[0] == 1
 
 
-def test_save_rejects_traversal_before_writing(tmp_path):
-    """save raises on a traversal component and writes nothing."""
+@pytest.mark.parametrize(
+    "overrides, match",
+    [
+        ({"dataset": ".."}, "dataset_name"),
+        ({"partition": "../../evil"}, "resample_id"),
+    ],
+)
+def test_save_rejects_traversal_before_writing(tmp_path, overrides, match):
+    """save raises on a traversal name or resample id and writes nothing."""
     result = _make_result(
-        partition=0,
-        dataset="..",
-        configuration="clf",
-        best_params={},
-        train_metrics={"mae_train": 0.1},
-        test_metrics={"mae_test": 0.1},
-        train_predicted_y=np.array([1]),
-        test_predicted_y=np.array([1]),
+        **{
+            "partition": 0,
+            "dataset": "ds",
+            "configuration": "clf",
+            "best_params": {},
+            "train_metrics": {"mae_train": 0.1},
+            "test_metrics": {"mae_test": 0.1},
+            "train_predicted_y": np.array([1]),
+            "test_predicted_y": np.array([1]),
+            **overrides,
+        }
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=match):
         Results(tmp_path).save(result, save_model=False)
     assert list(tmp_path.iterdir()) == []
 

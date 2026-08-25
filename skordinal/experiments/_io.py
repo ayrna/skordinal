@@ -24,6 +24,13 @@ def _check_path_component(name: Any, what: str) -> None:
         raise ValueError(f"{what} must not contain a path separator; got {name!r}.")
 
 
+def _check_resample_id(resample_id: Any) -> None:
+    """Reject a resample id that is neither int-like nor a plain path component."""
+    if isinstance(resample_id, (int, np.integer)):
+        return
+    _check_path_component(str(resample_id), "resample_id")
+
+
 def _ensure_parent(path: Path) -> None:
     """Create path's parent directory, wrapping OSError with the failing path."""
     try:
