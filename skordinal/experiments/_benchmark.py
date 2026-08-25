@@ -84,6 +84,10 @@ class Benchmark:
         ``load_partitions`` call in ``run`` shares the same partitioning
         scheme.
 
+    overwrite : bool, default=False
+        If ``False``, resamples already saved are skipped, making runs
+        resumable. ``True`` recomputes every resample.
+
     verbose : bool, default=True
         If ``True``, progress messages are printed to stdout.
 
@@ -123,6 +127,7 @@ class Benchmark:
         n_jobs: int = 1,
         input_preprocessing: str | None = None,
         random_state: int | None = 0,
+        overwrite: bool = False,
         verbose: bool = True,
     ) -> None:
         if not models:
@@ -168,6 +173,7 @@ class Benchmark:
         if not isinstance(random_state, Integral):
             random_state = int(check_random_state(random_state).randint(2**31 - 1))
         self.random_state = random_state
+        self.overwrite = overwrite
         self.verbose = verbose
 
     @classmethod
@@ -225,7 +231,8 @@ class Benchmark:
         optimal values among the hyper-parameters to compare from.
 
         Uses the built model to get train and test metrics, storing all the
-        information into a Results object.
+        information into a Results object. Resamples already saved are
+        skipped unless ``overwrite`` is ``True``.
 
         Raises
         ------
@@ -269,6 +276,13 @@ class Benchmark:
                     resamples=self.resamples,
                     random_state=self.random_state,
                 ):
+                    if not self.overwrite and self._results.exists(
+                        label, dataset_name, b.resample_id
+                    ):
+                        if self.verbose:
+                            print("  Skipping resample", b.resample_id)
+                        continue
+
                     if self.verbose:
                         print("  Running resample", b.resample_id)
 

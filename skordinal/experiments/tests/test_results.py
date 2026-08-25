@@ -576,21 +576,136 @@ def test_exists(tmp_path):
     )
     assert r.exists("SVC", "toy", "0") is True
     assert r.exists("SVC", "toy", "1") is False
+    # An int id must match the stringified CSV index just like its str form
+    assert r.exists("SVC", "toy", 0) is True
+    assert r.exists("SVC", "toy", 1) is False
 
 
-def test_save_rejects_traversal_before_writing(tmp_path):
-    """save raises on a traversal component and writes nothing."""
-    result = _make_result(
-        partition=0,
-        dataset="..",
-        configuration="clf",
-        best_params={},
-        train_metrics={"mae_train": 0.1},
-        test_metrics={"mae_test": 0.1},
-        train_predicted_y=np.array([1]),
-        test_predicted_y=np.array([1]),
+def test_exists_rejects_traversal_resample_id(tmp_path):
+    """exists() raises on a traversal-capable resample_id."""
+    with pytest.raises(ValueError, match="resample_id"):
+        Results(tmp_path).exists("SVC", "toy", "../../evil")
+
+
+def test_report_csv_index_label_and_numeric_order(tmp_path):
+    """report.csv's index column is labelled and rows sort numerically."""
+    r = Results(tmp_path)
+    for partition in (10, 2, 1):
+        r.save(
+            _make_result(
+                partition=partition,
+                dataset="ds",
+                configuration="clf",
+                best_params={},
+                train_metrics={"mae_train": 0.1},
+                test_metrics={"mae_test": 0.1},
+                train_predicted_y=np.array([1]),
+                test_predicted_y=np.array([1]),
+            ),
+            save_model=False,
+        )
+    csv_path = tmp_path / "clf" / "ds" / "report.csv"
+    assert csv_path.read_text().splitlines()[0].split(",")[0] == "resample_id"
+    df = pd.read_csv(csv_path, index_col=0)
+    assert list(df.index) == [1, 2, 10]
+
+
+def test_report_row_sort_preserves_pre_existing_duplicates(tmp_path):
+    """Sorting a report that already holds a duplicate row must not multiply it."""
+    _make_pair_csv(
+        tmp_path,
+        "clf",
+        "ds",
+        [{"mae_test": 0.1}, {"mae_test": 0.2}],
     )
-    with pytest.raises(ValueError):
+    csv_path = tmp_path / "clf" / "ds" / "report.csv"
+    # Rewrite the index so row "1" is duplicated, as an older writer could leave it
+    df = pd.read_csv(csv_path, index_col=0)
+    df.index = pd.Index(["1", "1"])
+    df.to_csv(csv_path)
+
+    Results(tmp_path).save(
+        _make_result(
+            partition=2,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.3},
+            test_metrics={"mae_test": 0.3},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=False,
+    )
+    assert pd.read_csv(csv_path, index_col=0).shape[0] == 3
+
+
+def test_save_removes_stale_artefacts(tmp_path):
+    """Re-saving without a test split drops the prior run's test files and model."""
+    r = Results(tmp_path)
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=True,
+    )
+    seed_dir = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
+    model_path = tmp_path / "clf" / "ds" / "models" / "0.joblib"
+    assert (seed_dir / "test_predictions.csv").is_file()
+    assert (seed_dir / "test_confusion_matrix.txt").is_file()
+    assert model_path.is_file()
+
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.2},
+            test_metrics={},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=None,
+        ),
+        save_model=False,
+    )
+    assert not (seed_dir / "test_predictions.csv").exists()
+    assert not (seed_dir / "test_confusion_matrix.txt").exists()
+    assert not model_path.exists()
+    assert (seed_dir / "train_predictions.csv").is_file()
+    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
+    assert df.shape[0] == 1
+
+
+@pytest.mark.parametrize(
+    "overrides, match",
+    [
+        ({"dataset": ".."}, "dataset_name"),
+        ({"partition": "../../evil"}, "resample_id"),
+    ],
+)
+def test_save_rejects_traversal_before_writing(tmp_path, overrides, match):
+    """save raises on a traversal name or resample id and writes nothing."""
+    result = _make_result(
+        **{
+            "partition": 0,
+            "dataset": "ds",
+            "configuration": "clf",
+            "best_params": {},
+            "train_metrics": {"mae_train": 0.1},
+            "test_metrics": {"mae_test": 0.1},
+            "train_predicted_y": np.array([1]),
+            "test_predicted_y": np.array([1]),
+            **overrides,
+        }
+    )
+    with pytest.raises(ValueError, match=match):
         Results(tmp_path).save(result, save_model=False)
     assert list(tmp_path.iterdir()) == []
 
@@ -734,3 +849,30 @@ def test_stale_report_row_uncommitted_on_crash_resave(tmp_path, monkeypatch):
     monkeypatch.undo()
     r.save(_make_result(**kwargs), save_model=False)
     assert r.exists("clf", "ds", "0") is True
+
+
+def test_resave_crash_before_uncommit_leaves_prior_run_intact(tmp_path, monkeypatch):
+    """A re-save that crashes at the uncommit deletes nothing from the prior run."""
+    r = Results(tmp_path)
+    kwargs = dict(
+        partition=0,
+        dataset="ds",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    r.save(_make_result(**kwargs), save_model=False)
+    monkeypatch.setattr(
+        Results,
+        "_uncommit_report_row",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
+    )
+    with pytest.raises(RuntimeError):
+        r.save(_make_result(**kwargs), save_model=False)
+    # The committed row must never outlive the files it describes
+    assert r.exists("clf", "ds", "0") is True
+    seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
+    assert (seed / "train_predictions.csv").is_file()

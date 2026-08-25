@@ -9,6 +9,7 @@ import pytest
 from sklearn.svm import SVC
 
 from skordinal.experiments import Benchmark, ModelConfig
+from skordinal.experiments._experiment import Experiment
 
 _SVC_CONF: dict[str, ModelConfig] = {"SVM": ModelConfig(SVC(), param_grid={"C": [1]})}
 _MINIMAL_CONF: dict[str, ModelConfig] = {"cfg": ModelConfig(SVC())}
@@ -264,6 +265,34 @@ def test_run_and_summarize_bundled_dataset(tmp_path):
     assert "SVM" in summary["classifier"].values
     assert "mean_absolute_error_test_mean" in summary.columns
     assert "n_completed" in summary.columns
+
+
+@pytest.mark.parametrize("overwrite, reruns", [(False, 0), (True, 3)])
+def test_run_overwrite_controls_rerun(tmp_path, monkeypatch, overwrite, reruns):
+    """A rerun recomputes already-saved resamples only when overwrite is True."""
+    kwargs = dict(
+        models=_SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path / "runs",
+        resamples=3,
+        cv=2,
+        verbose=False,
+        random_state=0,
+        overwrite=overwrite,
+    )
+    Benchmark(**kwargs).run()
+
+    calls = []
+    original = Experiment.run
+
+    def _counting_run(self, *args, **kw):
+        calls.append(1)
+        return original(self, *args, **kw)
+
+    monkeypatch.setattr(Experiment, "run", _counting_run)
+    Benchmark(**kwargs).run()
+    assert len(calls) == reruns
 
 
 def test_run_resamples_count_matches_requested(tmp_path):

@@ -21,6 +21,7 @@ _OPTIONAL_KEYS: frozenset[str] = frozenset(
         "n_jobs",
         "input_preprocessing",
         "random_state",
+        "overwrite",
         "verbose",
     }
 )

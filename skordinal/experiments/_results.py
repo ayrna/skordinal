@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ from ._io import (
     _atomic_dump,
     _atomic_write,
     _check_path_component,
+    _check_resample_id,
     _format_proba_column,
     _sweep_orphaned_temp_files,
 )
@@ -203,9 +205,10 @@ class Results:
     file's ``Target`` and ``Prediction`` columns.
     ``hyperparameter_configuration.csv`` records the best parameters per
     seed with the ``clf__`` pipeline prefix stripped; its ``Seed`` column
-    always holds the resample identifier. The root-level
-    ``train_summary.csv`` and ``test_summary.csv`` files are written by
-    ``save_summary`` and are absent until it is called.
+    always holds the resample identifier. ``report.csv`` is indexed by
+    ``resample_id``, in numeric order. The root-level ``train_summary.csv``
+    and ``test_summary.csv`` files are written by ``save_summary`` and are
+    absent until it is called.
 
     """
 
@@ -223,6 +226,8 @@ class Results:
         The report row is written last and acts as the commit marker read
         by ``exists``: a save interrupted at any earlier point leaves no
         row, so a rerun detects the partition as missing and rewrites it.
+        Re-saving a partition first deletes its previous seed directory and
+        model artefact, so no stale file outlives the row describing it.
 
         Parameters
         ----------
@@ -239,18 +244,19 @@ class Results:
             a string.
 
         ValueError
-            If ``result.classifier_name`` or ``result.dataset_name`` is
-            empty, a dot segment, or contains a path separator, if
-            ``result`` lacks the true labels required for the ``Target``
-            column (``train_true_y``, or ``test_true_y`` when test
-            predictions are present), if a true or predicted label is not
-            one of ``best_model.classes_``, or if a probability matrix does
-            not hold one row per sample and one column per class. Files
-            already written for a preceding split are left in place;
-            nothing else is recorded for the partition.
+            If ``result.classifier_name``, ``result.dataset_name`` or a
+            non-int ``result.resample_id`` is empty, a dot segment, or
+            contains a path separator, if ``result`` lacks the true labels
+            required for the ``Target`` column (``train_true_y``, or
+            ``test_true_y`` when test predictions are present), if a true
+            or predicted label is not one of ``best_model.classes_``, or if
+            a probability matrix does not hold one row per sample and one
+            column per class. Files already written for a preceding split
+            are left in place; nothing else is recorded for the partition.
 
         OSError
-            If the folder cannot be created.
+            If a stale artefact cannot be removed or the folder cannot be
+            created.
 
         Examples
         --------
@@ -269,18 +275,17 @@ class Results:
                 "'result.test_true_y' is required to write the 'Target' "
                 "column of the test predictions file."
             )
+        _check_resample_id(result.resample_id)
 
-        base_dir, models_dir, seed_dir = self._ensure_dirs(
-            result.classifier_name,
-            result.dataset_name,
-            result.resample_id,
-            save_model=save_model,
-        )
+        base_dir = self._pair_dir(result.classifier_name, result.dataset_name)
+        seed_dir, model_path = self._resample_paths(base_dir, result.resample_id)
         # Clear any temp file left by a prior crash before writing new ones
         _sweep_orphaned_temp_files(base_dir)
         # Drop this resample's committed row so a crash mid-write cannot
         # leave a report row describing predictions no longer on disk
         self._uncommit_report_row(base_dir, result.resample_id)
+        # Must run before the writes below recreate what it deletes
+        self._remove_stale_artefacts(base_dir, result.resample_id)
 
         classes = np.asarray(result.best_model.classes_)
         _write_split_files(
@@ -307,7 +312,7 @@ class Results:
             )
 
         if save_model:
-            _atomic_dump(models_dir / f"{result.resample_id}.joblib", result.best_model)
+            _atomic_dump(model_path, result.best_model)
 
         self._upsert_hyperparameters(result, base_dir)
         # Write the report row last: it is the commit marker for exists()
@@ -319,27 +324,22 @@ class Results:
         _check_path_component(dataset_name, "dataset_name")
         return self._experiment_folder / classifier_name / dataset_name
 
-    def _ensure_dirs(
-        self,
-        classifier_name: str,
-        dataset_name: str,
-        resample_id: int,
-        *,
-        save_model: bool,
-    ) -> tuple[Path, Path, Path]:
-        """Create required sub-directories and return their paths."""
-        base = self._pair_dir(classifier_name, dataset_name)
-        seed_dir = base / "predictions_by_seed" / f"seed_{resample_id}"
-        models_dir = base / "models"
+    def _resample_paths(self, base: Path, resample_id: int) -> tuple[Path, Path]:
+        """Return this resample's predictions directory and model artefact."""
+        return (
+            base / "predictions_by_seed" / f"seed_{resample_id}",
+            base / "models" / f"{resample_id}.joblib",
+        )
+
+    def _remove_stale_artefacts(self, base_dir: Path, resample_id: int) -> None:
+        """Delete this resample's seed directory and model from a prior run."""
+        seed_dir, model_path = self._resample_paths(base_dir, resample_id)
         try:
-            seed_dir.mkdir(parents=True, exist_ok=True)
-            if save_model:
-                models_dir.mkdir(exist_ok=True)
-        except OSError:
-            raise OSError(
-                f"Could not create folder {base} (or subfolders) to store results."
-            )
-        return base, models_dir, seed_dir
+            if seed_dir.is_dir():
+                shutil.rmtree(seed_dir)
+            model_path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise OSError(f"Could not remove stale results under {base_dir}.") from exc
 
     def _uncommit_report_row(self, base_dir: Path, resample_id: int) -> None:
         """Drop this resample's row from report.csv before rewriting it."""
@@ -355,19 +355,24 @@ class Results:
             # Remove the commit marker entirely so exists() reports False
             csv_path.unlink()
             return
-        _atomic_write(csv_path, df.to_csv())
+        _atomic_write(csv_path, df.to_csv(index_label="resample_id"))
 
     def _append_report_row(self, result: ExperimentResult, base_dir: Path) -> None:
         """Append one metrics row to report.csv."""
         row: dict[str, Any] = {**result.train_metrics, **result.test_metrics}
 
         csv_path = base_dir / "report.csv"
-        df = pd.DataFrame([row], index=pd.Index([result.resample_id], dtype=str))
+        df = pd.DataFrame([row], index=pd.Index([str(result.resample_id)]))
         if csv_path.is_file():
             existing = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
             existing.index = existing.index.astype(str)
             df = pd.concat([existing, df])
-        _atomic_write(csv_path, df.to_csv())
+        try:
+            df = df.sort_index(key=lambda index: index.map(int))
+        except ValueError:
+            # Fall back to lexicographic order for non-integer ids
+            df = df.sort_index()
+        _atomic_write(csv_path, df.to_csv(index_label="resample_id"))
 
     def _upsert_hyperparameters(self, result: ExperimentResult, base_dir: Path) -> None:
         """Upsert one seed's row in the hyperparameter configuration CSV."""
@@ -418,7 +423,7 @@ class Results:
         self,
         classifier_name: str,
         dataset_name: str,
-        resample_id: str,
+        resample_id: int | str,
     ) -> bool:
         """Return whether a partition result has already been saved.
 
@@ -430,7 +435,7 @@ class Results:
         dataset_name : str
             Name of the dataset.
 
-        resample_id : str
+        resample_id : int or str
             Partition identifier (the CSV row index).
 
         Returns
@@ -445,19 +450,21 @@ class Results:
             If ``classifier_name`` or ``dataset_name`` is not a string.
 
         ValueError
-            If ``classifier_name`` or ``dataset_name`` is empty, a dot
-            segment, or contains a path separator.
+            If ``classifier_name``, ``dataset_name`` or a non-int
+            ``resample_id`` is empty, a dot segment, or contains a path
+            separator.
 
         Examples
         --------
         >>> from skordinal.experiments import Results
         >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
-        >>> results.exists("SVC", "toy", "0")  # doctest: +SKIP
+        >>> results.exists("SVC", "toy", 0)  # doctest: +SKIP
         False
 
         """
+        _check_resample_id(resample_id)
         csv_path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not csv_path.is_file():
             return False
         df = pd.read_csv(csv_path, index_col=0)
-        return resample_id in df.index.astype(str)
+        return str(resample_id) in df.index.astype(str)
