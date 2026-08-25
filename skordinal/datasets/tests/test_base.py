@@ -584,10 +584,4 @@ def test_resolve_target_names(header_class_names, target, expected):
 def test_load_bundled_rejects_feature_name_count_mismatch():
     """Declaring the wrong number of column names for a bundled CSV raises."""
     with pytest.raises(ValueError, match="feature name"):
-        _load_bundled(
-            "era",
-            ["in1", "in2"],
-            caller_name="load_era",
-            return_X_y=False,
-            as_frame=False,
-        )
+        _load_bundled("era", ["in1", "in2"], return_X_y=False, as_frame=False)

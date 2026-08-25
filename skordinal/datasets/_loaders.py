@@ -84,7 +84,6 @@ def load_era(*, return_X_y=False, as_frame=False):
     return _load_bundled(
         "era",
         [f"in{i + 1}" for i in range(4)],
-        caller_name="load_era",
         return_X_y=return_X_y,
         as_frame=as_frame,
     )
@@ -144,7 +143,6 @@ def load_esl(*, return_X_y=False, as_frame=False):
     return _load_bundled(
         "esl",
         [f"in{i + 1}" for i in range(4)],
-        caller_name="load_esl",
         return_X_y=return_X_y,
         as_frame=as_frame,
     )
@@ -204,7 +202,6 @@ def load_lev(*, return_X_y=False, as_frame=False):
     return _load_bundled(
         "lev",
         [f"in{i + 1}" for i in range(4)],
-        caller_name="load_lev",
         return_X_y=return_X_y,
         as_frame=as_frame,
     )
@@ -264,7 +261,6 @@ def load_swd(*, return_X_y=False, as_frame=False):
     return _load_bundled(
         "swd",
         [f"in{i + 1}" for i in range(10)],
-        caller_name="load_swd",
         return_X_y=return_X_y,
         as_frame=as_frame,
     )
@@ -329,7 +325,6 @@ def load_balance_scale(*, return_X_y=False, as_frame=False):
     return _load_bundled(
         "balance_scale",
         ["left_weight", "left_distance", "right_weight", "right_distance"],
-        caller_name="load_balance_scale",
         return_X_y=return_X_y,
         as_frame=as_frame,
     )

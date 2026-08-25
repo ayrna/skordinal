@@ -153,18 +153,10 @@ def test_load_balance_scale_feature_names():
     ]
 
 
-@pytest.mark.parametrize(
-    "loader,stem",
-    [
-        (load_era, "era"),
-        (load_esl, "esl"),
-        (load_lev, "lev"),
-        (load_swd, "swd"),
-        (load_balance_scale, "balance_scale"),
-    ],
-)
-def test_loader_matches_load_dataset(loader, stem):
+@pytest.mark.parametrize("loader", ALL_LOADERS)
+def test_loader_matches_load_dataset(loader):
     """A bundled loader agrees with ``load_dataset`` on every shared field."""
+    stem = loader.__name__.removeprefix("load_")
     wrapper = loader()
     generic = load_dataset(stem)
     np.testing.assert_array_equal(wrapper.data, generic.data)
