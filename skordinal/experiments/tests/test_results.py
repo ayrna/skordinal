@@ -578,6 +578,49 @@ def test_exists(tmp_path):
     assert r.exists("SVC", "toy", "1") is False
 
 
+def test_save_removes_stale_artefacts(tmp_path):
+    """Re-saving without a test split drops the prior run's test files and model."""
+    r = Results(tmp_path)
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.1},
+            test_metrics={"mae_test": 0.1},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=np.array([1]),
+        ),
+        save_model=True,
+    )
+    seed_dir = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
+    model_path = tmp_path / "clf" / "ds" / "models" / "0.joblib"
+    assert (seed_dir / "test_predictions.csv").is_file()
+    assert (seed_dir / "test_confusion_matrix.txt").is_file()
+    assert model_path.is_file()
+
+    r.save(
+        _make_result(
+            partition=0,
+            dataset="ds",
+            configuration="clf",
+            best_params={},
+            train_metrics={"mae_train": 0.2},
+            test_metrics={},
+            train_predicted_y=np.array([1]),
+            test_predicted_y=None,
+        ),
+        save_model=False,
+    )
+    assert not (seed_dir / "test_predictions.csv").exists()
+    assert not (seed_dir / "test_confusion_matrix.txt").exists()
+    assert not model_path.exists()
+    assert (seed_dir / "train_predictions.csv").is_file()
+    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
+    assert df.shape[0] == 1
+
+
 def test_save_rejects_traversal_before_writing(tmp_path):
     """save raises on a traversal component and writes nothing."""
     result = _make_result(
@@ -734,3 +777,30 @@ def test_stale_report_row_uncommitted_on_crash_resave(tmp_path, monkeypatch):
     monkeypatch.undo()
     r.save(_make_result(**kwargs), save_model=False)
     assert r.exists("clf", "ds", "0") is True
+
+
+def test_resave_crash_before_uncommit_leaves_prior_run_intact(tmp_path, monkeypatch):
+    """A re-save that crashes at the uncommit deletes nothing from the prior run."""
+    r = Results(tmp_path)
+    kwargs = dict(
+        partition=0,
+        dataset="ds",
+        configuration="clf",
+        best_params={},
+        train_metrics={"mae_train": 0.1},
+        test_metrics={"mae_test": 0.1},
+        train_predicted_y=np.array([1]),
+        test_predicted_y=np.array([1]),
+    )
+    r.save(_make_result(**kwargs), save_model=False)
+    monkeypatch.setattr(
+        Results,
+        "_uncommit_report_row",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
+    )
+    with pytest.raises(RuntimeError):
+        r.save(_make_result(**kwargs), save_model=False)
+    # The committed row must never outlive the files it describes
+    assert r.exists("clf", "ds", "0") is True
+    seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
+    assert (seed / "train_predictions.csv").is_file()

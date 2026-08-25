@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -223,6 +224,8 @@ class Results:
         The report row is written last and acts as the commit marker read
         by ``exists``: a save interrupted at any earlier point leaves no
         row, so a rerun detects the partition as missing and rewrites it.
+        Re-saving a partition first deletes its previous seed directory and
+        model artefact, so no stale file outlives the row describing it.
 
         Parameters
         ----------
@@ -250,7 +253,8 @@ class Results:
             nothing else is recorded for the partition.
 
         OSError
-            If the folder cannot be created.
+            If a stale artefact cannot be removed or the folder cannot be
+            created.
 
         Examples
         --------
@@ -271,13 +275,14 @@ class Results:
             )
 
         base_dir = self._pair_dir(result.classifier_name, result.dataset_name)
-        seed_dir = base_dir / "predictions_by_seed" / f"seed_{result.resample_id}"
-        model_path = base_dir / "models" / f"{result.resample_id}.joblib"
+        seed_dir, model_path = self._resample_paths(base_dir, result.resample_id)
         # Clear any temp file left by a prior crash before writing new ones
         _sweep_orphaned_temp_files(base_dir)
         # Drop this resample's committed row so a crash mid-write cannot
         # leave a report row describing predictions no longer on disk
         self._uncommit_report_row(base_dir, result.resample_id)
+        # Must run before the writes below recreate what it deletes
+        self._remove_stale_artefacts(base_dir, result.resample_id)
 
         classes = np.asarray(result.best_model.classes_)
         _write_split_files(
@@ -315,6 +320,23 @@ class Results:
         _check_path_component(classifier_name, "classifier_name")
         _check_path_component(dataset_name, "dataset_name")
         return self._experiment_folder / classifier_name / dataset_name
+
+    def _resample_paths(self, base: Path, resample_id: int) -> tuple[Path, Path]:
+        """Return this resample's predictions directory and model artefact."""
+        return (
+            base / "predictions_by_seed" / f"seed_{resample_id}",
+            base / "models" / f"{resample_id}.joblib",
+        )
+
+    def _remove_stale_artefacts(self, base_dir: Path, resample_id: int) -> None:
+        """Delete this resample's seed directory and model from a prior run."""
+        seed_dir, model_path = self._resample_paths(base_dir, resample_id)
+        try:
+            if seed_dir.is_dir():
+                shutil.rmtree(seed_dir)
+            model_path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise OSError(f"Could not remove stale results under {base_dir}.") from exc
 
     def _uncommit_report_row(self, base_dir: Path, resample_id: int) -> None:
         """Drop this resample's row from report.csv before rewriting it."""
