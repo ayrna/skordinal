@@ -1,10 +1,10 @@
 """Several ordinal classifiers and a nominal baseline across three datasets."""
 
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from sklearn.calibration import CalibratedClassifierCV
 
-from skordinal.classifiers import REDSVM, SVOREX, OrdinalDecomposition
+from skordinal.classifiers import REDSVM, SVOREX, SVORIM, OrdinalDecomposition
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
@@ -62,6 +62,13 @@ RECIPE = {
         ),
         "SVOREX": ModelConfig(
             SVOREX(kernel="rbf", tol=0.001),
+            param_grid={
+                "C": [0.1, 1, 10],
+                "gamma": [0.1, 1, 10],
+            },
+        ),
+        "SVORIM": ModelConfig(
+            SVORIM(kernel="rbf", tol=0.001),
             param_grid={
                 "C": [0.1, 1, 10],
                 "gamma": [0.1, 1, 10],

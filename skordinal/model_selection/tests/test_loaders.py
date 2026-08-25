@@ -5,7 +5,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV
 from sklearn.svm import SVC
 
-from skordinal.classifiers import NNOP, NNPOM, REDSVM, SVOREX, OrdinalDecomposition
+from skordinal.classifiers import (
+    NNOP,
+    NNPOM,
+    REDSVM,
+    SVOREX,
+    SVORIM,
+    OrdinalDecomposition,
+)
 from skordinal.metrics import get_ordinal_scorer
 from skordinal.model_selection import get_classifier_by_name, load_classifier
 from skordinal.utils._testing import TEST_RANDOM_STATE
@@ -19,6 +26,7 @@ def test_get_classifier_by_name_correct():
     assert get_classifier_by_name("OrdinalDecomposition") == OrdinalDecomposition
     assert get_classifier_by_name("REDSVM") == REDSVM
     assert get_classifier_by_name("SVOREX") == SVOREX
+    assert get_classifier_by_name("SVORIM") == SVORIM
 
     # Scikit-learn classifiers
     assert get_classifier_by_name("SVC") == SVC
@@ -42,6 +50,7 @@ def test_load_classifier_without_parameters():
     assert isinstance(load_classifier("OrdinalDecomposition"), OrdinalDecomposition)
     assert isinstance(load_classifier("REDSVM"), REDSVM)
     assert isinstance(load_classifier("SVOREX"), SVOREX)
+    assert isinstance(load_classifier("SVORIM"), SVORIM)
     assert isinstance(load_classifier("SVC"), SVC)
     assert isinstance(load_classifier("LogisticRegression"), LogisticRegression)
 

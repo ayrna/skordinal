@@ -22,6 +22,7 @@ _SKORDINAL_CLASSIFIERS = {
     "OrdinalDecomposition": "skordinal.classifiers._ordinal_decomposition.OrdinalDecomposition",
     "REDSVM": "skordinal.classifiers._redsvm.REDSVM",
     "SVOREX": "skordinal.classifiers._svorex.SVOREX",
+    "SVORIM": "skordinal.classifiers._svorim.SVORIM",
 }
 
 _SKLEARN_CLASSIFIERS = {
