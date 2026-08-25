@@ -270,12 +270,9 @@ class Results:
                 "column of the test predictions file."
             )
 
-        base_dir, models_dir, seed_dir = self._ensure_dirs(
-            result.classifier_name,
-            result.dataset_name,
-            result.resample_id,
-            save_model=save_model,
-        )
+        base_dir = self._pair_dir(result.classifier_name, result.dataset_name)
+        seed_dir = base_dir / "predictions_by_seed" / f"seed_{result.resample_id}"
+        model_path = base_dir / "models" / f"{result.resample_id}.joblib"
         # Clear any temp file left by a prior crash before writing new ones
         _sweep_orphaned_temp_files(base_dir)
         # Drop this resample's committed row so a crash mid-write cannot
@@ -307,7 +304,7 @@ class Results:
             )
 
         if save_model:
-            _atomic_dump(models_dir / f"{result.resample_id}.joblib", result.best_model)
+            _atomic_dump(model_path, result.best_model)
 
         self._upsert_hyperparameters(result, base_dir)
         # Write the report row last: it is the commit marker for exists()
@@ -318,28 +315,6 @@ class Results:
         _check_path_component(classifier_name, "classifier_name")
         _check_path_component(dataset_name, "dataset_name")
         return self._experiment_folder / classifier_name / dataset_name
-
-    def _ensure_dirs(
-        self,
-        classifier_name: str,
-        dataset_name: str,
-        resample_id: int,
-        *,
-        save_model: bool,
-    ) -> tuple[Path, Path, Path]:
-        """Create required sub-directories and return their paths."""
-        base = self._pair_dir(classifier_name, dataset_name)
-        seed_dir = base / "predictions_by_seed" / f"seed_{resample_id}"
-        models_dir = base / "models"
-        try:
-            seed_dir.mkdir(parents=True, exist_ok=True)
-            if save_model:
-                models_dir.mkdir(exist_ok=True)
-        except OSError:
-            raise OSError(
-                f"Could not create folder {base} (or subfolders) to store results."
-            )
-        return base, models_dir, seed_dir
 
     def _uncommit_report_row(self, base_dir: Path, resample_id: int) -> None:
         """Drop this resample's row from report.csv before rewriting it."""
