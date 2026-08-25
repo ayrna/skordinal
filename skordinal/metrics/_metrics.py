@@ -10,97 +10,101 @@ from sklearn.metrics import (
 )
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils._param_validation import validate_params
+from sklearn.utils.validation import _check_sample_weight
+
+
+def _check_labels(arr, name):
+    """Validate a label array and collapse a 2-D one to 1-D hard labels.
+
+    ``dtype=None`` keeps string label sets usable. Validation runs before
+    the ``argmax``, which would otherwise mask a NaN behind its own index
+    and quietly turn a 3-D input into a 2-D one.
+    """
+    arr = check_array(arr, ensure_2d=False, dtype=None, input_name=name)
+    if arr.ndim > 1:
+        return arr.argmax(axis=-1) if arr.shape[1] > 1 else arr.ravel()
+    return arr
+
+
+def _check_metric_weight(y_true, sample_weight):
+    """Validate, reshape, and cast a metric's sample weights to float64.
+
+    Every check is scikit-learn's own, so the messages match any other
+    estimator; the all-zero rejection backports, with its exact message,
+    the one ``_check_sample_weight`` itself performs from scikit-learn
+    1.9. A ``(n, 1)`` weight is raveled first, which scikit-learn refuses.
+    """
+    if sample_weight is None:
+        return None
+    weights = np.asarray(sample_weight)
+    if weights.ndim == 2 and weights.shape[1] == 1:
+        weights = weights.ravel()
+    weights = _check_sample_weight(
+        weights, y_true, dtype=np.float64, ensure_non_negative=True
+    )
+    # scikit-learn < 1.9 accepts an all-zero vector and lets the 0/0
+    # surface as nan downstream
+    if not weights.any():
+        raise ValueError("Sample weights must contain at least one non-zero number.")
+    return weights
 
 
 def _check_metric_inputs(y_true, y_pred):
-    """Coerce metric inputs to 1-D arrays and validate length consistency.
+    """Coerce a metric's targets to validated 1-D label arrays.
 
-    Two-dimensional inputs are interpreted as one-hot encoded labels and
-    collapsed via ``argmax`` along the last axis, except a single-column
-    input, which is raveled to its original values. Centralises the input
-    coercion that every public ordinal metric needs.
-
-    Parameters
-    ----------
-    y_true : array-like of shape (n_samples,) or (n_samples, n_classes)
-        Ground truth labels.
-
-    y_pred : array-like of shape (n_samples,) or (n_samples, n_classes)
-        Predicted labels or class scores.
-
-    Returns
-    -------
-    y_true : ndarray of shape (n_samples,)
-    y_pred : ndarray of shape (n_samples,)
-
-    Raises
-    ------
-    ValueError
-        If ``y_true`` and ``y_pred`` have different lengths.
+    Either input may be 1-D labels or 2-D: a one-hot matrix is collapsed
+    via ``argmax`` along the last axis, a single column is raveled to its
+    original values. Raises ``ValueError`` if either is empty, more than
+    2-D, complex, holds a non-finite value, or if the two differ in length.
     """
-    y_true_arr = np.asarray(y_true)
-    if y_true_arr.ndim > 1:
-        y_true_arr = (
-            y_true_arr.argmax(axis=-1)
-            if y_true_arr.shape[1] > 1
-            else y_true_arr.ravel()
-        )
-    y_pred_arr = np.asarray(y_pred)
-    if y_pred_arr.ndim > 1:
-        y_pred_arr = (
-            y_pred_arr.argmax(axis=-1)
-            if y_pred_arr.shape[1] > 1
-            else y_pred_arr.ravel()
-        )
+    y_true_arr = _check_labels(y_true, "y_true")
+    y_pred_arr = _check_labels(y_pred, "y_pred")
     check_consistent_length(y_true_arr, y_pred_arr)
     return y_true_arr, y_pred_arr
 
 
-def _check_proba_inputs(y_true, y_proba, *, sum_atol=1e-6):
-    """Validate inputs for probabilistic ordinal metrics.
+def _check_proba_inputs(y_true, y_proba):
+    """Coerce and validate the inputs of a probabilistic ordinal metric.
 
-    ``y_true`` may be 1-D class labels or a 2-D one-hot matrix; a
-    single-column ``y_true`` is raveled instead of argmaxed. ``y_proba``
-    must be a 2-D matrix coercible to ``float64`` whose rows sum to
-    approximately one.
-
-    Parameters
-    ----------
-    y_true : array-like of shape (n_samples,) or (n_samples, n_classes)
-        Ground truth labels.
-
-    y_proba : array-like of shape (n_samples, n_classes)
-        Predicted class probability matrix.
-
-    sum_atol : float, default=1e-6
-        Absolute tolerance for the row-sum check.
-
-    Returns
-    -------
-    y_true : ndarray of shape (n_samples,)
-    y_proba : ndarray of shape (n_samples, n_classes), dtype float64
-
-    Raises
-    ------
-    ValueError
-        If ``y_true`` and ``y_proba`` have inconsistent length, or if any
-        row of ``y_proba`` does not sum to 1 within ``sum_atol``.
+    ``y_true`` is collapsed as in ``_check_metric_inputs``, then required
+    to be integer-valued and returned as ``intp`` 0-based class indices.
+    ``y_proba`` must be coercible to ``float64`` with every entry in
+    ``[0, 1]``; a 1-D or single-column input is the positive-class
+    probability of a binary problem and is expanded to ``[1 - p, p]``, and
+    rows must then sum to 1 within ``atol=1e-6, rtol=0``. Raises
+    ``ValueError`` on a malformed or non-integer ``y_true``, a length
+    mismatch, an out-of-range entry, or a row that does not sum to 1.
     """
-    y_true_arr = np.asarray(y_true)
-    if y_true_arr.ndim > 1:
-        y_true_arr = (
-            y_true_arr.argmax(axis=-1)
-            if y_true_arr.shape[1] > 1
-            else y_true_arr.ravel()
-        )
-    y_proba_arr = check_array(
-        y_proba, ensure_2d=True, dtype="float64", input_name="y_proba"
-    )
-    check_consistent_length(y_true_arr, y_proba_arr)
-    row_sums = y_proba_arr.sum(axis=1)
-    if not np.allclose(row_sums, 1.0, atol=sum_atol):
+    y_true_arr = _check_labels(y_true, "y_true")
+    y_true_idx = y_true_arr.astype(np.intp)
+    # the intp cast truncates, so a non-integral float or object value would
+    # land on a different, valid class; a digit string keeps its parsed value
+    if y_true_arr.dtype.kind in "fO" and not np.array_equal(y_true_idx, y_true_arr):
         raise ValueError(
-            f"y_proba rows must sum to 1 (atol={sum_atol}); got row-sum "
+            "y_true must be integer-valued (0-based class indices); got "
+            "non-integer values."
+        )
+    y_true_arr = y_true_idx
+    y_proba_arr = check_array(
+        y_proba, ensure_2d=False, dtype="float64", input_name="y_proba"
+    )
+    if y_proba_arr.ndim == 1:
+        y_proba_arr = y_proba_arr.reshape(-1, 1)
+    check_consistent_length(y_true_arr, y_proba_arr)
+
+    lo, hi = y_proba_arr.min(), y_proba_arr.max()
+    if lo < 0.0 or hi > 1.0:
+        raise ValueError(
+            f"y_proba entries must lie in [0, 1]; got range [{lo:.6g}, {hi:.6g}]"
+        )
+
+    if y_proba_arr.shape[1] == 1:
+        y_proba_arr = np.hstack([1.0 - y_proba_arr, y_proba_arr])
+
+    row_sums = y_proba_arr.sum(axis=1)
+    if not np.allclose(row_sums, 1.0, atol=1e-6, rtol=0):
+        raise ValueError(
+            "y_proba rows must sum to 1 (atol=1e-6, rtol=0); got row-sum "
             f"range [{row_sums.min():.6g}, {row_sums.max():.6g}]"
         )
     return y_true_arr, y_proba_arr
@@ -227,6 +231,7 @@ def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).mean())
 
 
@@ -279,6 +284,7 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
     sum_by_class = cm.sum(axis=1)
     with np.errstate(divide="ignore", invalid="ignore"):
@@ -334,6 +340,7 @@ def gmsec(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
     return float(np.sqrt(sensitivities[0] * sensitivities[-1]))
 
@@ -380,6 +387,7 @@ def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
     return float((sensitivities[0] + sensitivities[-1]) / 2.0)
 
@@ -430,6 +438,7 @@ def maximum_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).max())
 
 
@@ -475,6 +484,7 @@ def minimum_sensitivity(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
     return float(np.min(sensitivities))
 
@@ -520,6 +530,7 @@ def mean_zero_one_error(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
     return float(1 - np.diagonal(cm).sum() / cm.sum())
 
@@ -614,6 +625,7 @@ def weighted_kappa(y_true, y_pred, *, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
     n_class = cm.shape[0]
     costs = np.abs(np.arange(n_class)[:, None] - np.arange(n_class)[None, :])
@@ -699,10 +711,12 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     y_true : array-like of shape (n_samples,)
         Ground truth labels encoded as 0-based integer indices.
 
-    y_proba : array-like of shape (n_samples, n_classes)
-        Predicted class probability distribution. Each row must sum to
-        approximately ``1`` (``atol=1e-6``); otherwise ``ValueError`` is
-        raised.
+    y_proba : array-like of shape (n_samples, n_classes), (n_samples, 1), or (n_samples,)
+        Predicted class probability distribution. A 1-D input, or a
+        single-column 2-D input, is treated as the positive-class
+        probability of a binary problem and expanded to two columns,
+        ``[1 - p, p]``. Every entry must lie in ``[0, 1]`` and each row
+        must sum to approximately ``1`` (``atol=1e-6, rtol=0``).
 
     sample_weight : array-like of shape (n_samples,), default=None
         Sample weights forwarded to :func:`numpy.average`.
@@ -710,12 +724,14 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     Returns
     -------
     score : float
-        Ranked probability score; lower is better.
+        Ranked probability score, in the range ``[0, n_classes - 1]``.
+        Lower is better.
 
     Notes
     -----
     Samples whose ``y_true`` falls outside ``[0, n_classes)`` are
-    counted with a per-sample contribution of ``1.0``.
+    counted with a per-sample contribution of ``n_classes - 1``, the
+    worst per-sample loss attainable by any in-range label.
 
     References
     ----------
@@ -736,8 +752,8 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
 
     """
     y_true, y_proba = _check_proba_inputs(y_true, y_proba)
-    y_true = y_true.astype(np.intp)
     n_samples, n_classes = y_proba.shape
+    sample_weight = _check_metric_weight(y_true, sample_weight)
 
     in_range = (y_true >= 0) & (y_true < n_classes)
     y_oh = np.zeros_like(y_proba)
@@ -748,10 +764,10 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     y_proba_cum = y_proba.cumsum(axis=1)
 
     per_sample = np.power(y_proba_cum - y_oh_cum, 2).sum(axis=1)
-    per_sample[~in_range] = 1.0
+    # n_classes - 1 cumulative steps, each contributing 1 squared
+    per_sample[~in_range] = float(n_classes - 1)
 
-    weights = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
-    return float(np.average(per_sample, weights=weights))
+    return float(np.average(per_sample, weights=sample_weight))
 
 
 @validate_params(
@@ -805,6 +821,7 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
 
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    sample_weight = _check_metric_weight(y_true, sample_weight)
     if labels is None:
         labels = np.unique(y_true)
 
