@@ -187,20 +187,34 @@ def test_save_model_false(tmp_path):
 
 def test_save_proba_written_to_disk(tmp_path):
     """Probability columns are persisted in both prediction files."""
-    rng = np.random.default_rng(0)
     estimator = _fitted_svc(probability=True)
     q = estimator.classes_.size
 
-    raw_train = rng.random((3, q))
-    raw_test = rng.random((4, q))
-    train_y_proba = raw_train / raw_train.sum(axis=1, keepdims=True)
-    y_proba = raw_test / raw_test.sum(axis=1, keepdims=True)
+    # predicted_y encodes to [0, 2, 1] while the proba argmax is [0, 0, 2]
+    train_predicted_y = np.array([1, 3, 2])
+    train_y_proba = np.array(
+        [
+            [0.6, 0.3, 0.1],
+            [0.5, 0.3, 0.2],
+            [0.2, 0.3, 0.5],
+        ]
+    )
+    # predicted_y encodes to [0, 1, 2, 0] while the proba argmax is [2, 1, 2, 1]
+    test_predicted_y = np.array([1, 2, 3, 1])
+    y_proba = np.array(
+        [
+            [0.1, 0.2, 0.7],
+            [0.1, 0.8, 0.1],
+            [0.05, 0.05, 0.9],
+            [0.3, 0.4, 0.3],
+        ]
+    )
     result = ExperimentResult(
         dataset_name="toy",
         classifier_name="conf_1",
         resample_id=0,
-        train_predicted_y=np.array([1, 2, 3]),
-        test_predicted_y=np.array([1, 2, 3, 1]),
+        train_predicted_y=train_predicted_y,
+        test_predicted_y=test_predicted_y,
         y_proba=y_proba,
         train_metrics={"ccr_train": 0.9},
         test_metrics={"ccr_test": 0.8},
@@ -213,15 +227,15 @@ def test_save_proba_written_to_disk(tmp_path):
     Results(tmp_path).save(result, save_model=False)
 
     seed_dir = tmp_path / "conf_1" / "toy" / "predictions_by_seed" / "seed_0"
-    for name, proba in (
-        ("train_predictions.csv", train_y_proba),
-        ("test_predictions.csv", y_proba),
+    for name, proba, expected in (
+        ("train_predictions.csv", train_y_proba, [0, 2, 1]),
+        ("test_predictions.csv", y_proba, [0, 1, 2, 0]),
     ):
         df = pd.read_csv(seed_dir / name)
         assert "Prediction probabilities" in df.columns
         assert set(df["Target"]) <= set(range(q))
-        # Check Prediction equals the argmax index of the probabilities
-        npt.assert_array_equal(df["Prediction"].values, np.argmax(proba, axis=1))
+        # Check Prediction records predict(), not the argmax of the probabilities
+        npt.assert_array_equal(df["Prediction"].values, expected)
         for cell, source in zip(df["Prediction probabilities"], proba):
             parsed = np.fromstring(cell.strip("[]"), sep=",")
             assert parsed.shape == (q,)

@@ -125,6 +125,12 @@ def _write_split_files(
         )
     pattern_id = index if index is not None else np.arange(predicted_y.shape[0])
     target = np.searchsorted(classes, true_y)
+    if not np.isin(predicted_y, classes).all():
+        raise ValueError(
+            f"'{split}' predicted labels contain classes unknown to the fitted model."
+        )
+    # Record the estimator's actual decision, never a proba argmax substitute
+    prediction = np.searchsorted(classes, predicted_y)
 
     columns: dict[str, object] = {"Pattern ID": pattern_id, "Target": target}
     if proba is not None:
@@ -134,15 +140,6 @@ def _write_split_files(
                 f"({true_y.shape[0]}, {classes.size})."
             )
         columns["Prediction probabilities"] = _format_proba_column(proba)
-        # Derive the prediction as the argmax index of the probabilities
-        prediction = np.argmax(proba, axis=1)
-    else:
-        if not np.isin(predicted_y, classes).all():
-            raise ValueError(
-                f"'{split}' predicted labels contain classes unknown to the "
-                "fitted model."
-            )
-        prediction = np.searchsorted(classes, predicted_y)
     columns["Prediction"] = prediction
     _atomic_write(
         seed_dir / f"{split}_predictions.csv",
@@ -198,9 +195,9 @@ class Results:
     and ``Prediction`` are zero-based class indices into
     ``best_model.classes_``; ``Pattern ID`` is the sample's position in the
     original dataset array, or its position within the partition when no
-    sample indices were recorded. When probabilities are present,
-    ``Prediction`` is their argmax index, which may differ from the
-    estimator's own decision rule reflected in ``report.csv``. Each
+    sample indices were recorded. ``Prediction`` always reflects the
+    estimator's own ``predict`` decision, even when probability
+    estimates are stored alongside it. Each
     ``*_confusion_matrix.txt`` holds the confusion matrix of the same
     file's ``Target`` and ``Prediction`` columns.
     ``hyperparameter_configuration.csv`` records the best parameters per
