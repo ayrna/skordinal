@@ -8,9 +8,16 @@ import pytest
 from sklearn.metrics import confusion_matrix
 from sklearn.svm import SVC
 
-from skordinal.experiments import ExperimentResult, Results
+from skordinal.classifiers import LogisticAT
+from skordinal.experiments import (
+    Experiment,
+    ExperimentResult,
+    ModelConfig,
+    Results,
+)
 from skordinal.experiments._io import _TEMP_PREFIX
 from skordinal.experiments._results import _write_split_files
+from skordinal.metrics import accuracy_score, mean_absolute_error
 
 
 def _fitted_svc(classes=(1, 2, 3), probability=False):
@@ -36,6 +43,7 @@ def _make_result(
     test_true_y=None,
     train_index=None,
     test_index=None,
+    y_proba=None,
 ) -> ExperimentResult:
     if estimator is None:
         estimator = _fitted_svc()
@@ -49,7 +57,7 @@ def _make_result(
         resample_id=partition,
         train_predicted_y=train_predicted_y,
         test_predicted_y=test_predicted_y,
-        y_proba=None,
+        y_proba=y_proba,
         train_metrics=train_metrics,
         test_metrics=test_metrics,
         best_params=best_params,
@@ -243,6 +251,41 @@ def test_save_proba_written_to_disk(tmp_path):
             npt.assert_allclose(parsed.sum(), 1.0, atol=1e-8)
 
 
+def test_csv_reproduces_report_metrics(tmp_path):
+    """Report metrics recompute from the saved CSV for rank-encoded labels."""
+    rng = np.random.default_rng(0)
+    X_train, X_test = rng.standard_normal((30, 4)), rng.standard_normal((15, 4))
+    y_train, y_test = np.tile([0, 1, 2], 10), np.tile([0, 1, 2], 5)
+    metrics = {
+        "accuracy_score": accuracy_score,
+        "mean_absolute_error": mean_absolute_error,
+    }
+    result = Experiment(ModelConfig(LogisticAT()), eval_metrics=list(metrics)).run(
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+        dataset_name="ds",
+        classifier_name="clf",
+        resample_id=0,
+    )
+    assert not np.array_equal(
+        np.argmax(result.y_proba, axis=1), result.test_predicted_y
+    )
+    Results(tmp_path).save(result, save_model=False)
+
+    pair_dir = tmp_path / "clf" / "ds"
+    predictions = pd.read_csv(
+        pair_dir / "predictions_by_seed" / "seed_0" / "test_predictions.csv"
+    )
+    report = pd.read_csv(
+        pair_dir / "report.csv", index_col=0, float_precision="round_trip"
+    )
+    for name, metric in metrics.items():
+        recomputed = metric(predictions["Target"], predictions["Prediction"])
+        assert recomputed == pytest.approx(report.loc[0, f"{name}_test"])
+
+
 def test_save_requires_true_labels(tmp_path):
     """save raises ValueError when a split lacks its true labels."""
     base = dict(
@@ -273,6 +316,13 @@ def test_save_requires_true_labels(tmp_path):
         ({"train_true_y": np.array([1, 2, 4])}, "'train' true labels"),
         ({"test_true_y": np.array([1, 2, 4])}, "'test' true labels"),
         ({"test_predicted_y": np.array([1, 2, 4])}, "'test' predicted labels"),
+        (
+            {
+                "test_predicted_y": np.array([1, 2, 4]),
+                "y_proba": np.full((3, 3), 1 / 3),
+            },
+            "'test' predicted labels",
+        ),
     ],
 )
 def test_save_rejects_unknown_labels(tmp_path, overrides, match):
