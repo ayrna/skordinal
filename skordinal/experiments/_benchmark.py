@@ -56,6 +56,10 @@ class Benchmark:
         Number of resamples (train/test splits) to load per dataset. Forwarded
         to ``load_partitions``.
 
+    test_size : float, default=0.3
+        Fraction of samples held out for testing when ``load_partitions``
+        generates the splits; ignored when a masks file supplies them.
+
     tuning_metric : str, default="neg_mean_absolute_error"
         Metric used as the cross-validation scoring criterion when selecting the
         best hyper-parameter combination. Must be recognised by
@@ -122,6 +126,7 @@ class Benchmark:
         eval_metrics: list[str],
         results_path: str | Path,
         resamples: int = 30,
+        test_size: float = 0.3,
         tuning_metric: str = "neg_mean_absolute_error",
         cv: int = 3,
         n_jobs: int = 1,
@@ -165,6 +170,7 @@ class Benchmark:
         self.results_path = Path(results_path).expanduser().resolve()
         self._results = Results(self.results_path)
         self.resamples: int = resamples
+        self.test_size: float = test_size
         self.tuning_metric = tuning_metric
         self.cv = cv
         self.n_jobs = n_jobs
@@ -274,6 +280,7 @@ class Benchmark:
                     dataset_name,
                     data_home=self.data_home,
                     resamples=self.resamples,
+                    test_size=self.test_size,
                     random_state=self.random_state,
                 ):
                     if not self.overwrite and self._results.exists(

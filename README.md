@@ -182,6 +182,8 @@ These keys control how the benchmark is executed.
 - **`input_preprocessing`** (default `None`): `"std"` for standardisation,
   `"norm"` for normalisation, `None` for no scaling.
 - **`resamples`** (default `30`): number of train/test resamples per dataset.
+- **`test_size`** (default `0.3`): fraction of samples held out for testing
+  when partitions are generated rather than read from a masks file.
 - **`data_home`** (default `None`): base directory for dataset files; `None`
   uses the bundled datasets.
 - **`random_state`** (default `None`): integer seed for reproducibility.

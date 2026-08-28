@@ -295,7 +295,8 @@ def test_run_overwrite_controls_rerun(tmp_path, monkeypatch, overwrite, reruns):
     assert len(calls) == reruns
 
 
-def test_run_resamples_count_matches_requested(tmp_path):
+@pytest.mark.parametrize("resamples", [1, 4], ids=["one", "several"])
+def test_run_resamples_count_matches_requested(tmp_path, resamples):
     """run() with resamples=N produces exactly N rows in report.csv."""
     results_dir = tmp_path / "out"
     b = Benchmark(
@@ -303,7 +304,7 @@ def test_run_resamples_count_matches_requested(tmp_path):
         datasets=[_BUNDLED_DS],
         eval_metrics=["mean_absolute_error"],
         results_path=results_dir,
-        resamples=4,
+        resamples=resamples,
         cv=2,
         verbose=False,
         random_state=1,
@@ -311,7 +312,7 @@ def test_run_resamples_count_matches_requested(tmp_path):
     b.run()
 
     df = pd.read_csv(results_dir / "SVM" / _BUNDLED_DS / "report.csv", index_col=0)
-    assert df.shape[0] == 4
+    assert df.shape[0] == resamples
 
 
 def test_run_mask_path_correct_partition_count(tmp_path, csv_ds_dir):
@@ -362,25 +363,22 @@ def test_run_mask_path_train_test_sizes_match_masks(tmp_path, csv_ds_dir):
     np.testing.assert_array_equal(test_0["Pattern ID"].values, np.arange(30, 60))
 
 
-def test_run_resamples_one_completes(tmp_path):
-    """resamples=1 runs to completion and writes the seed_0 artefacts."""
+def test_run_forwards_test_size(tmp_path):
+    """test_size reaches load_partitions: balance_scale at 0.5 tests 313 rows."""
     b = Benchmark(
         _SVC_CONF,
         datasets=[_BUNDLED_DS],
         eval_metrics=["mean_absolute_error"],
         results_path=tmp_path,
         resamples=1,
+        test_size=0.5,
         cv=2,
         verbose=False,
     )
     b.run()
 
-    pair_dir = tmp_path / "SVM" / _BUNDLED_DS
-    df = pd.read_csv(pair_dir / "report.csv", index_col=0)
-    assert df.index.astype(str).tolist() == ["0"]
-    seed_dir = pair_dir / "predictions_by_seed" / "seed_0"
-    assert (seed_dir / "train_predictions.csv").is_file()
-    assert (seed_dir / "test_predictions.csv").is_file()
+    seed_dir = tmp_path / "SVM" / _BUNDLED_DS / "predictions_by_seed" / "seed_0"
+    assert len(pd.read_csv(seed_dir / "test_predictions.csv")) == 313
 
 
 def test_run_unresolvable_dataset_raises(tmp_path):

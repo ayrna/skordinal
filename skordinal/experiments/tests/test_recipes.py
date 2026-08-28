@@ -62,6 +62,7 @@ def test_validate_recipe_all_optional_keys_accepted():
         "eval_metrics": ["mean_absolute_error"],
         "results_path": "/tmp/out",
         "resamples": 10,
+        "test_size": 0.25,
         "tuning_metric": "neg_mean_absolute_error",
         "cv": 3,
         "n_jobs": 1,
@@ -201,6 +202,7 @@ RECIPE = {{
     "eval_metrics": ["mean_absolute_error"],
     "results_path": "{results_path}",
     "resamples": 2,
+    "test_size": 0.25,
     "verbose": False,
 }}
 """
@@ -218,6 +220,7 @@ def test_from_recipe_attributes_match_recipe(tmp_path):
     assert b.datasets == ["balance_scale"]
     assert b.eval_metrics == ["mean_absolute_error"]
     assert b.resamples == 2
+    assert b.test_size == 0.25
     assert b.verbose is False
     assert "svc" in b.models
     for key, cfg in b.models.items():

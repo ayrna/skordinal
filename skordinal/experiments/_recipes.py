@@ -16,6 +16,7 @@ _OPTIONAL_KEYS: frozenset[str] = frozenset(
         "eval_metrics",
         "results_path",
         "resamples",
+        "test_size",
         "tuning_metric",
         "cv",
         "n_jobs",
