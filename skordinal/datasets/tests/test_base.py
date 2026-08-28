@@ -7,7 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from sklearn.model_selection import StratifiedShuffleSplit
 from sklearn.utils import Bunch
+from sklearn.utils._param_validation import InvalidParameterError
 
 from skordinal.datasets import (
     _base,
@@ -332,16 +334,89 @@ def test_load_dataset_malformed_csv_raises(tmp_path, csv_text, match):
         load_dataset(path)
 
 
-def test_cv_fallback_era():
-    """CV fallback on ``era`` yields 3 folds (ids, counts, classes)."""
+def test_holdout_fallback_era():
+    """Holdout fallback on ``era`` yields 3 independent 700/300 resamples."""
     bunches = list(load_partitions("era", resamples=3))
     assert len(bunches) == 3
-    assert [b.resample_id for b in bunches] == [0, 1, 2]
     for bunch in bunches:
-        assert bunch.data_train.shape[0] + bunch.data_test.shape[0] == 1000
-        assert bunch.n_classes == 9
-    # Test sizes across all folds sum to the full dataset
-    assert sum(b.data_test.shape[0] for b in bunches) == 1000
+        # 700/300 matches era's published reference partitions
+        assert bunch.data_train.shape[0] == 700
+        assert bunch.data_test.shape[0] == 300
+
+
+def test_holdout_fallback_id_stable_across_request_shapes():
+    """Ids keep their split across a pair, a sparse pair and a plain count."""
+    pair = {b.resample_id: b for b in load_partitions("era", resamples=[0, 1])}
+    sparse = {b.resample_id: b for b in load_partitions("era", resamples=[0, 5])}
+    by_count = {b.resample_id: b for b in load_partitions("era", resamples=6)}
+    for other in (sparse, by_count):
+        np.testing.assert_array_equal(pair[0].train_index, other[0].train_index)
+    # Id 5 is second in the sparse pair but sixth in the count, so a seed
+    # derived from list position rather than id would move its split
+    np.testing.assert_array_equal(sparse[5].train_index, by_count[5].train_index)
+
+
+def test_holdout_fallback_reproducible_from_documented_inputs(tmp_path):
+    """An integer ``random_state`` and the id fully determine a split."""
+    name = "ds_repro"
+    _write_csv(tmp_path, name, n_samples=300)
+    (bunch,) = list(
+        load_partitions(name, resamples=[4], random_state=7, data_home=tmp_path)
+    )
+    # Rebuild the split from the documented inputs alone
+    seed = int(np.random.SeedSequence([7, 4]).generate_state(1)[0])
+    splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.3, random_state=seed)
+    raw = load_dataset(name, data_home=tmp_path)
+    train_indices, _ = next(splitter.split(raw.data, raw.target))
+    np.testing.assert_array_equal(bunch.train_index, np.sort(train_indices))
+
+
+def test_invalid_resamples_fail_before_csv_read(tmp_path, monkeypatch):
+    """A bad ``resamples`` raises before the CSV is parsed."""
+    name = "ds_prevalidation"
+    _write_csv(tmp_path, name)
+    # Unbinding the reader makes any premature read raise TypeError
+    monkeypatch.setattr(_base, "_read_csv_any", None)
+    with pytest.raises(ValueError, match="at least one id"):
+        load_partitions(name, resamples=[], data_home=tmp_path)
+
+
+def test_holdout_fallback_random_state_instance_varies_across_calls():
+    """A ``RandomState`` instance is drawn from once, so calls differ."""
+    rng = np.random.RandomState(0)
+    first = next(iter(load_partitions("era", resamples=1, random_state=rng)))
+    second = next(iter(load_partitions("era", resamples=1, random_state=rng)))
+    assert not np.array_equal(first.train_index, second.train_index)
+
+
+@pytest.mark.parametrize(
+    "kwargs, per_class_train, per_class_test",
+    [
+        ({}, 70, 30),
+        ({"test_size": 0.25}, 75, 25),
+        ({"test_size": 0.5}, 50, 50),
+    ],
+    ids=["default", "orca-ratio", "half"],
+)
+def test_holdout_fallback_test_size(tmp_path, kwargs, per_class_train, per_class_test):
+    """``test_size`` sets the ratio, and each class splits at that ratio."""
+    name = "ds_test_size"
+    _write_csv(tmp_path, name, n_samples=300)
+    (bunch,) = list(load_partitions(name, resamples=1, data_home=tmp_path, **kwargs))
+    _, train_counts = np.unique(bunch.target_train, return_counts=True)
+    _, test_counts = np.unique(bunch.target_test, return_counts=True)
+    assert train_counts.tolist() == [per_class_train] * 3
+    assert test_counts.tolist() == [per_class_test] * 3
+
+
+@pytest.mark.parametrize("test_size", [0, 1], ids=["0", "1"])
+def test_holdout_fallback_rejects_out_of_range_test_size(test_size):
+    """``test_size`` at the excluded (0, 1) boundaries is rejected up front."""
+    # The constraint fires before any file is read, so no CSV is needed
+    with pytest.raises(
+        InvalidParameterError, match=r"'test_size' parameter.*range \(0\.0, 1\.0\)"
+    ):
+        load_partitions("era", resamples=1, test_size=test_size)
 
 
 def test_per_dataset_masks(tmp_path):
@@ -480,10 +555,11 @@ def _setup_missing_keyed_entry(tmp_path):
     return name, {"resamples": 2}
 
 
-def _setup_cv_resamples_1(tmp_path):
-    """Return args for CV-resamples-1 error case."""
-    name = "ds_calltime_cv1"
-    _write_csv(tmp_path, name)
+def _setup_single_member_class(tmp_path):
+    """Return args for a dataset whose rarest class has one member."""
+    name = "ds_single_member"
+    rows = ["x_0,x_1,y"] + [f"{i}.0,{i}.5,0" for i in range(10)] + ["99.0,99.5,1"]
+    (tmp_path / f"{name}.csv").write_text("\n".join(rows) + "\n", encoding="utf-8")
     return name, {"resamples": 1}
 
 
@@ -502,15 +578,15 @@ def _setup_short_per_dataset_masks(tmp_path):
         (_setup_missing_csv, FileNotFoundError, "Dataset file not found"),
         (_setup_bad_mask, ValueError, "Mask for resample 0"),
         (_setup_missing_keyed_entry, KeyError, r"_seed_1"),
-        (_setup_cv_resamples_1, ValueError, "resamples must be >= 2"),
         (_setup_short_per_dataset_masks, IndexError, r"\.masks\.json"),
+        (_setup_single_member_class, ValueError, "least populated"),
     ],
     ids=[
         "missing-csv",
         "mask-length-mismatch",
         "missing-keyed-entry",
-        "cv-resamples-lt-2",
         "short-per-dataset-masks",
+        "single-member-class",
     ],
 )
 def test_load_partitions_eager_errors(tmp_path, setup_fn, exc_type, match):
@@ -525,10 +601,12 @@ def test_load_partitions_eager_errors(tmp_path, setup_fn, exc_type, match):
     [
         ([0, 0], ValueError, "duplicate ids"),
         ([-1], ValueError, "non-negative"),
+        ([], ValueError, "at least one id"),
         ([0.0], TypeError, "must be integers"),
         ([True], TypeError, "must be integers"),
+        (True, TypeError, "integer count or a list"),
     ],
-    ids=["duplicate", "negative", "float", "bool"],
+    ids=["duplicate", "negative", "empty", "float", "bool-id", "bool-count"],
 )
 def test_invalid_resample_ids(tmp_path, resamples, exc_type, match):
     """Duplicate, negative and non-integer resample ids raise."""

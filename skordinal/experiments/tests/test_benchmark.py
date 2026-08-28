@@ -362,8 +362,8 @@ def test_run_mask_path_train_test_sizes_match_masks(tmp_path, csv_ds_dir):
     np.testing.assert_array_equal(test_0["Pattern ID"].values, np.arange(30, 60))
 
 
-def test_run_resamples_below_two_raises(tmp_path):
-    """resamples=1 on the CV-fallback path raises ValueError at run time."""
+def test_run_resamples_one_completes(tmp_path):
+    """resamples=1 runs to completion and writes the seed_0 artefacts."""
     b = Benchmark(
         _SVC_CONF,
         datasets=[_BUNDLED_DS],
@@ -373,8 +373,14 @@ def test_run_resamples_below_two_raises(tmp_path):
         cv=2,
         verbose=False,
     )
-    with pytest.raises(ValueError, match="resamples must be >= 2"):
-        b.run()
+    b.run()
+
+    pair_dir = tmp_path / "SVM" / _BUNDLED_DS
+    df = pd.read_csv(pair_dir / "report.csv", index_col=0)
+    assert df.index.astype(str).tolist() == ["0"]
+    seed_dir = pair_dir / "predictions_by_seed" / "seed_0"
+    assert (seed_dir / "train_predictions.csv").is_file()
+    assert (seed_dir / "test_predictions.csv").is_file()
 
 
 def test_run_unresolvable_dataset_raises(tmp_path):
