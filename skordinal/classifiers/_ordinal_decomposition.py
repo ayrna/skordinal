@@ -11,6 +11,7 @@ from sklearn.utils._param_validation import StrOptions
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.model_selection import load_classifier
+from skordinal.preprocessing import build_coding_matrix
 from skordinal.utils.extmath import cumproba_to_proba, losses_to_proba
 from skordinal.utils.validation import check_ordinal_targets
 
@@ -31,8 +32,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
             default='ordered_partitions'
         Type of decomposition used to build the coding matrix. Each row of the
         coding matrix corresponds to a class and each column to a binary subproblem.
-        Entries are in {-1, 0, +1}: -1 for negative class, +1 for positive class,
-        and 0 if the class is ignored in that subproblem.
+        See :func:`~skordinal.preprocessing.build_coding_matrix`.
 
     decision_method : {'exponential_loss', 'hinge_loss', 'logarithmic_loss', 'frank_hall'}, \
             default='frank_hall'
@@ -60,26 +60,10 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
     n_features_in_ : int
         Number of features seen during fit.
 
-    coding_matrix_ : array-like, shape (n_classes, n_classes - 1)
+    coding_matrix_ : ndarray of shape (n_classes, n_classes - 1)
         Matrix that defines which classes will be used to build the model of each
         subproblem, and in which binary class they belong inside those new models.
-        Further explained previously.
-
-    Notes
-    -----
-    For ``n_classes=5``, the four decomposition types generate the following
-    coding matrices (rows = classes, columns = binary subproblems). Entries are
-    ``+1`` for positive class membership and ``-1`` for negative class membership.
-
-    ::
-
-        ordered_partitions     one_vs_next         one_vs_followers     one_vs_previous
-
-        [-1 -1 -1 -1]          [-1  0  0  0]       [-1  0  0  0]        [ 1  1  1  1]
-        [ 1 -1 -1 -1]          [ 1 -1  0  0]       [ 1 -1  0  0]        [ 1  1  1 -1]
-        [ 1  1 -1 -1]          [ 0  1 -1  0]       [ 1  1 -1  0]        [ 1  1 -1  0]
-        [ 1  1  1 -1]          [ 0  0  1 -1]       [ 1  1  1 -1]        [ 1 -1  0  0]
-        [ 1  1  1  1]          [ 0  0  0  1]       [ 1  1  1  1]        [-1  0  0  0]
+        Built by :func:`~skordinal.preprocessing.build_coding_matrix`.
 
     References
     ----------
@@ -165,7 +149,7 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
 
         # Give each train input its corresponding output label
         # for each binary classifier
-        self.coding_matrix_ = self._coding_matrix(dtype, len(self.classes_))
+        self.coding_matrix_ = build_coding_matrix(len(self.classes_), dtype)
         class_labels = self.coding_matrix_[y_encoded, :]
 
         self.estimators_ = []
@@ -307,54 +291,6 @@ class OrdinalDecomposition(ClassifierMixin, BaseEstimator):
             y_proba = self._frank_hall_method(predictions)
 
         return y_proba
-
-    def _coding_matrix(self, dtype: str, n_classes: int) -> np.ndarray:
-        """Return the coding matrix for a given dataset.
-
-        Parameters
-        ----------
-        dtype : str
-            Type of decomposition to be performed by classifier.
-
-        n_classes : int
-            Number of different classes in actual dataset.
-
-        Returns
-        -------
-        coding_matrix: array-like, shape (n_classes, n_classes - 1)
-            Each value must be in range {-1, 1, 0}, whether that class will belong to
-            negative class, positive class or will not be used for that particular
-            binary classifier.
-
-        Raises
-        ------
-        ValueError
-            If the decomposition type does not exist.
-
-        """
-        if dtype == "ordered_partitions":
-            coding_matrix = np.triu((-2 * np.ones(n_classes - 1))) + 1
-            coding_matrix = np.vstack([coding_matrix, np.ones((1, n_classes - 1))])
-
-        elif dtype == "one_vs_next":
-            plus_ones = np.diagflat(np.ones((1, n_classes - 1), dtype=int), -1)
-            minus_ones = -(np.eye(n_classes, n_classes - 1, dtype=int))
-            coding_matrix = minus_ones + plus_ones[:, :-1]
-
-        elif dtype == "one_vs_followers":
-            minus_ones = np.diagflat(-np.ones((1, n_classes), dtype=int))
-            plus_ones = np.tril(np.ones(n_classes), -1)
-            coding_matrix = (plus_ones + minus_ones)[:, :-1]
-
-        elif dtype == "one_vs_previous":
-            plusones = np.triu(np.ones(n_classes))
-            minusones = -np.diagflat(np.ones((1, n_classes - 1)), -1)
-            coding_matrix = np.flip((plusones + minusones)[:, :-1], axis=1)
-
-        else:
-            raise ValueError("Decomposition type %s does not exist" % dtype)
-
-        return coding_matrix.astype(int)
 
     def _get_predictions(self, X: np.ndarray) -> np.ndarray:
         """Return the probability of positive class membership.
