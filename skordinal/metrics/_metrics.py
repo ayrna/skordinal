@@ -42,8 +42,7 @@ def _check_metric_weight(y_true, sample_weight):
     weights = _check_sample_weight(
         weights, y_true, dtype=np.float64, ensure_non_negative=True
     )
-    # scikit-learn < 1.9 accepts an all-zero vector and lets the 0/0
-    # surface as nan downstream
+    # Before scikit-learn 1.9 an all-zero vector was accepted, letting 0/0 be nan
     if not weights.any():
         raise ValueError("Sample weights must contain at least one non-zero number.")
     return weights
@@ -228,7 +227,6 @@ def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> average_mean_absolute_error(y_true, y_pred)
     0.125
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -281,7 +279,6 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> geometric_mean(y_true, y_pred)
     0.8408964152537145
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -337,7 +334,6 @@ def gmsec(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> gmsec(y_true, y_pred)
     0.7071067811865476
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -384,7 +380,6 @@ def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> mean_extreme_sensitivity(y_true, y_pred)
     0.75
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -435,7 +430,6 @@ def maximum_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> maximum_mean_absolute_error(y_true, y_pred)
     0.5
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -481,7 +475,6 @@ def minimum_sensitivity(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> minimum_sensitivity(y_true, y_pred)
     0.5
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -527,7 +520,6 @@ def mean_zero_one_error(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> mean_zero_one_error(y_true, y_pred)
     0.2857142857142857
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -573,7 +565,6 @@ def kendalls_tau(y_true, y_pred):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> kendalls_tau(y_true, y_pred)
     0.8140915784106943
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     if np.unique(y_true).size < 2 or np.unique(y_pred).size < 2:
@@ -622,7 +613,6 @@ def weighted_kappa(y_true, y_pred, *, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> weighted_kappa(y_true, y_pred)
     0.7586206896551724
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
@@ -681,7 +671,6 @@ def spearmans_rho(y_true, y_pred):
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
     >>> spearmans_rho(y_true, y_pred)
     0.8464861424907173
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     if np.unique(y_true).size < 2 or np.unique(y_pred).size < 2:
@@ -749,7 +738,6 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     ...      [0.1, 0.05, 0.65, 0.2]])
     >>> ranked_probability_score(y_true, y_pred)
     0.5068750000000001
-
     """
     y_true, y_proba = _check_proba_inputs(y_true, y_proba)
     n_samples, n_classes = y_proba.shape
@@ -818,7 +806,6 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
     >>> y_pred = np.array([0, 1, 1, 2, 0, 0, 1])
     >>> accuracy_off1_score(y_true, y_pred)
     0.8571428571428571
-
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)

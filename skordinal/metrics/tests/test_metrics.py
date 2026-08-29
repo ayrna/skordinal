@@ -44,16 +44,20 @@ _WEIGHTED_METRICS = [
 
 _WEIGHTED_METRIC_IDS = [fn.__name__ for fn in _WEIGHTED_METRICS]
 
-_Y_PROBA_6 = np.array(
-    [
-        [0.7, 0.2, 0.1],
-        [0.1, 0.6, 0.3],
-        [0.2, 0.3, 0.5],
-        [0.3, 0.5, 0.2],
-        [0.6, 0.3, 0.1],
-        [0.1, 0.2, 0.7],
-    ]
-)
+
+@pytest.fixture
+def y_proba_6():
+    """Six rows of three-class probabilities."""
+    return np.array(
+        [
+            [0.7, 0.2, 0.1],
+            [0.1, 0.6, 0.3],
+            [0.2, 0.3, 0.5],
+            [0.3, 0.5, 0.2],
+            [0.6, 0.3, 0.1],
+            [0.1, 0.2, 0.7],
+        ]
+    )
 
 
 def test_check_metric_inputs_1d_passthrough():
@@ -559,7 +563,7 @@ def test_correlation_metrics_reject_sample_weight():
 
 
 @pytest.mark.parametrize("fn", _WEIGHTED_METRICS, ids=_WEIGHTED_METRIC_IDS)
-def test_metric_unit_sample_weight_matches_unweighted(fn):
+def test_metric_unit_sample_weight_matches_unweighted(fn, y_proba_6):
     """All-ones sample_weight produces the same result as no weight."""
     y_t = np.array([0, 1, 2, 1, 0, 2])
     y_p = np.array([0, 1, 1, 2, 0, 2])
@@ -567,8 +571,8 @@ def test_metric_unit_sample_weight_matches_unweighted(fn):
     w = np.ones(n)
 
     if fn is ranked_probability_score:
-        unweighted = fn(y_t, _Y_PROBA_6)
-        weighted = fn(y_t, _Y_PROBA_6, sample_weight=w)
+        unweighted = fn(y_t, y_proba_6)
+        weighted = fn(y_t, y_proba_6, sample_weight=w)
     else:
         unweighted = fn(y_t, y_p)
         weighted = fn(y_t, y_p, sample_weight=w)
@@ -620,11 +624,11 @@ def test_check_metric_weight_ravels_column_vector():
 
 
 @pytest.mark.parametrize("fn", _WEIGHTED_METRICS, ids=_WEIGHTED_METRIC_IDS)
-def test_metric_routes_sample_weight_through_the_check(fn):
+def test_metric_routes_sample_weight_through_the_check(fn, y_proba_6):
     """Every weighted metric rejects an all-zero sample_weight."""
     y_t = np.array([0, 1, 2, 1, 0, 2])
     y_p = np.array([0, 1, 1, 2, 0, 2])
-    x = _Y_PROBA_6 if fn is ranked_probability_score else y_p
+    x = y_proba_6 if fn is ranked_probability_score else y_p
     with pytest.raises(ValueError, match="non-zero"):
         fn(y_t, x, sample_weight=np.zeros(len(y_t)))
 
@@ -634,13 +638,13 @@ def test_metric_routes_sample_weight_through_the_check(fn):
     _WEIGHTED_METRICS + [kendalls_tau, spearmans_rho],
     ids=_WEIGHTED_METRIC_IDS + ["kendalls_tau", "spearmans_rho"],
 )
-def test_metric_returns_python_float(fn):
+def test_metric_returns_python_float(fn, y_proba_6):
     """Every public metric returns a Python float, not a numpy scalar."""
     y_t = np.array([0, 1, 2, 1, 0, 2])
     y_p = np.array([0, 1, 1, 2, 0, 2])
 
     if fn is ranked_probability_score:
-        result = fn(y_t, _Y_PROBA_6)
+        result = fn(y_t, y_proba_6)
     else:
         result = fn(y_t, y_p)
 
@@ -651,6 +655,6 @@ def test_metric_returns_python_float(fn):
 
 def test_metric_rejects_non_array_like_y_true():
     """A scalar y_true is rejected at the parameter boundary."""
-    # decorator fires before _check_metric_inputs
+    # Decorator fires before _check_metric_inputs
     with pytest.raises(InvalidParameterError):
         average_mean_absolute_error(1.0, [1, 2])
