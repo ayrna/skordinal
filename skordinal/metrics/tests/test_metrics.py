@@ -46,7 +46,6 @@ _WEIGHTED_METRICS = [
 
 _WEIGHTED_METRIC_IDS = [fn.__name__ for fn in _WEIGHTED_METRICS]
 
-
 # Metrics whose result depends on the ordinal class order, so they take labels=
 _ORDERED_METRICS = [
     accuracy_off1_score,
@@ -58,6 +57,12 @@ _ORDERED_METRICS = [
 ]
 
 _ORDERED_METRIC_IDS = [fn.__name__ for fn in _ORDERED_METRICS]
+
+
+@pytest.fixture
+def y_proba_3():
+    """Two rows of three-class probabilities, with exact 0 and 1 entries."""
+    return np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.5]])
 
 
 @pytest.fixture
@@ -513,33 +518,56 @@ def test_ranked_probability_score_expands_binary_proba():
     npt.assert_allclose(ranked_probability_score(y_true, p.reshape(-1, 1)), expected)
 
 
-@pytest.mark.parametrize(
-    "y_true, y_proba, expected",
-    [
-        (
-            np.array([0, 5, 1]),
-            np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.5], [0.0, 1.0, 0.0]]),
-            2.0 / 3,
+def test_ranked_probability_score_labels():
+    """labels maps raw class labels onto the y_proba columns and pins their count."""
+    labels = np.array([1, 2, 3])
+    # Asymmetric columns, so a mapping that failed to shift would score differently
+    y_proba = np.array([[0.2, 0.4, 0.4], [0.7, 0.2, 0.1]])
+    npt.assert_allclose(
+        ranked_probability_score(np.array([2, 1]), y_proba, labels=labels),
+        ranked_probability_score(np.array([1, 0]), y_proba),
+    )
+    # A one-hot y_true is already column indices, so labels must not re-map it;
+    # column 0 is outside labels, so a re-mapping would raise here
+    npt.assert_allclose(
+        ranked_probability_score(np.eye(3)[[0, 2]], y_proba, labels=labels),
+        ranked_probability_score(np.array([0, 2]), y_proba),
+    )
+    # A single label pins a lone column as a genuine one-class distribution
+    npt.assert_equal(
+        ranked_probability_score(
+            np.array([7, 7]), np.array([[1.0], [1.0]]), labels=np.array([7])
         ),
-        (np.array([5]), np.array([[0.2, 0.2, 0.2, 0.2, 0.2]]), 4.0),
+        0.0,
+    )
+
+
+@pytest.mark.parametrize(
+    "y_true, labels, one_column, match",
+    [
+        ([0, 5], None, False, "not belonging to the 3 columns"),
+        ([0, -1], None, False, "not belonging to the 3 columns"),
+        ([2, 9], np.array([1, 2, 3]), False, "not belonging to the passed labels"),
+        ([0, 1], np.array([3, 1, 2]), False, "strictly ascending"),
+        ([0, 1], np.array([1, 2]), False, "2 labels for 3 columns"),
+        ([0, 1], np.array([1, 2, 3]), True, "expanded to two columns"),
+        ([0, 1], np.array(["low", "mid", "high"]), False, "requires numeric labels"),
     ],
-    ids=["3_classes_mixed", "5_classes_single"],
+    ids=[
+        "above",
+        "below",
+        "outside_labels",
+        "unsorted",
+        "width",
+        "width_expanded",
+        "non_numeric",
+    ],
 )
-def test_ranked_probability_score_out_of_range(y_true, y_proba, expected):
-    """An out-of-range y_true is penalised by n_classes - 1, not a fixed constant."""
-    npt.assert_almost_equal(
-        ranked_probability_score(y_true, y_proba), expected, decimal=6
-    )
-
-
-def test_ranked_probability_score_out_of_range_no_better_than_worst_in_range():
-    """An out-of-range label scores no better than the worst in-range one."""
-    y_proba = np.array([[0.0, 0.0, 1.0]])
-    out_of_range = ranked_probability_score(np.array([9]), y_proba)
-    worst_in_range = max(
-        ranked_probability_score(np.array([label]), y_proba) for label in range(3)
-    )
-    assert out_of_range >= worst_in_range
+def test_ranked_probability_score_rejects(y_proba_3, y_true, labels, one_column, match):
+    """A y_true with no matching column, or a malformed labels, raises ValueError."""
+    y_proba = np.array([0.8, 0.3]) if one_column else y_proba_3
+    with pytest.raises(ValueError, match=match):
+        ranked_probability_score(np.array(y_true), y_proba, labels=labels)
 
 
 @pytest.mark.parametrize(

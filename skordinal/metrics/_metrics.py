@@ -112,28 +112,20 @@ def _resolve_ordinal_labels(y_true, y_pred, labels):
     return labels
 
 
-def _check_proba_inputs(y_true, y_proba):
+def _check_proba_inputs(y_true, y_proba, *, labels=None):
     """Coerce and validate the inputs of a probabilistic ordinal metric.
 
-    ``y_true`` is collapsed as in ``_check_metric_inputs``, then required
-    to be integer-valued and returned as ``intp`` 0-based class indices.
-    ``y_proba`` must be coercible to ``float64`` with every entry in
-    ``[0, 1]``; a 1-D or single-column input is the positive-class
-    probability of a binary problem and is expanded to ``[1 - p, p]``, and
-    rows must then sum to 1 within ``atol=1e-6, rtol=0``. Raises
-    ``ValueError`` on a malformed or non-integer ``y_true``, a length
-    mismatch, an out-of-range entry, or a row that does not sum to 1.
+    Returns ``y_true`` as ``intp`` column indices into ``y_proba`` --
+    taken as given when ``labels`` is ``None`` or ``y_true`` was one-hot,
+    mapped through ``labels`` otherwise -- and ``y_proba`` as a validated
+    float64 matrix whose rows sum to 1, expanding a single column to
+    ``[1 - p, p]`` unless ``labels`` pins a one-class distribution.
     """
     y_true_arr = _check_labels(y_true, "y_true")
-    y_true_idx = y_true_arr.astype(np.intp)
-    # the intp cast truncates, so a non-integral float or object value would
-    # land on a different, valid class; a digit string keeps its parsed value
-    if y_true_arr.dtype.kind in "fO" and not np.array_equal(y_true_idx, y_true_arr):
-        raise ValueError(
-            "y_true must be integer-valued (0-based class indices); got "
-            "non-integer values."
-        )
-    y_true_arr = y_true_idx
+    # A one-hot y_true is argmax-collapsed to column indices, never re-mapped
+    shape = np.shape(y_true)
+    y_true_is_index = labels is None or (len(shape) == 2 and shape[1] > 1)
+
     y_proba_arr = check_array(
         y_proba, ensure_2d=False, dtype="float64", input_name="y_proba"
     )
@@ -147,8 +139,57 @@ def _check_proba_inputs(y_true, y_proba):
             f"y_proba entries must lie in [0, 1]; got range [{lo:.6g}, {hi:.6g}]"
         )
 
-    if y_proba_arr.shape[1] == 1:
+    if labels is not None:
+        labels = check_array(labels, ensure_2d=False, dtype=None, input_name="labels")
+        if labels.ndim != 1:
+            raise ValueError(f"labels must be a 1-D array; got shape {labels.shape}.")
+        # Columns follow classes_, so a lexicographic string order would be
+        # scored as the ordinal scale
+        if not _numeric_label_order(labels):
+            raise ValueError(
+                "ranked_probability_score requires numeric labels; encode "
+                "ordinal categories as integers reflecting their order."
+            )
+        if labels.size > 1 and not np.all(labels[1:] > labels[:-1]):
+            raise ValueError(
+                "labels must be sorted in strictly ascending order, to match "
+                f"the columns of y_proba; got {labels.tolist()}."
+            )
+
+    # A lone column is a binary positive-class probability, unless labels
+    # pins the width to one genuine class
+    expansion = ""
+    if y_proba_arr.shape[1] == 1 and (labels is None or labels.size != 1):
         y_proba_arr = np.hstack([1.0 - y_proba_arr, y_proba_arr])
+        expansion = " (a 1-D y_proba was expanded to two columns)"
+    n_classes = y_proba_arr.shape[1]
+
+    if labels is not None and labels.size != n_classes:
+        raise ValueError(
+            "the number of classes in labels differs from the number of y_proba "
+            f"columns: got {labels.size} labels for {n_classes} columns{expansion}."
+        )
+
+    if y_true_is_index:
+        y_true_idx = y_true_arr.astype(np.intp)
+        # The intp cast truncates, so a non-integral value would land on a
+        # different, valid class; a digit string keeps its parsed value
+        if y_true_arr.dtype.kind in "fO" and not np.array_equal(y_true_idx, y_true_arr):
+            raise ValueError(
+                "y_true must be integer-valued (0-based class indices); got "
+                "non-integer values."
+            )
+        outside = np.unique(y_true_idx[(y_true_idx < 0) | (y_true_idx >= n_classes)])
+        if outside.size:
+            raise ValueError(
+                f"y_true contains values {outside.tolist()} not belonging to "
+                f"the {n_classes} columns of y_proba; pass labels to map raw "
+                "class labels."
+            )
+        y_true_arr = y_true_idx
+    else:
+        _check_labels_cover(y_true_arr, labels, "y_true")
+        y_true_arr = np.searchsorted(labels, y_true_arr)
 
     row_sums = y_proba_arr.sum(axis=1)
     if not np.allclose(row_sums, 1.0, atol=1e-6, rtol=0):
@@ -739,11 +780,12 @@ def spearmans_rho(y_true, y_pred):
     {
         "y_true": ["array-like"],
         "y_proba": ["array-like"],
+        "labels": ["array-like", None],
         "sample_weight": ["array-like", None],
     },
     prefer_skip_nested_validation=True,
 )
-def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
+def ranked_probability_score(y_true, y_proba, *, labels=None, sample_weight=None):
     """Ranked probability score for ordinal class probabilities.
 
     Quadratic distance between the cumulative ground-truth indicator
@@ -754,14 +796,22 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     Parameters
     ----------
     y_true : array-like of shape (n_samples,)
-        Ground truth labels encoded as 0-based integer indices.
+        Ground truth labels: 0-based column indices into ``y_proba``, or
+        raw class labels when ``labels`` is given.
 
     y_proba : array-like of shape (n_samples, n_classes), (n_samples, 1), or (n_samples,)
         Predicted class probability distribution. A 1-D input, or a
         single-column 2-D input, is treated as the positive-class
         probability of a binary problem and expanded to two columns,
-        ``[1 - p, p]``. Every entry must lie in ``[0, 1]`` and each row
-        must sum to approximately ``1`` (``atol=1e-6, rtol=0``).
+        ``[1 - p, p]``, unless ``labels`` pins the single column to a
+        one-class distribution. Every entry must lie in ``[0, 1]`` and
+        each row must sum to approximately ``1`` (``atol=1e-6, rtol=0``).
+
+    labels : array-like of shape (n_classes,), default=None
+        Class values matching the columns of ``y_proba`` (typically a
+        fitted classifier's ``classes_``), numeric and sorted in strictly
+        ascending order. If ``None``, ``y_true`` must already be column
+        indices.
 
     sample_weight : array-like of shape (n_samples,), default=None
         Sample weights forwarded to :func:`numpy.average`.
@@ -774,9 +824,8 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
 
     Notes
     -----
-    Samples whose ``y_true`` falls outside ``[0, n_classes)`` are
-    counted with a per-sample contribution of ``n_classes - 1``, the
-    worst per-sample loss attainable by any in-range label.
+    A ``y_true`` class with no matching ``y_proba`` column raises
+    ``ValueError``, as in :func:`sklearn.metrics.log_loss`.
 
     References
     ----------
@@ -794,23 +843,16 @@ def ranked_probability_score(y_true, y_proba, *, sample_weight=None):
     ...      [0.1, 0.05, 0.65, 0.2]])
     >>> ranked_probability_score(y_true, y_pred)
     0.5068750000000001
+    >>> ranked_probability_score(y_true + 1, y_pred, labels=np.array([1, 2, 3, 4]))
+    0.5068750000000001
     """
-    y_true, y_proba = _check_proba_inputs(y_true, y_proba)
-    n_samples, n_classes = y_proba.shape
+    y_true, y_proba = _check_proba_inputs(y_true, y_proba, labels=labels)
     sample_weight = _check_metric_weight(y_true, sample_weight)
 
-    in_range = (y_true >= 0) & (y_true < n_classes)
     y_oh = np.zeros_like(y_proba)
-    rows = np.arange(n_samples)[in_range]
-    y_oh[rows, y_true[in_range]] = 1.0
+    y_oh[np.arange(y_proba.shape[0]), y_true] = 1.0
 
-    y_oh_cum = y_oh.cumsum(axis=1)
-    y_proba_cum = y_proba.cumsum(axis=1)
-
-    per_sample = np.power(y_proba_cum - y_oh_cum, 2).sum(axis=1)
-    # n_classes - 1 cumulative steps, each contributing 1 squared
-    per_sample[~in_range] = float(n_classes - 1)
-
+    per_sample = np.power(y_proba.cumsum(axis=1) - y_oh.cumsum(axis=1), 2).sum(axis=1)
     return float(np.average(per_sample, weights=sample_weight))
 
 
