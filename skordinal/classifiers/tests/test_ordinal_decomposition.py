@@ -8,6 +8,9 @@ import pandas as pd
 import pytest
 from sklearn.exceptions import NotFittedError
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 
 from skordinal.classifiers import OrdinalDecomposition
 from skordinal.datasets import make_ordinal_classification
@@ -24,6 +27,18 @@ def X():
 def y():
     """Create sample target variables for testing."""
     return np.array([1, 1, 1, 2, 2, 2])
+
+
+@pytest.fixture
+def X_3class():
+    """Create sample feature patterns for a three-class problem."""
+    return np.array([[0.0], [0.5], [1.0], [5.0], [5.5], [6.0], [10.0], [10.5], [11.0]])
+
+
+@pytest.fixture
+def y_3class():
+    """Create sample target variables for a three-class problem."""
+    return np.array([1, 1, 1, 2, 2, 2, 3, 3, 3])
 
 
 @pytest.fixture
@@ -48,10 +63,9 @@ def binary_predictions():
 def test_ordinal_decomposition(X, y):
     """Check if this algorithm can correctly classify a toy problem."""
     classifier = OrdinalDecomposition(
-        dtype="ordered_partitions",
+        estimator=KNeighborsClassifier(n_neighbors=1),
+        decomposition="ordered_partitions",
         decision_method="frank_hall",
-        base_classifier="SVC",
-        parameters={"C": 1.0, "gamma": "scale", "probability": True},
     )
 
     y_pred = classifier.fit(X, y).predict(X)
@@ -61,8 +75,8 @@ def test_ordinal_decomposition(X, y):
 @pytest.mark.parametrize(
     "param_name, invalid_value",
     [
-        ("dtype", "one_vs_all"),
-        ("dtype", "frank_hall"),
+        ("decomposition", "one_vs_all"),
+        ("decomposition", "frank_hall"),
         ("decision_method", "invalid"),
         ("decision_method", "one_vs_next"),
     ],
@@ -70,7 +84,7 @@ def test_ordinal_decomposition(X, y):
 def test_ordinal_decomposition_hyperparameter_value_validation(
     X, y, param_name, invalid_value
 ):
-    """Test that OrdinalDecomposition raises ValueError for invalid of
+    """Test that OrdinalDecomposition raises ValueError for invalid values of
     hyperparameters."""
     classifier = OrdinalDecomposition(**{param_name: invalid_value})
 
@@ -81,11 +95,10 @@ def test_ordinal_decomposition_hyperparameter_value_validation(
 @pytest.mark.parametrize(
     "param_name, invalid_value",
     [
-        ("dtype", ["ordered_partitions"]),
+        ("decomposition", ["ordered_partitions"]),
         ("decision_method", 0),
-        ("base_classifier", 3),
-        ("parameters", "tol"),
-        ("parameters", []),
+        ("estimator", 3),
+        ("estimator", SVC()),
     ],
 )
 def test_ordinal_decomposition_hyperparameter_type_validation(
@@ -112,7 +125,7 @@ def test_ordinal_decomposition_fit_input_validation(X, y):
 def test_frank_hall_method(binary_predictions):
     """Test that frank and hall method returns expected values for one toy problem
     (starting off predicted probabilities given by each binary classifier)."""
-    classifier = OrdinalDecomposition(dtype="ordered_partitions")
+    classifier = OrdinalDecomposition(decomposition="ordered_partitions")
     classifier.coding_matrix_ = build_coding_matrix(5, "ordered_partitions")
 
     y_proba = classifier._frank_hall_method(binary_predictions)
@@ -200,7 +213,7 @@ def test_frank_hall_method(binary_predictions):
 )
 def test_loss_methods(binary_predictions, loss_method, expected):
     """Test that each loss decoder returns expected values for one toy problem."""
-    classifier = OrdinalDecomposition(dtype="ordered_partitions")
+    classifier = OrdinalDecomposition(decomposition="ordered_partitions")
     classifier.coding_matrix_ = build_coding_matrix(5, "ordered_partitions")
 
     losses = getattr(classifier, loss_method)((2 * binary_predictions) - 1)
@@ -218,20 +231,25 @@ def test_ordinal_decomposition_predict_invalid_input_raises_error(X, y):
 
 
 def test_frank_hall_method_raises_error(X, y):
-    """Test that using frank_hall with invalid dtype raises a ValueError."""
-    classifier = OrdinalDecomposition(dtype="one_vs_next", decision_method="frank_hall")
-    with pytest.raises(ValueError):
+    """Test that frank_hall over a non-ordered_partitions matrix raises a ValueError."""
+    classifier = OrdinalDecomposition(
+        decomposition="one_vs_next", decision_method="frank_hall"
+    )
+    with pytest.raises(ValueError, match="ordered_partitions must be used"):
         classifier.fit(X, y)
 
 
-def test_ordinal_decomposition_sets_classes_and_n_features_in_after_fit(X, y):
-    """Test that classes_ and n_features_in_ are set after fit."""
-    classifier = OrdinalDecomposition().fit(X, y)
+def test_ordinal_decomposition_sets_the_fitted_attributes(X_3class, y_3class):
+    """Test the fitted attributes, including the resolved default estimator."""
+    classifier = OrdinalDecomposition().fit(X_3class, y_3class)
 
     assert isinstance(classifier.classes_, np.ndarray)
-    np.testing.assert_array_equal(classifier.classes_, np.unique(y))
+    np.testing.assert_array_equal(classifier.classes_, np.unique(y_3class))
     assert isinstance(classifier.n_features_in_, int)
-    assert classifier.n_features_in_ == X.shape[1]
+    assert classifier.n_features_in_ == X_3class.shape[1]
+    assert classifier.estimator is None
+    assert len(classifier.estimators_) == classifier.classes_.size - 1
+    assert all(isinstance(est, LogisticRegression) for est in classifier.estimators_)
 
 
 def test_ordinal_decomposition_predict_raises_if_not_fitted(X):
@@ -285,8 +303,7 @@ def test_ordinal_decomposition_label_roundtrip(labels):
     y = np.repeat(labels_array, 3)
 
     classifier = OrdinalDecomposition(
-        base_classifier="SVC",
-        parameters={"C": 1.0, "gamma": "scale", "probability": True},
+        estimator=KNeighborsClassifier(n_neighbors=1)
     ).fit(X, y)
 
     np.testing.assert_array_equal(classifier.classes_, np.unique(labels_array))
@@ -309,7 +326,7 @@ def test_ordinal_decomposition_decision_method_frozen_after_fit(X, y):
 def test_ordinal_decomposition_frank_hall_unreachable_by_set_params(X, y):
     """Test that set_params cannot reach frank_hall over a one_vs_next coding matrix."""
     classifier = OrdinalDecomposition(
-        dtype="one_vs_next", decision_method="hinge_loss"
+        decomposition="one_vs_next", decision_method="hinge_loss"
     ).fit(X, y)
     y_proba_before = classifier.predict_proba(X)
 
@@ -320,22 +337,44 @@ def test_ordinal_decomposition_frank_hall_unreachable_by_set_params(X, y):
         classifier.fit(X, y)
 
 
+def test_ordinal_decomposition_clones_the_given_estimator(X_3class, y_3class):
+    """Test that fit clones the base estimator instead of fitting it in place."""
+    base = LogisticRegression()
+    classifier = OrdinalDecomposition(estimator=base).fit(X_3class, y_3class)
+
+    assert classifier.estimator is base
+    assert not hasattr(base, "coef_")
+    assert len(set(map(id, classifier.estimators_))) == len(classifier.estimators_)
+
+
+def test_ordinal_decomposition_grid_search_tunes_nested_estimator(X_3class, y_3class):
+    """Test that GridSearchCV reaches the base estimator through estimator__*."""
+    search = GridSearchCV(
+        OrdinalDecomposition(estimator=LogisticRegression()),
+        param_grid={"estimator__C": [0.01, 100.0]},
+        cv=3,
+        error_score="raise",
+    ).fit(X_3class, y_3class)
+
+    best_C = search.best_params_["estimator__C"]
+    assert all(est.C == best_C for est in search.best_estimator_.estimators_)
+
+
 @pytest.mark.parametrize(
-    "dtype",
+    "decomposition",
     ["ordered_partitions", "one_vs_next", "one_vs_followers", "one_vs_previous"],
 )
-def test_ordinal_decomposition_delegates_the_coding_matrix(dtype):
+def test_ordinal_decomposition_delegates_the_coding_matrix(
+    X_3class, y_3class, decomposition
+):
     """Test that coding_matrix_ comes from build_coding_matrix."""
-    X, y = make_ordinal_classification(
-        n_samples=24, n_features=3, n_informative=3, n_classes=3, random_state=0
-    )
-    classifier = OrdinalDecomposition(dtype=dtype, decision_method="hinge_loss").fit(
-        X, y
-    )
+    classifier = OrdinalDecomposition(
+        decomposition=decomposition, decision_method="hinge_loss"
+    ).fit(X_3class, y_3class)
 
     npt.assert_array_equal(
         classifier.coding_matrix_,
-        build_coding_matrix(classifier.classes_.size, dtype),
+        build_coding_matrix(classifier.classes_.size, decomposition),
     )
 
 
@@ -345,10 +384,18 @@ def test_ordinal_decomposition_asymmetric_estimator_follows_public_convention():
         n_samples=24, n_features=3, n_informative=3, n_classes=3, random_state=0
     )
     classifier = OrdinalDecomposition(
-        base_classifier=LogisticRegression(class_weight={-1: 5, 1: 1}),
-        dtype="one_vs_next",
+        estimator=LogisticRegression(class_weight={-1: 5, 1: 1}),
+        decomposition="one_vs_next",
         decision_method="exponential_loss",
     ).fit(X, y)
 
     expected = [2, 1, 2, 2, 2, 1, 1, 1, 2, 0, 1, 0, 1, 2, 0, 2, 1, 2, 2, 2, 1, 0, 0, 1]
     npt.assert_array_equal(classifier.predict(X), expected)
+
+
+def test_ordinal_decomposition_validates_nested_estimator_params(X, y):
+    """Test that an invalid base-estimator hyperparameter is reported at fit."""
+    classifier = OrdinalDecomposition(estimator=LogisticRegression(C=-1))
+
+    with pytest.raises(ValueError, match=r"The 'C' parameter of LogisticRegression"):
+        classifier.fit(X, y)
