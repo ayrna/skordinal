@@ -333,8 +333,8 @@ def test_geometric_mean():
     npt.assert_almost_equal(geometric_mean(y_true, y_pred), 0.7991, decimal=4)
 
 
-def test_geometric_mean_empty_class_treated_as_one():
-    """A class with zero total weight is treated as sensitivity 1, not 0."""
+def test_geometric_mean_zero_support_class_excluded():
+    """A class whose whole support is zero-weighted leaves the geometric mean."""
     y_true = np.array([0, 0, 1, 1, 2, 2])
     y_pred = np.array([0, 0, 1, 1, 2, 2])
     w = np.array([0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
@@ -408,6 +408,16 @@ def test_maximum_mean_absolute_error_pred_only_class_excluded():
 def test_minimum_sensitivity(y_true, y_pred, expected):
     """minimum_sensitivity returns the lowest per-class recall."""
     npt.assert_almost_equal(minimum_sensitivity(y_true, y_pred), expected, decimal=6)
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [minimum_sensitivity, gmsec, mean_extreme_sensitivity, geometric_mean],
+    ids=["minimum_sensitivity", "gmsec", "mean_extreme_sensitivity", "geometric_mean"],
+)
+def test_sensitivity_metrics_ignore_pred_only_class(fn):
+    """A class predicted but never true does not enter a recall-based metric."""
+    npt.assert_almost_equal(fn([0, 0, 1, 1], [0, 1, 1, 2]), 0.5, decimal=6)
 
 
 def test_mean_zero_one_error():

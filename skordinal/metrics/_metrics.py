@@ -6,7 +6,7 @@ from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
     mean_absolute_error,
-    recall_score,
+    precision_recall_fscore_support,
 )
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils._param_validation import validate_params
@@ -110,42 +110,16 @@ def _check_proba_inputs(y_true, y_proba):
 
 
 def _recall_per_class(y_true, y_pred, *, labels=None, sample_weight=None):
-    """Return per-class recall as a 1-D float64 ndarray.
-
-    Thin wrapper around :func:`sklearn.metrics.recall_score` with
-    ``average=None`` and ``zero_division=0``. Centralises the call so
-    public sensitivity-based metrics share one implementation.
-
-    Parameters
-    ----------
-    y_true : ndarray of shape (n_samples,)
-        Ground truth labels.
-
-    y_pred : ndarray of shape (n_samples,)
-        Predicted labels.
-
-    labels : array-like of shape (n_classes,), default=None
-        Labels in the order to score. If ``None``, all unique labels are
-        used.
-
-    sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights.
-
-    Returns
-    -------
-    sensitivities : ndarray of shape (n_classes,), dtype float64
-    """
-    return np.asarray(
-        recall_score(
-            y_true,
-            y_pred,
-            labels=labels,
-            average=None,
-            sample_weight=sample_weight,
-            zero_division=0,
-        ),
-        dtype=np.float64,
+    """Return per-class recall, dropping zero-support classes."""
+    _, recall, _, support = precision_recall_fscore_support(
+        y_true,
+        y_pred,
+        labels=labels,
+        average=None,
+        sample_weight=sample_weight,
+        zero_division=0,
     )
+    return np.asarray(recall[support > 0], dtype=np.float64)
 
 
 def _per_class_mae(y_true, y_pred, *, labels=None, sample_weight=None):
@@ -244,10 +218,10 @@ def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
 def geometric_mean(y_true, y_pred, *, sample_weight=None):
     """Compute the geometric mean of per-class sensitivities.
 
-    Sensitivity (recall) is computed for every class from the confusion
-    matrix and the result is the geometric mean across classes. The
-    metric penalises poor performance on minority classes more strongly
-    than a simple average.
+    Sensitivity (recall) is computed for every class present in
+    ``y_true`` and the result is the geometric mean across those classes.
+    The metric penalises poor performance on minority classes more
+    strongly than a simple average.
 
     Parameters
     ----------
@@ -258,7 +232,7 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
         Predicted labels.
 
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to the confusion matrix.
+        Sample weights.
 
     Returns
     -------
@@ -267,9 +241,8 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
 
     Notes
     -----
-    Classes with no ground-truth samples are treated as sensitivity 1,
-    leaving them out of the geometric mean. This avoids collapsing the
-    score to zero when a class has no support.
+    Only classes present in ``y_true`` enter the geometric mean; a class
+    that is predicted but never true does not contribute a zero factor.
 
     Examples
     --------
@@ -282,12 +255,11 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
-    sum_by_class = cm.sum(axis=1)
-    with np.errstate(divide="ignore", invalid="ignore"):
-        sensitivities = np.diag(cm) / sum_by_class.astype("double")
-    sensitivities[sum_by_class == 0] = 1
-    return float(pow(np.prod(sensitivities), 1.0 / cm.shape[0]))
+    sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
+    # A zero factor forces the product to 0; the mean of logs avoids underflow
+    if (sensitivities == 0).any():
+        return 0.0
+    return float(np.exp(np.log(sensitivities).mean()))
 
 
 @validate_params(
@@ -460,7 +432,7 @@ def minimum_sensitivity(y_true, y_pred, *, sample_weight=None):
         Predicted labels.
 
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to ``recall_score``.
+        Sample weights.
 
     Returns
     -------
