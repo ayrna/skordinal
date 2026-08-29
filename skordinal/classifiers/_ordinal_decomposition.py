@@ -188,40 +188,7 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
 
-        # Getting predicted labels for dataset from each classifier
-        predictions = self._get_predictions(X)
-
-        decision_method = self._decision_method_
-        if decision_method == "exponential_loss":
-            # Scaling predictions from [0,1] range to [-1,1]
-            predictions = predictions * 2 - 1
-
-            # Transforming from binary problems to the original problem
-            losses = self._exponential_loss(predictions)
-            y_pred = self.classes_[np.argmin(losses, axis=1)]
-
-        elif decision_method == "hinge_loss":
-            # Scaling predictions from [0,1] range to [-1,1]
-            predictions = predictions * 2 - 1
-
-            # Transforming from binary problems to the original problem
-            losses = self._hinge_loss(predictions)
-            y_pred = self.classes_[np.argmin(losses, axis=1)]
-
-        elif decision_method == "logarithmic_loss":
-            # Scaling predictions from [0,1] range to [-1,1]
-            predictions = predictions * 2 - 1
-
-            # Transforming from binary problems to the original problem
-            losses = self._logarithmic_loss(predictions)
-            y_pred = self.classes_[np.argmin(losses, axis=1)]
-
-        else:  # frank_hall
-            # Transforming from binary problems to the original problem
-            y_proba = self._frank_hall_method(predictions)
-            y_pred = self.classes_[np.argmax(y_proba, axis=1)]
-
-        return y_pred
+        return self.classes_[np.argmax(self._proba(X), axis=1)]
 
     def predict_proba(self, X: ArrayLike) -> np.ndarray:
         """Probability estimates.
@@ -251,39 +218,26 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, ensure_2d=True, dtype=None)
 
-        # Getting predicted labels for dataset from each classifier
+        return self._proba(X)
+
+    def _proba(self, X: np.ndarray) -> np.ndarray:
+        """Compute class probabilities from pre-validated X."""
         predictions = self._get_predictions(X)
 
-        decision_method = self._decision_method_
-        if decision_method == "exponential_loss":
-            # Scaling predictions from [0,1] range to [-1,1]
-            predictions = predictions * 2 - 1
+        if self._decision_method_ == "frank_hall":
+            return self._frank_hall_method(predictions)
 
-            # Transforming from binary problems to the original problem
-            losses = self._exponential_loss(predictions).astype(float)
-            y_proba = losses_to_proba(losses)
+        # Scaling predictions from [0, 1] range to [-1, 1]
+        predictions = predictions * 2 - 1
 
-        elif decision_method == "hinge_loss":
-            # Scaling predictions from [0,1] range to [-1,1]
-            predictions = predictions * 2 - 1
+        loss_fn = {
+            "exponential_loss": self._exponential_loss,
+            "hinge_loss": self._hinge_loss,
+            "logarithmic_loss": self._logarithmic_loss,
+        }[self._decision_method_]
 
-            # Transforming from binary problems to the original problem
-            losses = self._hinge_loss(predictions).astype(float)
-            y_proba = losses_to_proba(losses)
-
-        elif decision_method == "logarithmic_loss":
-            # Scaling predictions from [0,1] range to [-1,1]
-            predictions = predictions * 2 - 1
-
-            # Transforming from binary problems to the original problem
-            losses = self._logarithmic_loss(predictions).astype(float)
-            y_proba = losses_to_proba(losses)
-
-        else:  # frank_hall
-            # Transforming from binary problems to the original problem
-            y_proba = self._frank_hall_method(predictions)
-
-        return y_proba
+        # Transforming from binary problems to the original problem
+        return losses_to_proba(loss_fn(predictions))
 
     def _get_predictions(self, X: np.ndarray) -> np.ndarray:
         """Return the probability of positive class membership.
@@ -303,11 +257,7 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
             Probability estimates or binary classification outcomes.
 
         """
-        predictions = np.array(
-            [est.predict_proba(X)[:, 1] for est in self.estimators_]
-        ).T
-
-        return predictions
+        return np.column_stack([est.predict_proba(X)[:, 1] for est in self.estimators_])
 
     def _exponential_loss(self, predictions: np.ndarray) -> np.ndarray:
         """Compute the exponential losses for each label.
