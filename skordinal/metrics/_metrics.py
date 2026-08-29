@@ -1,5 +1,7 @@
 """Metrics for ordinal classification."""
 
+import numbers
+
 import numpy as np
 import scipy.stats
 from sklearn.metrics import (
@@ -62,6 +64,54 @@ def _check_metric_inputs(y_true, y_pred):
     return y_true_arr, y_pred_arr
 
 
+def _numeric_label_order(labels):
+    """Return True when sorting ``labels`` yields their ordinal order.
+
+    Numeric dtypes qualify; an object array only when every element is a
+    number, so digit strings cannot smuggle in a lexicographic order.
+    """
+    if labels.dtype.kind in "biuf":
+        return True
+    if labels.dtype.kind != "O":
+        return False
+    return all(isinstance(value, numbers.Number) for value in labels)
+
+
+def _check_labels_cover(values, labels, name):
+    """Raise ValueError if ``values`` holds anything outside ``labels``."""
+    missing = np.setdiff1d(values, labels)
+    if missing.size:
+        raise ValueError(
+            f"{name} contains values {missing.tolist()} not belonging to the "
+            f"passed labels {labels.tolist()}."
+        )
+
+
+def _resolve_ordinal_labels(y_true, y_pred, labels):
+    """Resolve the ordinal label set of one metric call.
+
+    An explicit ``labels`` is authoritative in the order given and must
+    cover ``y_true`` and ``y_pred``, so no sample can silently leave a
+    denominator. Without it the set comes from the data, whose sort order
+    is the ordinal order only when numeric.
+    """
+    if labels is not None:
+        labels = check_array(labels, ensure_2d=False, dtype=None, input_name="labels")
+        if labels.ndim != 1:
+            raise ValueError(f"labels must be a 1-D array; got shape {labels.shape}.")
+        _check_labels_cover(y_true, labels, "y_true")
+        _check_labels_cover(y_pred, labels, "y_pred")
+        return labels
+
+    labels = np.union1d(y_true, y_pred)
+    if not _numeric_label_order(labels):
+        raise ValueError(
+            "the ordinal order of non-numeric labels cannot be inferred; "
+            "pass labels=[...] listing the classes in ascending ordinal order."
+        )
+    return labels
+
+
 def _check_proba_inputs(y_true, y_proba):
     """Coerce and validate the inputs of a probabilistic ordinal metric.
 
@@ -122,32 +172,8 @@ def _recall_per_class(y_true, y_pred, *, labels=None, sample_weight=None):
     return np.asarray(recall[support > 0], dtype=np.float64)
 
 
-def _per_class_mae(y_true, y_pred, *, labels=None, sample_weight=None):
-    """Return per-class mean absolute error as a 1-D float64 ndarray.
-
-    Drops rows of the confusion matrix with no support (zero true
-    samples for that class) so divisions remain finite. Shared by
-    :func:`average_mean_absolute_error` and
-    :func:`maximum_mean_absolute_error`.
-
-    Parameters
-    ----------
-    y_true : ndarray of shape (n_samples,)
-        Ground truth labels.
-
-    y_pred : ndarray of shape (n_samples,)
-        Predicted labels.
-
-    labels : array-like of shape (n_classes,), default=None
-        Labels to index the confusion matrix.
-
-    sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights.
-
-    Returns
-    -------
-    per_class_mae : ndarray of shape (n_classes_with_support,), dtype float64
-    """
+def _per_class_mae(y_true, y_pred, *, labels, sample_weight=None):
+    """Return per-class rank MAE over ``labels``, dropping zero-support classes."""
     cm = confusion_matrix(y_true, y_pred, labels=labels, sample_weight=sample_weight)
     n_class = cm.shape[0]
     costs = np.abs(np.arange(n_class)[:, None] - np.arange(n_class)[None, :])
@@ -161,17 +187,19 @@ def _per_class_mae(y_true, y_pred, *, labels=None, sample_weight=None):
     {
         "y_true": ["array-like"],
         "y_pred": ["array-like"],
+        "labels": ["array-like", None],
         "sample_weight": ["array-like", None],
     },
     prefer_skip_nested_validation=True,
 )
-def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
+def average_mean_absolute_error(y_true, y_pred, *, labels=None, sample_weight=None):
     """Compute the average per-class mean absolute error.
 
     For each class with at least one ground-truth sample, the mean
-    absolute error is computed using the class label as the numerical
-    score. The per-class errors are then averaged with equal weight,
-    which makes the metric robust to class imbalance.
+    absolute error is computed over class *ranks*: neighbouring classes
+    are one unit apart however their labels are numbered. The per-class
+    errors are then averaged with equal weight, which makes the metric
+    robust to class imbalance.
 
     Parameters
     ----------
@@ -180,6 +208,11 @@ def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
 
     y_pred : array-like of shape (n_samples,)
         Predicted labels.
+
+    labels : array-like of shape (n_classes,), default=None
+        Classes in ascending ordinal order, covering every value in
+        ``y_true`` and ``y_pred``. If ``None``, inferred from the data,
+        which must then be numeric.
 
     sample_weight : array-like of shape (n_samples,), default=None
         Sample weights forwarded to the confusion matrix.
@@ -204,7 +237,12 @@ def average_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).mean())
+    labels = _resolve_ordinal_labels(y_true, y_pred, labels)
+    return float(
+        _per_class_mae(
+            y_true, y_pred, labels=labels, sample_weight=sample_weight
+        ).mean()
+    )
 
 
 @validate_params(
@@ -266,11 +304,12 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
     {
         "y_true": ["array-like"],
         "y_pred": ["array-like"],
+        "labels": ["array-like", None],
         "sample_weight": ["array-like", None],
     },
     prefer_skip_nested_validation=True,
 )
-def gmsec(y_true, y_pred, *, sample_weight=None):
+def gmsec(y_true, y_pred, *, labels=None, sample_weight=None):
     """Geometric mean of the sensitivities of the extreme ordinal classes.
 
     Proposed in :footcite:t:`vargas2024improving` to assess the
@@ -286,8 +325,13 @@ def gmsec(y_true, y_pred, *, sample_weight=None):
     y_pred : array-like of shape (n_samples,)
         Predicted labels.
 
+    labels : array-like of shape (n_classes,), default=None
+        Classes in ascending ordinal order, covering every value in
+        ``y_true`` and ``y_pred``. If ``None``, inferred from the data,
+        which must then be numeric.
+
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to ``recall_score``.
+        Sample weights.
 
     Returns
     -------
@@ -309,7 +353,10 @@ def gmsec(y_true, y_pred, *, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
+    labels = _resolve_ordinal_labels(y_true, y_pred, labels)
+    sensitivities = _recall_per_class(
+        y_true, y_pred, labels=labels, sample_weight=sample_weight
+    )
     return float(np.sqrt(sensitivities[0] * sensitivities[-1]))
 
 
@@ -317,11 +364,12 @@ def gmsec(y_true, y_pred, *, sample_weight=None):
     {
         "y_true": ["array-like"],
         "y_pred": ["array-like"],
+        "labels": ["array-like", None],
         "sample_weight": ["array-like", None],
     },
     prefer_skip_nested_validation=True,
 )
-def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
+def mean_extreme_sensitivity(y_true, y_pred, *, labels=None, sample_weight=None):
     """Arithmetic mean of the sensitivities of the extreme ordinal classes.
 
     Assesses the balanced performance between the extreme classes of an
@@ -336,8 +384,13 @@ def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
     y_pred : array-like of shape (n_samples,)
         Predicted labels.
 
+    labels : array-like of shape (n_classes,), default=None
+        Classes in ascending ordinal order, covering every value in
+        ``y_true`` and ``y_pred``. If ``None``, inferred from the data,
+        which must then be numeric.
+
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to ``recall_score``.
+        Sample weights.
 
     Returns
     -------
@@ -355,7 +408,10 @@ def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    sensitivities = _recall_per_class(y_true, y_pred, sample_weight=sample_weight)
+    labels = _resolve_ordinal_labels(y_true, y_pred, labels)
+    sensitivities = _recall_per_class(
+        y_true, y_pred, labels=labels, sample_weight=sample_weight
+    )
     return float((sensitivities[0] + sensitivities[-1]) / 2.0)
 
 
@@ -363,16 +419,17 @@ def mean_extreme_sensitivity(y_true, y_pred, *, sample_weight=None):
     {
         "y_true": ["array-like"],
         "y_pred": ["array-like"],
+        "labels": ["array-like", None],
         "sample_weight": ["array-like", None],
     },
     prefer_skip_nested_validation=True,
 )
-def maximum_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
+def maximum_mean_absolute_error(y_true, y_pred, *, labels=None, sample_weight=None):
     """Compute the maximum per-class mean absolute error.
 
-    Returns the largest per-class MAE across classes with at least one
-    ground-truth sample. Useful for monitoring the worst-performing
-    class under imbalance.
+    Returns the largest per-class MAE, measured over class ranks, across
+    classes with at least one ground-truth sample. Useful for monitoring
+    the worst-performing class under imbalance.
 
     Parameters
     ----------
@@ -381,6 +438,11 @@ def maximum_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
 
     y_pred : array-like of shape (n_samples,)
         Predicted labels.
+
+    labels : array-like of shape (n_classes,), default=None
+        Classes in ascending ordinal order, covering every value in
+        ``y_true`` and ``y_pred``. If ``None``, inferred from the data,
+        which must then be numeric.
 
     sample_weight : array-like of shape (n_samples,), default=None
         Sample weights forwarded to the confusion matrix.
@@ -405,7 +467,10 @@ def maximum_mean_absolute_error(y_true, y_pred, *, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    return float(_per_class_mae(y_true, y_pred, sample_weight=sample_weight).max())
+    labels = _resolve_ordinal_labels(y_true, y_pred, labels)
+    return float(
+        _per_class_mae(y_true, y_pred, labels=labels, sample_weight=sample_weight).max()
+    )
 
 
 @validate_params(
@@ -527,7 +592,8 @@ def kendalls_tau(y_true, y_pred):
     Notes
     -----
     Does not accept ``sample_weight`` because the underlying scipy
-    backend does not support it.
+    backend does not support it. Non-numeric labels are rejected: scipy
+    would coerce them and report a spurious ``0.0``.
 
     Examples
     --------
@@ -539,6 +605,11 @@ def kendalls_tau(y_true, y_pred):
     0.8140915784106943
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    if not (_numeric_label_order(y_true) and _numeric_label_order(y_pred)):
+        raise ValueError(
+            "kendalls_tau requires numeric labels; encode ordinal categories "
+            "as integers reflecting their order."
+        )
     if np.unique(y_true).size < 2 or np.unique(y_pred).size < 2:
         return 0.0
     corr, _ = scipy.stats.kendalltau(y_true, y_pred)
@@ -549,17 +620,18 @@ def kendalls_tau(y_true, y_pred):
     {
         "y_true": ["array-like"],
         "y_pred": ["array-like"],
+        "labels": ["array-like", None],
         "sample_weight": ["array-like", None],
     },
     prefer_skip_nested_validation=True,
 )
-def weighted_kappa(y_true, y_pred, *, sample_weight=None):
+def weighted_kappa(y_true, y_pred, *, labels=None, sample_weight=None):
     """Weighted Cohen's kappa with linear ordinal weights.
 
     A version of the kappa statistic that assigns different weights to
     different levels of disagreement, so off-by-one errors penalise the
-    score less than far-off ones. The current implementation uses
-    linear weights ``w_{ij} = |i - j|``.
+    score less than far-off ones. The current implementation uses linear
+    weights ``w_{ij} = |i - j|`` over class ranks.
 
     Parameters
     ----------
@@ -568,6 +640,11 @@ def weighted_kappa(y_true, y_pred, *, sample_weight=None):
 
     y_pred : array-like of shape (n_samples,)
         Predicted labels.
+
+    labels : array-like of shape (n_classes,), default=None
+        Classes in ascending ordinal order, covering every value in
+        ``y_true`` and ``y_pred``. If ``None``, inferred from the data,
+        which must then be numeric.
 
     sample_weight : array-like of shape (n_samples,), default=None
         Sample weights forwarded to the confusion matrix.
@@ -588,7 +665,8 @@ def weighted_kappa(y_true, y_pred, *, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
+    labels = _resolve_ordinal_labels(y_true, y_pred, labels)
+    cm = confusion_matrix(y_true, y_pred, labels=labels, sample_weight=sample_weight)
     n_class = cm.shape[0]
     costs = np.abs(np.arange(n_class)[:, None] - np.arange(n_class)[None, :])
     f = 1 - costs
@@ -633,7 +711,8 @@ def spearmans_rho(y_true, y_pred):
     -----
     Does not accept ``sample_weight``: weighted Spearman is not
     implemented in scipy and the rank correlation has no canonical
-    weighted definition.
+    weighted definition. Non-numeric labels are rejected: scipy would
+    coerce them and report a spurious ``0.0``.
 
     Examples
     --------
@@ -645,6 +724,11 @@ def spearmans_rho(y_true, y_pred):
     0.8464861424907173
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
+    if not (_numeric_label_order(y_true) and _numeric_label_order(y_pred)):
+        raise ValueError(
+            "spearmans_rho requires numeric labels; encode ordinal categories "
+            "as integers reflecting their order."
+        )
     if np.unique(y_true).size < 2 or np.unique(y_pred).size < 2:
         return 0.0
     corr, _ = scipy.stats.spearmanr(y_true, y_pred)
@@ -754,8 +838,9 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
         Predicted labels.
 
     labels : array-like of shape (n_classes,), default=None
-        Labels of the classes used to index the confusion matrix. If
-        ``None``, the labels are inferred from ``y_true``.
+        Classes in ascending ordinal order, covering every value in
+        ``y_true`` and ``y_pred``. If ``None``, inferred from the data,
+        which must then be numeric.
 
     sample_weight : array-like of shape (n_samples,), default=None
         Sample weights forwarded to the confusion matrix.
@@ -768,7 +853,8 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
     Notes
     -----
     Both adjacent diagonals are counted: a prediction one class above
-    or one class below the truth contributes to the score.
+    or one class below the truth contributes to the score. Every sample
+    reaches the denominator, however far off its prediction is.
 
     Examples
     --------
@@ -781,9 +867,7 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    if labels is None:
-        labels = np.unique(y_true)
-
+    labels = _resolve_ordinal_labels(y_true, y_pred, labels)
     conf_mat = confusion_matrix(
         y_true, y_pred, labels=labels, sample_weight=sample_weight
     )

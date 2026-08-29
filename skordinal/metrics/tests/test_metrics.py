@@ -27,6 +27,8 @@ from skordinal.metrics._metrics import (
     _check_metric_inputs,
     _check_metric_weight,
     _check_proba_inputs,
+    _numeric_label_order,
+    _resolve_ordinal_labels,
 )
 
 _WEIGHTED_METRICS = [
@@ -43,6 +45,19 @@ _WEIGHTED_METRICS = [
 ]
 
 _WEIGHTED_METRIC_IDS = [fn.__name__ for fn in _WEIGHTED_METRICS]
+
+
+# Metrics whose result depends on the ordinal class order, so they take labels=
+_ORDERED_METRICS = [
+    accuracy_off1_score,
+    average_mean_absolute_error,
+    gmsec,
+    maximum_mean_absolute_error,
+    mean_extreme_sensitivity,
+    weighted_kappa,
+]
+
+_ORDERED_METRIC_IDS = [fn.__name__ for fn in _ORDERED_METRICS]
 
 
 @pytest.fixture
@@ -277,6 +292,49 @@ def test_check_proba_inputs_row_sum_atol_boundary(delta, raises):
         _check_proba_inputs(y_t, y_p)
 
 
+@pytest.mark.parametrize(
+    "labels, expected",
+    [
+        (np.array([2, 0, 1]), True),
+        (np.array([0.5, 1.5]), True),
+        (np.array(["low", "mid"]), False),
+        (np.array(["2020-01-01"], dtype="datetime64[D]"), False),
+        (np.array([1, 2], dtype=object), True),
+        (np.array(["low", "mid"], dtype=object), False),
+        (np.array(["1", "2", "10"], dtype=object), False),
+    ],
+    ids=["int", "float", "str", "datetime", "object_int", "object_str", "object_digit"],
+)
+def test_numeric_label_order(labels, expected):
+    """Only dtypes whose sort order is the ordinal order count as numeric."""
+    assert _numeric_label_order(labels) is expected
+
+
+def test_resolve_ordinal_labels_resolves():
+    """The set is the sorted union of the data, or the given labels as given."""
+    y_true, y_pred = np.array([0, 0, 1]), np.array([0, 1, 2])
+    npt.assert_array_equal(_resolve_ordinal_labels(y_true, y_pred, None), [0, 1, 2])
+    # Sorting these would give high, low, mid, so the given order is what counts
+    order = np.array(["low", "mid", "high"])
+    npt.assert_array_equal(_resolve_ordinal_labels(order, order, order), order)
+
+
+@pytest.mark.parametrize(
+    "y_true, y_pred, labels, match",
+    [
+        (["a", "b"], ["a", "b"], None, "ordinal order of non-numeric labels"),
+        (["a", "b"], ["a", "b"], np.array([[0, 1], [2, 3]]), "1-D"),
+        (["a", "b"], ["a", "b"], np.array(["b"]), "y_true contains values"),
+        ([0, 0, 1], [0, 1, 2], np.array([0, 1]), "y_pred contains values"),
+    ],
+    ids=["non_numeric_data", "2d", "uncovered_true", "uncovered_pred"],
+)
+def test_resolve_ordinal_labels_rejects(y_true, y_pred, labels, match):
+    """A malformed, uncovering, or unorderable label set raises ValueError."""
+    with pytest.raises(ValueError, match=match):
+        _resolve_ordinal_labels(np.array(y_true), np.array(y_pred), labels)
+
+
 def test_accuracy_score():
     """accuracy_score correctly classifies a known label sequence."""
     y_true = np.array([1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3])
@@ -289,7 +347,9 @@ def test_accuracy_score():
     [
         ([0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0], 5 / 6),
         ([0, 1, 2, 3, 4], [0, 2, 1, 4, 3], 1.0),
+        ([1, 2, 3], [1, 2, -5], 2 / 3),
     ],
+    ids=["shifted", "swapped", "out_of_scale"],
 )
 def test_accuracy_off1_score(y_true, y_pred, expected):
     """accuracy_off1_score counts predictions within one ordinal class of truth."""
@@ -310,6 +370,7 @@ def test_accuracy_off1_score_lower_diagonal():
         ([0, 0, 1, 1, 2, 2], [0, 0, 1, 1, 2, 2], 0.0),
         ([0, 0, 2, 1], [0, 2, 0, 1], 1.0),
         ([0, 0, 2, 1, 3], [2, 2, 0, 3, 1], 2.0),
+        ([0, 0, 10, 20], [0, 10, 10, 20], 1 / 6),
     ],
 )
 def test_average_mean_absolute_error(y_true, y_pred, expected):
@@ -525,6 +586,38 @@ def test_spearmans_rho_constant_input():
     npt.assert_equal(spearmans_rho(np.array([1, 1, 1, 1]), np.array([0, 1, 2, 3])), 0.0)
 
 
+@pytest.mark.parametrize(
+    "fn",
+    _ORDERED_METRICS + [kendalls_tau, spearmans_rho],
+    ids=_ORDERED_METRIC_IDS + ["kendalls_tau", "spearmans_rho"],
+)
+def test_ordered_metrics_reject_non_numeric_labels(fn):
+    """Without labels, non-numeric classes raise instead of sorting alphabetically."""
+    with pytest.raises(ValueError, match="numeric"):
+        fn(["low", "mid", "high"], ["low", "high", "high"])
+
+
+@pytest.mark.parametrize(
+    "fn", [weighted_kappa, average_mean_absolute_error], ids=["kappa", "amae"]
+)
+def test_labels_scores_string_classes_as_their_ranks(fn):
+    """An explicit labels order scores strings exactly as the equivalent ranks."""
+    npt.assert_allclose(
+        fn(
+            ["low", "mid", "high"],
+            ["low", "high", "high"],
+            labels=["low", "mid", "high"],
+        ),
+        fn([0, 1, 2], [0, 2, 2]),
+    )
+
+
+def test_labels_must_cover_the_data():
+    """A metric's explicit labels must cover y_pred, so no sample is dropped."""
+    with pytest.raises(ValueError, match="y_pred contains values"):
+        accuracy_off1_score([0, 1, 2], [0, 1, 5], labels=[0, 1, 2])
+
+
 def test_metric_names_in_all():
     """All public metric names are present in skordinal.metrics.__all__."""
     import skordinal.metrics as m
@@ -556,9 +649,10 @@ def test_sample_weight_is_keyword_only(fn):
     assert sig.parameters["sample_weight"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
-def test_accuracy_off1_score_labels_is_keyword_only():
-    """labels is a keyword-only parameter of accuracy_off1_score."""
-    sig = inspect.signature(accuracy_off1_score)
+@pytest.mark.parametrize("fn", _ORDERED_METRICS, ids=_ORDERED_METRIC_IDS)
+def test_labels_is_keyword_only(fn):
+    """labels is a keyword-only parameter of every order-dependent metric."""
+    sig = inspect.signature(fn)
     assert sig.parameters["labels"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
