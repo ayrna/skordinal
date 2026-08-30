@@ -27,6 +27,8 @@ from skordinal.metrics._metrics import (
     _check_metric_inputs,
     _check_metric_weight,
     _check_proba_inputs,
+    _numeric_label_order,
+    _resolve_ordinal_labels,
 )
 
 _WEIGHTED_METRICS = [
@@ -44,16 +46,38 @@ _WEIGHTED_METRICS = [
 
 _WEIGHTED_METRIC_IDS = [fn.__name__ for fn in _WEIGHTED_METRICS]
 
-_Y_PROBA_6 = np.array(
-    [
-        [0.7, 0.2, 0.1],
-        [0.1, 0.6, 0.3],
-        [0.2, 0.3, 0.5],
-        [0.3, 0.5, 0.2],
-        [0.6, 0.3, 0.1],
-        [0.1, 0.2, 0.7],
-    ]
-)
+# Metrics whose result depends on the ordinal class order, so they take labels=
+_ORDERED_METRICS = [
+    accuracy_off1_score,
+    average_mean_absolute_error,
+    gmsec,
+    maximum_mean_absolute_error,
+    mean_extreme_sensitivity,
+    weighted_kappa,
+]
+
+_ORDERED_METRIC_IDS = [fn.__name__ for fn in _ORDERED_METRICS]
+
+
+@pytest.fixture
+def y_proba_3():
+    """Two rows of three-class probabilities, with exact 0 and 1 entries."""
+    return np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.5]])
+
+
+@pytest.fixture
+def y_proba_6():
+    """Six rows of three-class probabilities."""
+    return np.array(
+        [
+            [0.7, 0.2, 0.1],
+            [0.1, 0.6, 0.3],
+            [0.2, 0.3, 0.5],
+            [0.3, 0.5, 0.2],
+            [0.6, 0.3, 0.1],
+            [0.1, 0.2, 0.7],
+        ]
+    )
 
 
 def test_check_metric_inputs_1d_passthrough():
@@ -273,6 +297,49 @@ def test_check_proba_inputs_row_sum_atol_boundary(delta, raises):
         _check_proba_inputs(y_t, y_p)
 
 
+@pytest.mark.parametrize(
+    "labels, expected",
+    [
+        (np.array([2, 0, 1]), True),
+        (np.array([0.5, 1.5]), True),
+        (np.array(["low", "mid"]), False),
+        (np.array(["2020-01-01"], dtype="datetime64[D]"), False),
+        (np.array([1, 2], dtype=object), True),
+        (np.array(["low", "mid"], dtype=object), False),
+        (np.array(["1", "2", "10"], dtype=object), False),
+    ],
+    ids=["int", "float", "str", "datetime", "object_int", "object_str", "object_digit"],
+)
+def test_numeric_label_order(labels, expected):
+    """Only dtypes whose sort order is the ordinal order count as numeric."""
+    assert _numeric_label_order(labels) is expected
+
+
+def test_resolve_ordinal_labels_resolves():
+    """The set is the sorted union of the data, or the given labels as given."""
+    y_true, y_pred = np.array([0, 0, 1]), np.array([0, 1, 2])
+    npt.assert_array_equal(_resolve_ordinal_labels(y_true, y_pred, None), [0, 1, 2])
+    # Sorting these would give high, low, mid, so the given order is what counts
+    order = np.array(["low", "mid", "high"])
+    npt.assert_array_equal(_resolve_ordinal_labels(order, order, order), order)
+
+
+@pytest.mark.parametrize(
+    "y_true, y_pred, labels, match",
+    [
+        (["a", "b"], ["a", "b"], None, "ordinal order of non-numeric labels"),
+        (["a", "b"], ["a", "b"], np.array([[0, 1], [2, 3]]), "1-D"),
+        (["a", "b"], ["a", "b"], np.array(["b"]), "y_true contains values"),
+        ([0, 0, 1], [0, 1, 2], np.array([0, 1]), "y_pred contains values"),
+    ],
+    ids=["non_numeric_data", "2d", "uncovered_true", "uncovered_pred"],
+)
+def test_resolve_ordinal_labels_rejects(y_true, y_pred, labels, match):
+    """A malformed, uncovering, or unorderable label set raises ValueError."""
+    with pytest.raises(ValueError, match=match):
+        _resolve_ordinal_labels(np.array(y_true), np.array(y_pred), labels)
+
+
 def test_accuracy_score():
     """accuracy_score correctly classifies a known label sequence."""
     y_true = np.array([1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3])
@@ -285,7 +352,9 @@ def test_accuracy_score():
     [
         ([0, 1, 2, 3, 4, 5], [1, 2, 3, 4, 5, 0], 5 / 6),
         ([0, 1, 2, 3, 4], [0, 2, 1, 4, 3], 1.0),
+        ([1, 2, 3], [1, 2, -5], 2 / 3),
     ],
+    ids=["shifted", "swapped", "out_of_scale"],
 )
 def test_accuracy_off1_score(y_true, y_pred, expected):
     """accuracy_off1_score counts predictions within one ordinal class of truth."""
@@ -306,6 +375,7 @@ def test_accuracy_off1_score_lower_diagonal():
         ([0, 0, 1, 1, 2, 2], [0, 0, 1, 1, 2, 2], 0.0),
         ([0, 0, 2, 1], [0, 2, 0, 1], 1.0),
         ([0, 0, 2, 1, 3], [2, 2, 0, 3, 1], 2.0),
+        ([0, 0, 10, 20], [0, 10, 10, 20], 1 / 6),
     ],
 )
 def test_average_mean_absolute_error(y_true, y_pred, expected):
@@ -329,8 +399,8 @@ def test_geometric_mean():
     npt.assert_almost_equal(geometric_mean(y_true, y_pred), 0.7991, decimal=4)
 
 
-def test_geometric_mean_empty_class_treated_as_one():
-    """A class with zero total weight is treated as sensitivity 1, not 0."""
+def test_geometric_mean_zero_support_class_excluded():
+    """A class whose whole support is zero-weighted leaves the geometric mean."""
     y_true = np.array([0, 0, 1, 1, 2, 2])
     y_pred = np.array([0, 0, 1, 1, 2, 2])
     w = np.array([0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
@@ -406,6 +476,16 @@ def test_minimum_sensitivity(y_true, y_pred, expected):
     npt.assert_almost_equal(minimum_sensitivity(y_true, y_pred), expected, decimal=6)
 
 
+@pytest.mark.parametrize(
+    "fn",
+    [minimum_sensitivity, gmsec, mean_extreme_sensitivity, geometric_mean],
+    ids=["minimum_sensitivity", "gmsec", "mean_extreme_sensitivity", "geometric_mean"],
+)
+def test_sensitivity_metrics_ignore_pred_only_class(fn):
+    """A class predicted but never true does not enter a recall-based metric."""
+    npt.assert_almost_equal(fn([0, 0, 1, 1], [0, 1, 1, 2]), 0.5, decimal=6)
+
+
 def test_mean_zero_one_error():
     """mean_zero_one_error returns the fraction of misclassified samples."""
     y_true = np.array([1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3])
@@ -438,33 +518,56 @@ def test_ranked_probability_score_expands_binary_proba():
     npt.assert_allclose(ranked_probability_score(y_true, p.reshape(-1, 1)), expected)
 
 
-@pytest.mark.parametrize(
-    "y_true, y_proba, expected",
-    [
-        (
-            np.array([0, 5, 1]),
-            np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.5], [0.0, 1.0, 0.0]]),
-            2.0 / 3,
+def test_ranked_probability_score_labels():
+    """labels maps raw class labels onto the y_proba columns and pins their count."""
+    labels = np.array([1, 2, 3])
+    # Asymmetric columns, so a mapping that failed to shift would score differently
+    y_proba = np.array([[0.2, 0.4, 0.4], [0.7, 0.2, 0.1]])
+    npt.assert_allclose(
+        ranked_probability_score(np.array([2, 1]), y_proba, labels=labels),
+        ranked_probability_score(np.array([1, 0]), y_proba),
+    )
+    # A one-hot y_true is already column indices, so labels must not re-map it;
+    # column 0 is outside labels, so a re-mapping would raise here
+    npt.assert_allclose(
+        ranked_probability_score(np.eye(3)[[0, 2]], y_proba, labels=labels),
+        ranked_probability_score(np.array([0, 2]), y_proba),
+    )
+    # A single label pins a lone column as a genuine one-class distribution
+    npt.assert_equal(
+        ranked_probability_score(
+            np.array([7, 7]), np.array([[1.0], [1.0]]), labels=np.array([7])
         ),
-        (np.array([5]), np.array([[0.2, 0.2, 0.2, 0.2, 0.2]]), 4.0),
+        0.0,
+    )
+
+
+@pytest.mark.parametrize(
+    "y_true, labels, one_column, match",
+    [
+        ([0, 5], None, False, "not belonging to the 3 columns"),
+        ([0, -1], None, False, "not belonging to the 3 columns"),
+        ([2, 9], np.array([1, 2, 3]), False, "not belonging to the passed labels"),
+        ([0, 1], np.array([3, 1, 2]), False, "strictly ascending"),
+        ([0, 1], np.array([1, 2]), False, "2 labels for 3 columns"),
+        ([0, 1], np.array([1, 2, 3]), True, "expanded to two columns"),
+        ([0, 1], np.array(["low", "mid", "high"]), False, "requires numeric labels"),
     ],
-    ids=["3_classes_mixed", "5_classes_single"],
+    ids=[
+        "above",
+        "below",
+        "outside_labels",
+        "unsorted",
+        "width",
+        "width_expanded",
+        "non_numeric",
+    ],
 )
-def test_ranked_probability_score_out_of_range(y_true, y_proba, expected):
-    """An out-of-range y_true is penalised by n_classes - 1, not a fixed constant."""
-    npt.assert_almost_equal(
-        ranked_probability_score(y_true, y_proba), expected, decimal=6
-    )
-
-
-def test_ranked_probability_score_out_of_range_no_better_than_worst_in_range():
-    """An out-of-range label scores no better than the worst in-range one."""
-    y_proba = np.array([[0.0, 0.0, 1.0]])
-    out_of_range = ranked_probability_score(np.array([9]), y_proba)
-    worst_in_range = max(
-        ranked_probability_score(np.array([label]), y_proba) for label in range(3)
-    )
-    assert out_of_range >= worst_in_range
+def test_ranked_probability_score_rejects(y_proba_3, y_true, labels, one_column, match):
+    """A y_true with no matching column, or a malformed labels, raises ValueError."""
+    y_proba = np.array([0.8, 0.3]) if one_column else y_proba_3
+    with pytest.raises(ValueError, match=match):
+        ranked_probability_score(np.array(y_true), y_proba, labels=labels)
 
 
 @pytest.mark.parametrize(
@@ -511,6 +614,38 @@ def test_spearmans_rho_constant_input():
     npt.assert_equal(spearmans_rho(np.array([1, 1, 1, 1]), np.array([0, 1, 2, 3])), 0.0)
 
 
+@pytest.mark.parametrize(
+    "fn",
+    _ORDERED_METRICS + [kendalls_tau, spearmans_rho],
+    ids=_ORDERED_METRIC_IDS + ["kendalls_tau", "spearmans_rho"],
+)
+def test_ordered_metrics_reject_non_numeric_labels(fn):
+    """Without labels, non-numeric classes raise instead of sorting alphabetically."""
+    with pytest.raises(ValueError, match="numeric"):
+        fn(["low", "mid", "high"], ["low", "high", "high"])
+
+
+@pytest.mark.parametrize(
+    "fn", [weighted_kappa, average_mean_absolute_error], ids=["kappa", "amae"]
+)
+def test_labels_scores_string_classes_as_their_ranks(fn):
+    """An explicit labels order scores strings exactly as the equivalent ranks."""
+    npt.assert_allclose(
+        fn(
+            ["low", "mid", "high"],
+            ["low", "high", "high"],
+            labels=["low", "mid", "high"],
+        ),
+        fn([0, 1, 2], [0, 2, 2]),
+    )
+
+
+def test_labels_must_cover_the_data():
+    """A metric's explicit labels must cover y_pred, so no sample is dropped."""
+    with pytest.raises(ValueError, match="y_pred contains values"):
+        accuracy_off1_score([0, 1, 2], [0, 1, 5], labels=[0, 1, 2])
+
+
 def test_metric_names_in_all():
     """All public metric names are present in skordinal.metrics.__all__."""
     import skordinal.metrics as m
@@ -542,9 +677,10 @@ def test_sample_weight_is_keyword_only(fn):
     assert sig.parameters["sample_weight"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
-def test_accuracy_off1_score_labels_is_keyword_only():
-    """labels is a keyword-only parameter of accuracy_off1_score."""
-    sig = inspect.signature(accuracy_off1_score)
+@pytest.mark.parametrize("fn", _ORDERED_METRICS, ids=_ORDERED_METRIC_IDS)
+def test_labels_is_keyword_only(fn):
+    """labels is a keyword-only parameter of every order-dependent metric."""
+    sig = inspect.signature(fn)
     assert sig.parameters["labels"].kind == inspect.Parameter.KEYWORD_ONLY
 
 
@@ -559,7 +695,7 @@ def test_correlation_metrics_reject_sample_weight():
 
 
 @pytest.mark.parametrize("fn", _WEIGHTED_METRICS, ids=_WEIGHTED_METRIC_IDS)
-def test_metric_unit_sample_weight_matches_unweighted(fn):
+def test_metric_unit_sample_weight_matches_unweighted(fn, y_proba_6):
     """All-ones sample_weight produces the same result as no weight."""
     y_t = np.array([0, 1, 2, 1, 0, 2])
     y_p = np.array([0, 1, 1, 2, 0, 2])
@@ -567,8 +703,8 @@ def test_metric_unit_sample_weight_matches_unweighted(fn):
     w = np.ones(n)
 
     if fn is ranked_probability_score:
-        unweighted = fn(y_t, _Y_PROBA_6)
-        weighted = fn(y_t, _Y_PROBA_6, sample_weight=w)
+        unweighted = fn(y_t, y_proba_6)
+        weighted = fn(y_t, y_proba_6, sample_weight=w)
     else:
         unweighted = fn(y_t, y_p)
         weighted = fn(y_t, y_p, sample_weight=w)
@@ -620,11 +756,11 @@ def test_check_metric_weight_ravels_column_vector():
 
 
 @pytest.mark.parametrize("fn", _WEIGHTED_METRICS, ids=_WEIGHTED_METRIC_IDS)
-def test_metric_routes_sample_weight_through_the_check(fn):
+def test_metric_routes_sample_weight_through_the_check(fn, y_proba_6):
     """Every weighted metric rejects an all-zero sample_weight."""
     y_t = np.array([0, 1, 2, 1, 0, 2])
     y_p = np.array([0, 1, 1, 2, 0, 2])
-    x = _Y_PROBA_6 if fn is ranked_probability_score else y_p
+    x = y_proba_6 if fn is ranked_probability_score else y_p
     with pytest.raises(ValueError, match="non-zero"):
         fn(y_t, x, sample_weight=np.zeros(len(y_t)))
 
@@ -634,13 +770,13 @@ def test_metric_routes_sample_weight_through_the_check(fn):
     _WEIGHTED_METRICS + [kendalls_tau, spearmans_rho],
     ids=_WEIGHTED_METRIC_IDS + ["kendalls_tau", "spearmans_rho"],
 )
-def test_metric_returns_python_float(fn):
+def test_metric_returns_python_float(fn, y_proba_6):
     """Every public metric returns a Python float, not a numpy scalar."""
     y_t = np.array([0, 1, 2, 1, 0, 2])
     y_p = np.array([0, 1, 1, 2, 0, 2])
 
     if fn is ranked_probability_score:
-        result = fn(y_t, _Y_PROBA_6)
+        result = fn(y_t, y_proba_6)
     else:
         result = fn(y_t, y_p)
 
@@ -651,6 +787,6 @@ def test_metric_returns_python_float(fn):
 
 def test_metric_rejects_non_array_like_y_true():
     """A scalar y_true is rejected at the parameter boundary."""
-    # decorator fires before _check_metric_inputs
+    # Decorator fires before _check_metric_inputs
     with pytest.raises(InvalidParameterError):
         average_mean_absolute_error(1.0, [1, 2])
