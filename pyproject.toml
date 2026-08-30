@@ -58,6 +58,13 @@ dev = [
     "mypy>=1.9",
     "pre-commit",
 ]
+docs = [
+    "sphinx>=7",
+    "pydata-sphinx-theme",
+    "numpydoc",
+    "sphinx-gallery",
+    "matplotlib",
+]
 
 [project.urls]
 Homepage = "https://github.com/ayrna/skordinal"
