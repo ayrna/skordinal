@@ -69,7 +69,17 @@ def _read_csv_any(path):
             return False
         if not (_is_int(r0[0]) and _is_int(r0[1])):
             return False
-        return int(r0[1]) == len(r1) - 1
+        if int(r0[1]) != len(r1) - 1:
+            return False
+        if len(r0) != len(r1) or not all(_is_float(tok) for tok in r0):
+            # Row 0 cannot be a data row, so it is the header
+            return True
+        # r0 could be a data row, so demand corroborating counts
+        if int(r0[0]) != len(rows) - 1:
+            return False
+        n_declared = len(r0) - 2
+        observed = {float(row[-1]) for row in rows[1:] if row and _is_float(row[-1])}
+        return n_declared == 0 or len(observed) <= n_declared
 
     n_samples_declared = None
     if len(rows) < 2:
