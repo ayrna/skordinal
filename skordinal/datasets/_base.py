@@ -177,6 +177,12 @@ def _convert_data_dataframe(caller_name, data, target, feature_names, target_col
             f"{caller_name}: feature column {collision.pop()!r} collides with the "
             "target column name."
         )
+    duplicates = {name for name in feature_names if feature_names.count(name) > 1}
+    if duplicates:
+        raise ValueError(
+            f"{caller_name}: feature column {duplicates.pop()!r} appears more "
+            "than once."
+        )
     data_df = pd.DataFrame(data, columns=feature_names, copy=False)
     target_df = pd.DataFrame(target, columns=target_columns)
     combined_df = pd.concat([data_df, target_df], axis=1)

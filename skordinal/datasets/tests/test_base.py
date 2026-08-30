@@ -263,12 +263,20 @@ def test_load_dataset_as_frame(named_csv):
     assert bunch.frame is not None
 
 
-def test_load_dataset_as_frame_feature_named_target_raises(tmp_path):
-    """A feature column literally named ``target`` collides and raises."""
+@pytest.mark.parametrize(
+    "csv_text, match",
+    [
+        ("x_0,target,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", "collides"),
+        ("a,a,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", "more than once"),
+    ],
+    ids=["collides-with-target", "duplicate-names"],
+)
+def test_load_dataset_as_frame_bad_feature_names_raise(tmp_path, csv_text, match):
+    """A feature name that collides with ``target`` or repeats raises."""
     pytest.importorskip("pandas")
-    path = tmp_path / "collide.csv"
-    path.write_text("x_0,target,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="target"):
+    path = tmp_path / "names.csv"
+    path.write_text(csv_text, encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
         load_dataset(path, as_frame=True)
 
 
