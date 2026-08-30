@@ -149,10 +149,10 @@ results/
 Each predictions CSV lists the `Pattern ID`, the zero-based `Target` class
 index, a `Prediction probabilities` column with the per-class probabilities
 (for estimators that support `predict_proba`), and the zero-based
-`Prediction` class index — the argmax of the probabilities when they are
-present, or the estimator's own prediction otherwise. Confusion matrices are
-written alongside as plain-text `.txt` files, the fitted estimator for each
-seed is stored under a `models/` subfolder, and aggregated
+`Prediction` class index, which always records the estimator's own
+`predict` output, even when probabilities are present. Confusion matrices
+are written alongside as plain-text `.txt` files, the fitted estimator for
+each seed is stored under a `models/` subfolder, and aggregated
 `train_summary.csv` and `test_summary.csv` files are produced across all
 runs.
 
