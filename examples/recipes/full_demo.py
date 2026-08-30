@@ -30,23 +30,23 @@ RECIPE = {
         ),
         "SVMOP": ModelConfig(
             OrdinalDecomposition(
-                dtype="ordered_partitions",
+                estimator=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
+                decomposition="ordered_partitions",
                 decision_method="frank_hall",
-                base_classifier=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
             ),
             param_grid={
-                "base_classifier__estimator__C": [0.01, 0.1, 1, 10],
-                "base_classifier__estimator__gamma": [0.01, 0.1, 1, 10],
+                "estimator__estimator__C": [0.01, 0.1, 1, 10],
+                "estimator__estimator__gamma": [0.01, 0.1, 1, 10],
             },
         ),
         "LR": ModelConfig(
             OrdinalDecomposition(
+                estimator=LogisticRegression(),
                 decision_method="exponential_loss",
-                base_classifier=LogisticRegression(),
             ),
             param_grid={
-                "dtype": ["ordered_partitions", "one_vs_next"],
-                "base_classifier__C": [0.01, 0.1, 1, 10],
+                "decomposition": ["ordered_partitions", "one_vs_next"],
+                "estimator__C": [0.01, 0.1, 1, 10],
             },
         ),
         "REDSVM": ModelConfig(

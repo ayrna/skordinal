@@ -80,6 +80,7 @@ map directly to `Benchmark` constructor parameters. The required keys are
 optional and fall back to the `Benchmark` defaults.
 
 ```python
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.svm import SVC
 
 from skordinal.classifiers import OrdinalDecomposition
@@ -105,13 +106,13 @@ RECIPE = {
         ),
         "SVMOP": ModelConfig(
             OrdinalDecomposition(
-                dtype="ordered_partitions",
+                estimator=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
+                decomposition="ordered_partitions",
                 decision_method="frank_hall",
-                base_classifier=SVC(probability=True),
             ),
             param_grid={
-                "base_classifier__C": [0.01, 0.1, 1, 10],
-                "base_classifier__gamma": [0.01, 0.1, 1, 10],
+                "estimator__estimator__C": [0.01, 0.1, 1, 10],
+                "estimator__estimator__gamma": [0.01, 0.1, 1, 10],
             },
         ),
     },
@@ -197,9 +198,9 @@ These keys control how the benchmark is executed.
 
 - **`ModelConfig(estimator, param_grid=None)`**: wraps any estimator that
   implements the scikit-learn estimator interface. `param_grid` is a dict of
-  hyperparameter name → list of values for `GridSearchCV`. For pipeline-style
-  estimators (e.g. `OrdinalDecomposition`) use the double-underscore syntax
-  (`"base_classifier__C"`) to target nested parameters.
+  hyperparameter name → list of values for `GridSearchCV`. For meta-estimators
+  (e.g. `OrdinalDecomposition`) use the double-underscore syntax
+  (`"estimator__C"`) to target nested parameters.
 
 ## Running Experiments
 
