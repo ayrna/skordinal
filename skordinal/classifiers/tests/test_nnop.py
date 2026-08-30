@@ -292,6 +292,27 @@ def test_nnop_predict_cumproba_repairs_non_monotone_raw_row():
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
 
 
+def test_nnop_predict_follows_first_crossing_not_argmax():
+    """predict uses the raw first crossing, not the repaired proba argmax."""
+    clf = NNOP(n_hidden=1, max_iter=1).fit(
+        np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]),
+        np.array([0, 0, 1, 1, 2, 2]),
+    )
+    # Overwrite fitted state so the raw row crosses 0.5 at column 0 while
+    # the isotonic repair averages both columns below 0.5, moving the
+    # proba argmax to the top class
+    clf.theta1_ = np.zeros((1, 2))
+    clf.theta2_ = np.array([[1.0, 0.0], [-2.0, 0.0]])
+
+    probe = np.array([[0.0]])
+    raw = clf._cumproba(probe)
+    assert raw[0, 0] > 0.5 > raw[0, 1]
+
+    modal = clf.classes_[np.argmax(clf.predict_proba(probe), axis=1)]
+    np.testing.assert_array_equal(clf.predict(probe), [0])
+    np.testing.assert_array_equal(modal, [2])
+
+
 def test_nnop_convergence_warning_only_at_insufficient_max_iter(ordinal_data):
     """ConvergenceWarning fires at max_iter=1, not with the default budget."""
     X, y = ordinal_data
