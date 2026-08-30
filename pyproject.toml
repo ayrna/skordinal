@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=74.1.0", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,8 @@ version = "0.1.0rc1"
 description = "Ordinal classification for Python, scikit-learn compatible"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "BSD-3-Clause"}
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 authors = [
     {name = "David Guijo-Rubio", email = "dguijo@uco.es"},
     {name = "Ángel Sevilla Molina", email = "asevilla@uco.es"},
@@ -25,7 +26,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: BSD License",
     "Operating System :: MacOS",
     "Operating System :: POSIX",
     "Operating System :: Unix",
