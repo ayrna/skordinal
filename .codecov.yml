@@ -24,5 +24,3 @@ github_checks:
 # ignore files
 ignore:
   - ".github/"
-  - "build_tools/"
-  - "doc/"
