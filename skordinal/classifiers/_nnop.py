@@ -90,6 +90,10 @@ class NNOP(ClassifierMixin, BaseEstimator):
     If the L-BFGS-B solver stops before converging, a ``ConvergenceWarning``
     is raised and ``n_iter_`` reports the iterations actually run.
 
+    ``predict`` uses the first-crossing rule on the raw cumulative outputs, so
+    its output is not in general ``classes_[argmax(predict_proba(X), axis=1)]``;
+    see ``predict`` for the rationale.
+
     This file is part of ORCA: https://github.com/ayrna/orca
 
     References
@@ -246,10 +250,11 @@ class NNOP(ClassifierMixin, BaseEstimator):
     def predict(self, X: ArrayLike) -> np.ndarray:
         """Perform classification on samples in X.
 
-        The predicted class is the first class whose (raw, unrepaired)
-        cumulative estimate ``P(y <= k | x)`` exceeds 0.5 (the
-        median/first-crossing rule). This is not in general the same
-        class as ``classes_[argmax(predict_proba(X), axis=1)]``; see the
+        The predicted class is the first class whose raw cumulative
+        estimate ``P(y <= k | x)`` exceeds 0.5 (the first-crossing
+        rule). The isotonic repair applied by ``predict_proba`` is
+        post-processing, not part of the model, so the result is not in
+        general ``classes_[argmax(predict_proba(X), axis=1)]``; see the
         Notes on ``predict_proba``.
 
         Parameters
@@ -345,13 +350,12 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Notes
         -----
-        Because ``predict`` follows the canonical NNOP decision rule of
-        picking the first class whose raw cumulative estimate exceeds
-        0.5 (a median/first-crossing rule), rather than the argmax of
-        this method's output, ``classes_[argmax(predict_proba(X),
-        axis=1)]`` is not in general equal to ``predict(X)``. Users
-        needing calibrated, argmax-consistent probabilities should wrap
-        the estimator with ``sklearn.calibration.CalibratedClassifierCV``.
+        ``predict`` applies the first-crossing rule to the raw cumulative
+        estimates instead of taking the argmax of this method's output, so
+        ``classes_[argmax(predict_proba(X), axis=1)]`` is not in general
+        equal to ``predict(X)``. Users needing calibrated,
+        argmax-consistent probabilities should wrap the estimator with
+        ``sklearn.calibration.CalibratedClassifierCV``.
 
         """
         check_is_fitted(self)
