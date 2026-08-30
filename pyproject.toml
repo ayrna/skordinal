@@ -166,7 +166,12 @@ ext-modules = [
 
 [tool.pytest.ini_options]
 testpaths = ["skordinal"]
-addopts = ["--color=yes", "--import-mode=importlib"]
+addopts = ["--color=yes", "--import-mode=importlib", "-m", "not network"]
+markers = [
+    "slow: benchmarks and long-running tests",
+    "integration: end-to-end sklearn pipeline integration",
+    "network: tests that require a live internet connection",
+]
 
 [tool.ruff]
 line-length = 88
