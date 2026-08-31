@@ -165,9 +165,9 @@ class Benchmark:
         self.data_home: str | Path | None = data_home
         self.datasets: list[str] = list(datasets)
         self.eval_metrics: list[str] = list(eval_metrics)
-        # Resolve once so a later chdir cannot split the write and read roots
-        self.results_path = Path(results_path).expanduser().resolve()
-        self._results = Results(self.results_path)
+        self._results = Results(results_path)
+        # Reuse the resolved root so a later chdir cannot split write from read
+        self.results_path = self._results.path
         self.resamples: int = resamples
         self.test_size: float = test_size
         self.tuning_metric = tuning_metric

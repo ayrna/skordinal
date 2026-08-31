@@ -46,6 +46,36 @@ def two_pair_folder(tmp_path):
     return tmp_path
 
 
+def _write_seed(
+    base, classifier, dataset, resample_id, split, target=None, prediction=None
+):
+    """Create one seed directory, writing its {split}_predictions.csv when given."""
+    seed_dir = (
+        base / classifier / dataset / "predictions_by_seed" / f"seed_{resample_id}"
+    )
+    seed_dir.mkdir(parents=True, exist_ok=True)
+    if target is not None:
+        pd.DataFrame(
+            {
+                "Pattern ID": range(len(target)),
+                "Target": target,
+                "Prediction": prediction,
+            }
+        ).to_csv(seed_dir / f"{split}_predictions.csv", index=False)
+    return seed_dir
+
+
+def test_summarize_and_tabulate_skip_a_pair_without_a_report(tmp_path):
+    """A pair holding only predictions stores no metrics, so both readers skip it."""
+    _make_pair_csv(tmp_path, "A", "d1", [{"mae_test": 0.3}])
+    _write_seed(tmp_path, "B", "d1", 0, "test", [0, 1], [0, 1])
+
+    assert list(summarize(tmp_path).index) == [("A", "d1")]
+    table = tabulate_results(tmp_path, metric="mae")
+    assert list(table.index) == ["A"]
+    assert list(table.columns) == ["d1"]
+
+
 def test_summarize_aggregates_metrics(two_pair_folder):
     """summarize returns a MultiIndex frame with mean, std, and count."""
     df = summarize(two_pair_folder, split="test")
@@ -240,10 +270,36 @@ def test_save_summary_writes_csv_and_returns_path(
     )
 
 
+def test_save_summary_writes_under_the_expanded_root(monkeypatch, tmp_path):
+    """A ~ root is expanded for the write too, not turned into a literal dir."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    _make_pair_csv(tmp_path / "run", "A", "d1", [{"mae_test": 0.1}])
+    out_path = save_summary("~/run")
+    assert out_path == tmp_path / "run" / "test_summary.csv"
+    assert out_path.is_file()
+    assert not (tmp_path / "~").exists()
+
+
 def test_save_summary_empty_folder_raises(tmp_path):
     """save_summary raises ValueError when there are no results."""
     with pytest.raises(ValueError, match="No results"):
         save_summary(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        summarize,
+        tabulate_results,
+        save_summary,
+    ],
+    ids=["summarize", "tabulate_results", "save_summary"],
+)
+def test_missing_results_root_raises(tmp_path, call):
+    """Every entry point fails loud on an absent root, never with an empty result."""
+    with pytest.raises(FileNotFoundError, match="No results directory"):
+        call(tmp_path / "absent")
 
 
 def test_summarize_round_trip_precision(tmp_path):

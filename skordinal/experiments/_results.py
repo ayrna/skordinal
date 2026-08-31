@@ -1,13 +1,15 @@
-"""Results handling for storing and managing experiment results."""
+"""Persistence and read-back layer for experiment results."""
 
 from __future__ import annotations
 
 import shutil
 import sys
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
@@ -18,7 +20,9 @@ from ._io import (
     _atomic_write,
     _check_path_component,
     _check_resample_id,
+    _check_split,
     _format_proba_column,
+    _parse_proba_column,
     _sweep_orphaned_temp_files,
 )
 
@@ -156,22 +160,22 @@ def _write_split_files(
 
 
 class Results:
-    """Handle all information from an experiment that needs to be saved.
+    """Persist experiment results under ``path`` and read them back.
 
     Parameters
     ----------
-    output_folder : str or Path
+    path : str or Path
         Directory where all results for this run will be stored. Used directly
         as the experiment root; no timestamp subfolder is created.
 
     Attributes
     ----------
-    _experiment_folder : Path
-        Path to the experiment folder.
+    path : Path
+        Expanded, absolute path to the experiment folder.
 
     Notes
     -----
-    On-disk layout under ``_experiment_folder``::
+    On-disk layout under ``path``::
 
         train_summary.csv
         test_summary.csv
@@ -207,8 +211,8 @@ class Results:
     absent until it is called.
     """
 
-    def __init__(self, output_folder: str | Path) -> None:
-        self._experiment_folder = Path(output_folder)
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path).expanduser().resolve()
 
     def save(
         self,
@@ -316,9 +320,9 @@ class Results:
         """Validate both components and return the classifier/dataset dir."""
         _check_path_component(classifier_name, "classifier_name")
         _check_path_component(dataset_name, "dataset_name")
-        return self._experiment_folder / classifier_name / dataset_name
+        return self.path / classifier_name / dataset_name
 
-    def _resample_paths(self, base: Path, resample_id: int) -> tuple[Path, Path]:
+    def _resample_paths(self, base: Path, resample_id: int | str) -> tuple[Path, Path]:
         """Return this resample's predictions directory and model artefact."""
         return (
             base / "predictions_by_seed" / f"seed_{resample_id}",
@@ -389,12 +393,12 @@ class Results:
         _atomic_write(csv_path, df.convert_dtypes().to_csv(index=False))
 
     @classmethod
-    def load(cls, experiment_folder: str | Path) -> Results:
+    def load(cls, path: str | Path) -> Results:
         """Load an existing experiment folder for post-hoc analysis.
 
         Parameters
         ----------
-        experiment_folder : str or Path
+        path : str or Path
             Path to an already-populated experiment folder. The folder does not
             need to exist at construction time; it is only accessed when a
             method such as ``exists`` is called.
@@ -402,7 +406,7 @@ class Results:
         Returns
         -------
         Results
-            A ``Results`` instance pointing at ``experiment_folder``.
+            A ``Results`` instance pointing at ``path``.
 
         Examples
         --------
@@ -410,7 +414,210 @@ class Results:
         >>> from skordinal.experiments import Results
         >>> results = Results.load(Path("/path/to/my-run"))  # doctest: +SKIP
         """
-        return cls(experiment_folder)
+        return cls(path)
+
+    def report(self, classifier_name: str, dataset_name: str) -> pd.DataFrame:
+        """Return the stored per-seed metrics of one classifier/dataset pair.
+
+        Parameters
+        ----------
+        classifier_name : str
+            Name of the classifier configuration.
+
+        dataset_name : str
+            Name of the dataset.
+
+        Returns
+        -------
+        pd.DataFrame
+            Contents of ``report.csv``, indexed by resample id.
+
+        Raises
+        ------
+        TypeError
+            If ``classifier_name`` or ``dataset_name`` is not a string.
+
+        ValueError
+            If ``classifier_name`` or ``dataset_name`` is empty, a dot
+            segment, or contains a path separator.
+
+        FileNotFoundError
+            If the pair has no ``report.csv``.
+
+        Examples
+        --------
+        >>> from skordinal.experiments import Results
+        >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
+        >>> results.report("SVC", "toy")  # doctest: +SKIP
+        """
+        path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
+        if not path.is_file():
+            raise FileNotFoundError(f"No report found at {path}.")
+        return pd.read_csv(path, index_col=0, float_precision="round_trip")
+
+    def hyperparameters(self, classifier_name: str, dataset_name: str) -> pd.DataFrame:
+        """Return the per-seed best parameters of one classifier/dataset pair.
+
+        Parameters
+        ----------
+        classifier_name : str
+            Name of the classifier configuration.
+
+        dataset_name : str
+            Name of the dataset.
+
+        Returns
+        -------
+        pd.DataFrame
+            Contents of ``hyperparameter_configuration.csv``, one row per
+            resample, with the resample id in the ``Seed`` column.
+
+        Raises
+        ------
+        TypeError
+            If ``classifier_name`` or ``dataset_name`` is not a string.
+
+        ValueError
+            If ``classifier_name`` or ``dataset_name`` is empty, a dot
+            segment, or contains a path separator.
+
+        FileNotFoundError
+            If the pair has no ``hyperparameter_configuration.csv``.
+
+        Examples
+        --------
+        >>> from skordinal.experiments import Results
+        >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
+        >>> results.hyperparameters("SVC", "toy")  # doctest: +SKIP
+        """
+        path = (
+            self._pair_dir(classifier_name, dataset_name)
+            / "hyperparameter_configuration.csv"
+        )
+        if not path.is_file():
+            raise FileNotFoundError(f"No hyperparameter configuration at {path}.")
+        return pd.read_csv(path, float_precision="round_trip")
+
+    def predictions(
+        self,
+        classifier_name: str,
+        dataset_name: str,
+        resample_id: int | str,
+        *,
+        split: str = "test",
+        parse_proba: bool = False,
+    ) -> pd.DataFrame:
+        """Return one resample's stored predictions for a single split.
+
+        Parameters
+        ----------
+        classifier_name : str
+            Name of the classifier configuration.
+
+        dataset_name : str
+            Name of the dataset.
+
+        resample_id : int or str
+            Partition identifier naming the seed directory.
+
+        split : {"test", "train"}, default="test"
+            Which of the two per-seed predictions files to read.
+
+        parse_proba : bool, default=False
+            Whether to expand the ``Prediction probabilities`` cells into
+            ``ndarray`` rows instead of leaving them as stored strings.
+
+        Returns
+        -------
+        pd.DataFrame
+            Contents of ``{split}_predictions.csv``, with the columns
+            described in the class ``Notes``.
+
+        Raises
+        ------
+        TypeError
+            If ``classifier_name`` or ``dataset_name`` is not a string.
+
+        ValueError
+            If ``classifier_name``, ``dataset_name`` or a non-int
+            ``resample_id`` is empty, a dot segment, or contains a path
+            separator, or if ``split`` is not ``"test"`` or ``"train"``.
+
+        FileNotFoundError
+            If the resample has no predictions file for ``split``.
+
+        Examples
+        --------
+        >>> from skordinal.experiments import Results
+        >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
+        >>> results.predictions("SVC", "toy", 0, parse_proba=True)  # doctest: +SKIP
+        """
+        _check_resample_id(resample_id)
+        _check_split(split, allow_both=False)
+        seed_dir, _ = self._resample_paths(
+            self._pair_dir(classifier_name, dataset_name), resample_id
+        )
+        path = seed_dir / f"{split}_predictions.csv"
+        if not path.is_file():
+            raise FileNotFoundError(f"No predictions file at {path}.")
+        df = pd.read_csv(path)
+        if parse_proba and "Prediction probabilities" in df.columns:
+            df["Prediction probabilities"] = list(
+                _parse_proba_column(df["Prediction probabilities"])
+            )
+        return df
+
+    def model(
+        self,
+        classifier_name: str,
+        dataset_name: str,
+        resample_id: int | str,
+    ) -> BaseEstimator:
+        """Load one resample's persisted model artefact.
+
+        Parameters
+        ----------
+        classifier_name : str
+            Name of the classifier configuration.
+
+        dataset_name : str
+            Name of the dataset.
+
+        resample_id : int or str
+            Partition identifier naming the model artefact.
+
+        Returns
+        -------
+        estimator
+            The joblib-loaded fitted estimator.
+
+        Raises
+        ------
+        TypeError
+            If ``classifier_name`` or ``dataset_name`` is not a string.
+
+        ValueError
+            If ``classifier_name``, ``dataset_name`` or a non-int
+            ``resample_id`` is empty, a dot segment, or contains a path
+            separator.
+
+        FileNotFoundError
+            If the resample was saved with ``save_model=False`` or its
+            artefact has since been removed.
+
+        Examples
+        --------
+        >>> from skordinal.experiments import Results
+        >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
+        >>> results.model("SVC", "toy", 0)  # doctest: +SKIP
+        """
+        _check_resample_id(resample_id)
+        _, model_path = self._resample_paths(
+            self._pair_dir(classifier_name, dataset_name), resample_id
+        )
+        if not model_path.is_file():
+            raise FileNotFoundError(f"No model artefact at {model_path}.")
+        return joblib.load(model_path)
 
     def exists(
         self,
@@ -460,3 +667,34 @@ class Results:
             return False
         df = pd.read_csv(csv_path, index_col=0)
         return str(resample_id) in df.index.astype(str)
+
+    def iter_experiments(self) -> Iterator[tuple[str, str]]:
+        """Yield every readable pair as ``(classifier_name, dataset_name)``.
+
+        A pair qualifies on a ``report.csv``, the commit marker, or failing
+        that on a ``predictions_by_seed`` directory, which is how a tree
+        written by another tool is discovered. Read a yielded pair with
+        ``report``, ``hyperparameters``, ``predictions`` or ``model``; each
+        raises ``FileNotFoundError`` when its own file is absent, so only
+        ``report`` is guaranteed to fail for a pair carrying no
+        ``report.csv``.
+
+        Yields
+        ------
+        tuple of (str, str)
+            Classifier name and dataset name of a readable pair.
+
+        Examples
+        --------
+        >>> from skordinal.experiments import Results
+        >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
+        >>> list(results.iter_experiments())  # doctest: +SKIP
+        """
+        if not self.path.is_dir():
+            return
+        for clf_dir in sorted(p for p in self.path.iterdir() if p.is_dir()):
+            for ds_dir in sorted(p for p in clf_dir.iterdir() if p.is_dir()):
+                if (ds_dir / "report.csv").is_file() or (
+                    ds_dir / "predictions_by_seed"
+                ).is_dir():
+                    yield clf_dir.name, ds_dir.name

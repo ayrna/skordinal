@@ -1,25 +1,30 @@
 """Read-back aggregation over saved experiment results."""
 
 import math
-from pathlib import Path
 
 import pandas as pd
 
 from ._io import _atomic_write, _check_split
+from ._results import Results
 
 
-def _iter_pairs(results_path):
-    """Yield ``(classifier, dataset, csv_path)`` for each results pair."""
-    root = Path(results_path)
-    for clf_dir in sorted(root.iterdir()):
-        if not clf_dir.is_dir():
+def _existing_results(results_path):
+    """Return a Results over results_path, raising when the root is absent."""
+    results = Results(results_path)
+    if not results.path.is_dir():
+        raise FileNotFoundError(f"No results directory at {results.path}.")
+    return results
+
+
+def _iter_reports(results):
+    """Yield ``(classifier, dataset, report)`` for each pair that stores metrics."""
+    for clf, ds in results.iter_experiments():
+        try:
+            report = results.report(clf, ds)
+        except FileNotFoundError:
+            # A pair with predictions but no report.csv stores no metrics
             continue
-        for ds_dir in sorted(clf_dir.iterdir()):
-            if not ds_dir.is_dir():
-                continue
-            csv_path = ds_dir / "report.csv"
-            if csv_path.is_file():
-                yield clf_dir.name, ds_dir.name, csv_path
+        yield clf, ds, report
 
 
 def summarize(results_path, *, classifiers=None, split="test"):
@@ -61,6 +66,9 @@ def summarize(results_path, *, classifiers=None, split="test"):
         If ``classifiers`` is a bare string instead of an iterable of
         strings.
 
+    FileNotFoundError
+        If ``results_path`` does not exist.
+
     Examples
     --------
     >>> from skordinal.experiments import summarize
@@ -75,14 +83,12 @@ def summarize(results_path, *, classifiers=None, split="test"):
         )
 
     classifier_set = set(classifiers) if classifiers is not None else None
+    results = _existing_results(results_path)
     rows = []
 
-    for clf, ds, csv_path in _iter_pairs(results_path):
-        # Skip pairs not in the requested classifier filter
+    for clf, ds, df in _iter_reports(results):
         if classifier_set is not None and clf not in classifier_set:
             continue
-
-        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
 
         # Select columns for the requested split
         if split == "test":
@@ -143,6 +149,9 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     ValueError
         If ``split`` is not ``"test"`` or ``"train"``.
 
+    FileNotFoundError
+        If ``results_path`` does not exist.
+
     Examples
     --------
     >>> from skordinal.experiments import tabulate_results
@@ -155,10 +164,10 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     _check_split(split, allow_both=False)
 
     col = f"{metric}_{split}"
+    results = _existing_results(results_path)
     rows = []
 
-    for clf, ds, csv_path in _iter_pairs(results_path):
-        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
+    for clf, ds, df in _iter_reports(results):
         # Format as "mean +/- std", or "n/a" when metric is absent or all-NaN
         if col not in df.columns or df[col].isna().all():
             cell = "n/a"
@@ -208,18 +217,22 @@ def save_summary(results_path, *, split="test"):
         If ``split`` is not a recognised value (via ``summarize`` →
         ``_check_split``) or if there are no results in ``results_path``.
 
+    FileNotFoundError
+        If ``results_path`` does not exist.
+
     Examples
     --------
     >>> from skordinal.experiments import save_summary
     >>> path = save_summary("/path/to/my-run", split="test")  # doctest: +SKIP
     """
-    df = summarize(results_path, split=split)
+    root = _existing_results(results_path).path
+    df = summarize(root, split=split)
     if df.empty:
         raise ValueError("No results found to summarise.")
     flat = df.copy()
     flat.columns = [
         f"{outer}_{inner}" if inner else outer for outer, inner in flat.columns
     ]
-    out_path = Path(results_path) / f"{split}_summary.csv"
+    out_path = root / f"{split}_summary.csv"
     _atomic_write(out_path, flat.to_csv())
     return out_path
