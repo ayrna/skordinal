@@ -29,15 +29,16 @@ class REDSVM(ClassifierMixin, BaseEstimator):
 
     kernel : str, default="rbf"
         Set type of kernel function.
-        - linear: u'*v
-        - polynomial: (gamma*u'*v + coef0)^degree
-        - rbf: exp(-gamma*|u-v|^2)
-        - sigmoid: tanh(gamma*u'*v + coef0)
-        - stump: -|u-v|_1 + coef0
-        - perceptron: -|u-v|_2 + coef0
-        - laplacian: exp(-gamma*|u-v|_1)
-        - exponential: exp(-gamma*|u-v|_2)
-        - precomputed: kernel values in training_instance_matrix
+
+        - linear: ``u'*v``
+        - polynomial: ``(gamma*u'*v + coef0)^degree``
+        - rbf: ``exp(-gamma*|u-v|^2)``
+        - sigmoid: ``tanh(gamma*u'*v + coef0)``
+        - stump: ``-|u-v|_1 + coef0``
+        - perceptron: ``-|u-v|_2 + coef0``
+        - laplacian: ``exp(-gamma*|u-v|_1)``
+        - exponential: ``exp(-gamma*|u-v|_2)``
+        - precomputed: kernel values in ``training_instance_matrix``
 
     degree : int, default=3
         Set degree in kernel function.
