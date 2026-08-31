@@ -138,27 +138,62 @@ def test_load_dataset_named_csv_bunch_contract(named_csv):
 
 
 @pytest.mark.parametrize(
-    "csv_text, expected_feature_names, expected_target_names",
+    "csv_text, expected_feature_names, expected_target_names, expected_shape",
     [
         (
             "3,2,low,mid,high\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n",
             ["x0", "x1"],
             ["low", "mid", "high"],
+            (3, 2),
         ),
         (
             "x_0,x_1,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n",
             ["x_0", "x_1"],
             ["0", "1", "2"],
+            (3, 2),
         ),
         (
             "1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n",
             ["x0", "x1"],
             ["0", "1", "2"],
+            (3, 2),
         ),
         (
             "3,2\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n",
             ["x0", "x1"],
             ["0", "1", "2"],
+            (3, 2),
+        ),
+        (
+            "3,1\n1.0,0\n2.0,1\n3.0,0\n",
+            ["x0"],
+            ["0", "1"],
+            (3, 1),
+        ),
+        (
+            "3,3,0,1\n1.0,2.0,3.0,0\n4.0,5.0,6.0,1\n7.0,8.0,9.0,0\n",
+            ["x0", "x1", "x2"],
+            ["0", "1"],
+            (3, 3),
+        ),
+        (
+            "9,2,0\n1.0,2.0,5\n3.0,4.0,5\n5.0,6.0,5\n",
+            ["x0", "x1"],
+            ["0", "5"],
+            (4, 2),
+        ),
+        (
+            "5,3,7,2\n1.0,1.0,1.0,0\n2.0,2.0,2.0,1\n"
+            "3.0,3.0,3.0,2\n4.0,4.0,4.0,0\n5.0,5.0,5.0,1\n",
+            ["x0", "x1", "x2"],
+            ["0", "1", "2"],
+            (6, 3),
+        ),
+        (
+            "3,3,0,1\n1.0,2.0,3.0,0\n4.0,5.0,6.0,0\n7.0,8.0,9.0,0\n",
+            ["x0", "x1", "x2"],
+            ["0", "1"],
+            (3, 3),
         ),
     ],
     ids=[
@@ -166,18 +201,23 @@ def test_load_dataset_named_csv_bunch_contract(named_csv):
         "named-header",
         "no-header",
         "metadata-header-no-class-names",
+        "metadata-header-single-feature",
+        "metadata-header-data-row-width",
+        "lookalike-wrong-sample-count",
+        "lookalike-wrong-class-count",
+        "metadata-header-missing-observed-class",
     ],
 )
 def test_load_dataset_header_styles(
-    tmp_path, csv_text, expected_feature_names, expected_target_names
+    tmp_path, csv_text, expected_feature_names, expected_target_names, expected_shape
 ):
-    """Each header style yields correct feature_names and target_names."""
+    """Each header style is detected, and a lookalike first row is not."""
     path = tmp_path / "style.csv"
     path.write_text(csv_text, encoding="utf-8")
     bunch = load_dataset(path)
     assert bunch.feature_names == expected_feature_names
     assert list(bunch.target_names) == expected_target_names
-    assert bunch.data.shape == (3, 2)
+    assert bunch.data.shape == expected_shape
 
 
 @pytest.mark.parametrize(
@@ -263,12 +303,20 @@ def test_load_dataset_as_frame(named_csv):
     assert bunch.frame is not None
 
 
-def test_load_dataset_as_frame_feature_named_target_raises(tmp_path):
-    """A feature column literally named ``target`` collides and raises."""
+@pytest.mark.parametrize(
+    "csv_text, match",
+    [
+        ("x_0,target,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", "collides"),
+        ("a,a,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", "more than once"),
+    ],
+    ids=["collides-with-target", "duplicate-names"],
+)
+def test_load_dataset_as_frame_bad_feature_names_raise(tmp_path, csv_text, match):
+    """A feature name that collides with ``target`` or repeats raises."""
     pytest.importorskip("pandas")
-    path = tmp_path / "collide.csv"
-    path.write_text("x_0,target,y\n1.0,2.0,0\n3.0,4.0,1\n5.0,6.0,2\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="target"):
+    path = tmp_path / "names.csv"
+    path.write_text(csv_text, encoding="utf-8")
+    with pytest.raises(ValueError, match=match):
         load_dataset(path, as_frame=True)
 
 
@@ -318,12 +366,14 @@ def test_load_dataset_invalid_target_raises(tmp_path, bad_target):
             "Expected 3 feature column",
         ),
         ("x_0,x_1,y\n", "header but no data rows"),
+        ("3,9\n1.0,2.0,1\n4.0,5.0,2\n", "inconsistent lengths"),
     ],
     ids=[
         "declared-count-mismatch",
         "ragged-rows",
         "wrong-column-count",
         "header-only",
+        "lookalike-wrong-feature-count",
     ],
 )
 def test_load_dataset_malformed_csv_raises(tmp_path, csv_text, match):
