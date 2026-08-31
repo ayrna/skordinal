@@ -114,7 +114,6 @@ class Benchmark:
     ... )
     >>> benchmark.run()  # doctest: +SKIP
     >>> benchmark.summarize()  # doctest: +SKIP
-
     """
 
     def __init__(
@@ -245,7 +244,6 @@ class Benchmark:
         FileNotFoundError
             If a dataset name cannot be resolved by the dataset-loading layer
             (no matching path and not present in the bundled collection).
-
         """
         if self.verbose:
             print("\n###############################")

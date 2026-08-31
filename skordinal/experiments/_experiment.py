@@ -101,7 +101,6 @@ class Experiment:
     ...     classifier_name="SVM",
     ...     resample_id=0,
     ... )
-
     """
 
     def __init__(
@@ -202,7 +201,6 @@ class Experiment:
         -------
         ExperimentResult
             Fully populated result for this partition. No side effects.
-
         """
         # Apply preprocessing on local copies so the caller's arrays are not mutated.
         train_inputs: np.ndarray = X_train

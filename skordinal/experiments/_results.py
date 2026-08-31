@@ -87,7 +87,6 @@ class ExperimentResult:
         Class-probability estimates on the training partition, columns
         ordered by ``best_model.classes_``. ``None`` when the estimator
         cannot provide probabilities.
-
     """
 
     dataset_name: str
@@ -206,7 +205,6 @@ class Results:
     ``resample_id``, in numeric order. The root-level ``train_summary.csv``
     and ``test_summary.csv`` files are written by ``save_summary`` and are
     absent until it is called.
-
     """
 
     def __init__(self, output_folder: str | Path) -> None:
@@ -260,7 +258,6 @@ class Results:
         >>> from skordinal.experiments import Results
         >>> results = Results("/path/to/my-run")  # doctest: +SKIP
         >>> results.save(result)  # doctest: +SKIP
-
         """
         if result.train_true_y is None:
             raise ValueError(
@@ -412,7 +409,6 @@ class Results:
         >>> from pathlib import Path
         >>> from skordinal.experiments import Results
         >>> results = Results.load(Path("/path/to/my-run"))  # doctest: +SKIP
-
         """
         return cls(experiment_folder)
 
@@ -457,7 +453,6 @@ class Results:
         >>> results = Results.load("/path/to/my-run")  # doctest: +SKIP
         >>> results.exists("SVC", "toy", 0)  # doctest: +SKIP
         False
-
         """
         _check_resample_id(resample_id)
         csv_path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
