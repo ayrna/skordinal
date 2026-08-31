@@ -14,6 +14,7 @@ from ._loaders import (
     load_swd,
 )
 from ._samples_generator import make_ordinal_classification
+from ._tocuco import load_tocuco_partitions
 
 __all__ = [
     "clear_data_home",
@@ -26,4 +27,7 @@ __all__ = [
     "load_partitions",
     "load_swd",
     "make_ordinal_classification",
+    "load_tocuco_partitions",
 ]
+
+

@@ -4,7 +4,8 @@ from skordinal.classifiers import SVORIM
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
-    "datasets": ["balance_scale"],
+    "datasets": ["tocuco_dr04_forestfires"], # balance_scale, tocuco_dr04_forestfires (important: prefix "tocuco_" is required for tocuco datasets)
+    "data_home": "/mnt/buoys/tocuco/", # Directory where tocuco datasets are stored
     "cv": 3,
     "n_jobs": 1,
     "input_preprocessing": "std",
