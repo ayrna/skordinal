@@ -202,6 +202,7 @@ git-only = [
     ".codecov.yml",
     ".coveragerc",
     ".gitignore",
+    "docs/**",
     "examples/**",
     "skordinal/**/tests/**",
     "skordinal/classifiers/src/libsvmrank/grid.py",
