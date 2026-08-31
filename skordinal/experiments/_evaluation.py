@@ -29,7 +29,7 @@ def _iter_pairs(results_path):
                 yield clf_dir.name, ds_dir.name, csv_path
 
 
-def summarize(results_path, *, labels=None, split="test"):
+def summarize(results_path, *, classifiers=None, split="test"):
     """Aggregate per-pair report CSVs into a multi-index summary DataFrame.
 
     Parameters
@@ -38,10 +38,10 @@ def summarize(results_path, *, labels=None, split="test"):
         Root folder of the experiment results. The function descends into
         ``<results_path>/<classifier>/<dataset>/report.csv`` for each pair.
 
-    labels : iterable of str or None, default=None
+    classifiers : iterable of str or None, default=None
         When provided, only pairs whose classifier name is contained in
-        ``labels`` are included.  Must be an iterable of strings, not a
-        bare string.
+        ``classifiers`` are included.  Must be an iterable of strings, not
+        a bare string.
 
     split : {"test", "train", "both"}, default="test"
         Which metric columns to include.
@@ -65,7 +65,8 @@ def summarize(results_path, *, labels=None, split="test"):
         If ``split`` is not ``"test"``, ``"train"``, or ``"both"``.
 
     TypeError
-        If ``labels`` is a bare string instead of an iterable of strings.
+        If ``classifiers`` is a bare string instead of an iterable of
+        strings.
 
     Examples
     --------
@@ -74,18 +75,18 @@ def summarize(results_path, *, labels=None, split="test"):
     """
     _check_split(split, allow_both=True)
 
-    if isinstance(labels, str):
+    if isinstance(classifiers, str):
         raise TypeError(
-            "labels must be an iterable of classifier name strings, not a bare string; "
-            f"pass [{labels!r}] to filter by a single classifier."
+            "classifiers must be an iterable of classifier name strings, not a bare "
+            f"string; pass [{classifiers!r}] to filter by a single classifier."
         )
 
-    label_set = set(labels) if labels is not None else None
+    classifier_set = set(classifiers) if classifiers is not None else None
     rows = []
 
     for clf, ds, csv_path in _iter_pairs(results_path):
-        # Skip pairs not in the requested label filter
-        if label_set is not None and clf not in label_set:
+        # Skip pairs not in the requested classifier filter
+        if classifier_set is not None and clf not in classifier_set:
             continue
 
         df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")

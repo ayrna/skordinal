@@ -74,16 +74,16 @@ def test_summarize_selects_columns_by_split(two_pair_folder, split, expected):
 
 
 @pytest.mark.parametrize(
-    "labels,expected_clfs",
+    "classifiers,expected_clfs",
     [
         (["A"], {"A"}),
         (["nonexistent"], set()),
     ],
     ids=["subset", "absent"],
 )
-def test_summarize_filters_by_labels(two_pair_folder, labels, expected_clfs):
-    """summarize with labels keeps only matching classifiers or empty."""
-    df = summarize(two_pair_folder, split="test", labels=labels)
+def test_summarize_filters_by_classifiers(two_pair_folder, classifiers, expected_clfs):
+    """summarize with classifiers keeps only matching pairs or empty."""
+    df = summarize(two_pair_folder, split="test", classifiers=classifiers)
     if expected_clfs:
         assert {clf for clf, _ in df.index} == expected_clfs
     else:
@@ -130,10 +130,10 @@ def test_summarize_empty_folder_returns_empty(tmp_path):
     assert summarize(tmp_path).empty
 
 
-def test_summarize_rejects_string_labels(two_pair_folder):
-    """summarize raises TypeError when labels is a bare string."""
+def test_summarize_rejects_string_classifiers(two_pair_folder):
+    """summarize raises TypeError when classifiers is a bare string."""
     with pytest.raises(TypeError, match="iterable"):
-        summarize(two_pair_folder, labels="A")
+        summarize(two_pair_folder, classifiers="A")
 
 
 def test_summarize_rejects_unknown_split(two_pair_folder):
