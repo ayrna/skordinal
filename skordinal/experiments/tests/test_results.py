@@ -6,6 +6,8 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 from sklearn.metrics import confusion_matrix
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.classifiers import LogisticAT
@@ -44,6 +46,7 @@ def _make_result(
     train_index=None,
     test_index=None,
     y_proba=None,
+    scaler=None,
 ) -> ExperimentResult:
     if estimator is None:
         estimator = _fitted_svc()
@@ -66,6 +69,7 @@ def _make_result(
         test_true_y=test_true_y,
         train_index=train_index,
         test_index=test_index,
+        scaler=scaler,
     )
 
 
@@ -706,8 +710,8 @@ def test_predictions_parse_proba(tmp_path):
     assert raw["Prediction probabilities"].iloc[0].startswith("[")
 
 
-def test_model_round_trip(tmp_path):
-    """model loads back the estimator save persisted."""
+def test_model_round_trips_the_bare_estimator(tmp_path):
+    """Without a scaler, model loads back the estimator itself, not a Pipeline."""
     estimator = _fitted_svc()
     results = Results(tmp_path)
     results.save(
@@ -725,6 +729,7 @@ def test_model_round_trip(tmp_path):
     )
 
     loaded = results.model("conf_1", "toy", 0)
+    assert not isinstance(loaded, Pipeline)
     npt.assert_array_equal(loaded.classes_, estimator.classes_)
 
 
@@ -1125,3 +1130,34 @@ def test_resave_crash_before_uncommit_leaves_prior_run_intact(tmp_path, monkeypa
     assert r.exists("clf", "ds", "0") is True
     seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
     assert (seed / "train_predictions.csv").is_file()
+
+
+def test_save_composes_the_scaler_into_the_model_artefact(tmp_path):
+    """A scaled run persists a Pipeline that accepts raw, unscaled features."""
+    raw = np.repeat([[1.0], [100.0], [10000.0]], 4, axis=0)
+    labels = np.repeat([1, 2, 3], 4)
+    scaler = StandardScaler().fit(raw)
+    estimator = SVC().fit(scaler.transform(raw), labels)
+
+    results = Results(tmp_path)
+    results.save(
+        _make_result(
+            partition=0,
+            dataset="toy",
+            configuration="conf_1",
+            best_params={},
+            train_metrics={},
+            test_metrics={},
+            train_predicted_y=estimator.predict(scaler.transform(raw)),
+            test_predicted_y=None,
+            estimator=estimator,
+            train_true_y=labels,
+            scaler=scaler,
+        )
+    )
+
+    artefact = results.model("conf_1", "toy", 0)
+    assert isinstance(artefact, Pipeline)
+    npt.assert_array_equal(
+        artefact.predict(raw), estimator.predict(scaler.transform(raw))
+    )

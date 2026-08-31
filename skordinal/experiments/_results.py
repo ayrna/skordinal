@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.metrics import confusion_matrix
+from sklearn.pipeline import Pipeline
 
 from ._io import (
     _atomic_dump,
@@ -28,7 +29,7 @@ from ._io import (
 )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ExperimentResult:
     """Result of running a single classifier on one dataset partition.
 
@@ -92,6 +93,11 @@ class ExperimentResult:
         Class-probability estimates on the training partition, columns
         ordered by ``best_model.classes_``. ``None`` when the estimator
         cannot provide probabilities.
+
+    scaler : transformer or None, default=None
+        Fitted scaler that produced the inputs ``best_model`` was fitted on,
+        or ``None`` when no preprocessing ran. ``best_model`` stays bare;
+        only the persisted artefact composes the two.
     """
 
     dataset_name: str
@@ -109,6 +115,7 @@ class ExperimentResult:
     train_index: np.ndarray | None = None
     test_index: np.ndarray | None = None
     train_y_proba: np.ndarray | None = None
+    scaler: BaseEstimator | None = None
 
 
 def _write_split_files(
@@ -204,6 +211,9 @@ class Results:
     estimates are stored alongside it. Each
     ``*_confusion_matrix.txt`` holds the confusion matrix of the same
     file's ``Target`` and ``Prediction`` columns.
+    Each ``models/<resample_id>.joblib`` holds the fitted estimator, or a
+    ``Pipeline`` of the run's scaler and that estimator when the inputs were
+    scaled, so the artefact always accepts raw features.
     ``hyperparameter_configuration.csv`` records the best parameters per
     seed with the ``clf__`` pipeline prefix stripped; its ``Seed`` column
     always holds the resample identifier. ``report.csv`` is indexed by
@@ -311,7 +321,13 @@ class Results:
             )
 
         if save_model:
-            _atomic_dump(model_path, result.best_model)
+            # Wrap the scaler in so the artefact accepts raw features
+            artefact = (
+                Pipeline([("scaler", result.scaler), ("clf", result.best_model)])
+                if result.scaler is not None
+                else result.best_model
+            )
+            _atomic_dump(model_path, artefact)
 
         self._upsert_hyperparameters(result, base_dir)
         # Write the report row last: it is the commit marker for exists()
@@ -660,7 +676,9 @@ class Results:
         Returns
         -------
         estimator
-            The joblib-loaded fitted estimator.
+            The joblib-loaded artefact: the bare fitted estimator, or a
+            ``Pipeline`` chaining the run's scaler and that estimator when
+            the partition was scaled.
 
         Raises
         ------
