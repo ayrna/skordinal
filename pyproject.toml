@@ -202,6 +202,7 @@ git-only = [
     ".codecov.yml",
     ".coveragerc",
     ".gitignore",
+    ".readthedocs.yaml",
     "docs/**",
     "examples/**",
     "skordinal/**/tests/**",
