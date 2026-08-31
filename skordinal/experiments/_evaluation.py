@@ -5,14 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from ._io import _atomic_write
-
-
-def _check_split(split, *, allow_both):
-    """Raise ValueError when split is not a recognised value."""
-    valid = {"test", "train", "both"} if allow_both else {"test", "train"}
-    if split not in valid:
-        raise ValueError(f"split must be one of {sorted(valid)!r}, got {split!r}.")
+from ._io import _atomic_write, _check_split
 
 
 def _iter_pairs(results_path):
