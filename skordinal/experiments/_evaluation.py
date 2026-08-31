@@ -4,6 +4,8 @@ import math
 
 import pandas as pd
 
+from skordinal.metrics._metrics import _resolve_label_metric
+
 from ._io import _atomic_write, _check_split
 from ._results import Results
 
@@ -25,6 +27,133 @@ def _iter_reports(results):
             # A pair with predictions but no report.csv stores no metrics
             continue
         yield clf, ds, report
+
+
+def evaluate(
+    results_path,
+    classifier_name,
+    dataset_name,
+    *,
+    metrics=None,
+    split="test",
+):
+    """Recompute metrics from the saved per-seed predictions of one pair.
+
+    Useful for adding a metric to a finished benchmark without re-fitting any
+    estimator. Where a ``report.csv`` exists, only the resamples committed to
+    it are read. Where the pair has none, every seed directory holding the
+    split's predictions file is read, so a results tree written by another
+    tool sharing this layout is readable too.
+
+    Parameters
+    ----------
+    results_path : str or Path
+        Root folder of the experiment results.
+
+    classifier_name : str
+        Name of the classifier configuration.
+
+    dataset_name : str
+        Name of the dataset.
+
+    metrics : iterable of str or None, default=None
+        Metric names, from the registry ``Experiment``'s ``eval_metrics``
+        uses; scorer names like ``"neg_mean_absolute_error"`` are rejected.
+        ``None`` computes ``"mean_absolute_error"`` and ``"accuracy_score"``.
+
+    split : {"test", "train"}, default="test"
+        Which per-seed predictions file to read.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per resample read, indexed by ``resample_id`` and sorted
+        like ``report.csv``'s index, with one column per requested metric.
+        Empty, with those columns, when no predictions file is readable.
+
+    Raises
+    ------
+    ValueError
+        If ``split`` is not ``"test"`` or ``"train"``, if ``metrics`` is
+        empty or holds an unregistered name, if ``classifier_name`` or
+        ``dataset_name`` is empty, a dot segment, or contains a path
+        separator, or if a predictions file lacks the ``Target`` or
+        ``Prediction`` column.
+
+    TypeError
+        If ``classifier_name`` or ``dataset_name`` is not a string, or if
+        ``metrics`` is a bare string instead of an iterable of strings or
+        contains a non-string element.
+
+    FileNotFoundError
+        If ``results_path`` does not exist, or the pair has no
+        ``predictions_by_seed`` directory.
+
+    Warns
+    -----
+    RuntimeWarning
+        If a resample committed to ``report.csv`` with metrics for ``split``
+        has no predictions file for it.
+
+    Notes
+    -----
+    The stored ``Target`` and ``Prediction`` columns are zero-based ranks into
+    ``best_model.classes_``, so metrics are recomputed in rank space, where
+    adjacent categories are always distance 1. ``report.csv``'s own values are
+    computed on the raw labels, so the two agree only while the label set is
+    contiguous.
+
+    Examples
+    --------
+    >>> from skordinal.experiments import evaluate
+    >>> df = evaluate("/path/to/my-run", "LR", "era")  # doctest: +SKIP
+    """
+    _check_split(split, allow_both=False)
+
+    if isinstance(metrics, str):
+        raise TypeError(
+            "metrics must be an iterable of metric name strings, not a bare string; "
+            f"pass [{metrics!r}] to compute a single metric."
+        )
+    metric_names = (
+        tuple(metrics)
+        if metrics is not None
+        else ("mean_absolute_error", "accuracy_score")
+    )
+    if not metric_names:
+        raise ValueError("'metrics' must be non-empty; got an empty sequence.")
+    for name in metric_names:
+        if not isinstance(name, str):
+            raise TypeError(
+                "metrics must contain only metric name strings; got "
+                f"{type(name).__name__!r}."
+            )
+    # Key the columns by the stripped name, like Experiment's report.csv
+    metric_names = tuple(name.strip() for name in metric_names)
+    # Resolve up front so an unknown name raises before any file is read
+    resolved = {name: _resolve_label_metric(name) for name in metric_names}
+
+    results = _existing_results(results_path)
+    rows = {}
+    for resample_id, path in results._readable_seed_files(
+        classifier_name, dataset_name, split
+    ):
+        df = pd.read_csv(path)
+        missing = {"Target", "Prediction"} - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"Malformed predictions file at {path}: missing the "
+                f"{sorted(missing)} column(s)."
+            )
+        y_true = df["Target"].to_numpy()
+        y_pred = df["Prediction"].to_numpy()
+        rows[resample_id] = {
+            name: float(metric(y_true, y_pred)) for name, metric in resolved.items()
+        }
+
+    return pd.DataFrame.from_dict(
+        rows, orient="index", columns=list(metric_names)
+    ).rename_axis("resample_id")
 
 
 def summarize(results_path, *, classifiers=None, split="test"):

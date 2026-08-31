@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -415,6 +416,76 @@ class Results:
         >>> results = Results.load(Path("/path/to/my-run"))  # doctest: +SKIP
         """
         return cls(path)
+
+    def _readable_seed_files(
+        self, classifier_name: str, dataset_name: str, split: str
+    ) -> list[tuple[int | str, Path]]:
+        """Return sorted ``(resample_id, path)`` pairs of one split's readable seeds.
+
+        Where a ``report.csv`` exists it is the commit marker, so a seed
+        directory with no row in it was left behind by a crashed save and is
+        skipped, and a row that does carry ``{split}`` metrics but has no
+        predictions file is corruption, not a train-only run, and warns.
+
+        Where the pair has none there is no marker to consult, so every seed
+        holding the split's predictions file is read on the strength of that
+        file, which ``_atomic_write`` leaves either complete or absent. A save
+        that crashed before writing any report row falls here too.
+
+        Ids sort like ``report.csv``'s index.
+        """
+        seeds_dir = (
+            self._pair_dir(classifier_name, dataset_name) / "predictions_by_seed"
+        )
+        if not seeds_dir.is_dir():
+            raise FileNotFoundError(f"No predictions directory at {seeds_dir}.")
+        report: pd.DataFrame | None
+        try:
+            report = self.report(classifier_name, dataset_name)
+        except FileNotFoundError:
+            report = None
+        else:
+            report.index = report.index.astype(str)
+        split_cols = (
+            [c for c in report.columns if c.endswith(f"_{split}")]
+            if report is not None
+            else []
+        )
+
+        files: list[tuple[int | str, Path]] = []
+        for seed_dir in seeds_dir.iterdir():
+            if not seed_dir.is_dir() or not seed_dir.name.startswith("seed_"):
+                continue
+            str_id = seed_dir.name.removeprefix("seed_")
+            # Only report.csv membership decides: non-integer ids are legal
+            if report is not None and str_id not in report.index:
+                continue
+            try:
+                resample_id: int | str = int(str_id)
+            except ValueError:
+                resample_id = str_id
+            path = seed_dir / f"{split}_predictions.csv"
+            if path.is_file():
+                files.append((resample_id, path))
+            elif (
+                report is not None
+                and split_cols
+                and report.loc[str_id, split_cols].notna().any()
+            ):
+                warnings.warn(
+                    f"{classifier_name}/{dataset_name} seed {resample_id} is "
+                    f"committed to report.csv with {split} metrics, but {path} "
+                    "is missing.",
+                    RuntimeWarning,
+                    # Frames: here <- evaluate <- caller
+                    stacklevel=3,
+                )
+        try:
+            files.sort(key=lambda item: int(item[0]))
+        except ValueError:
+            # Fall back to lexicographic order for non-integer ids
+            files.sort(key=lambda item: str(item[0]))
+        return files
 
     def report(self, classifier_name: str, dataset_name: str) -> pd.DataFrame:
         """Return the stored per-seed metrics of one classifier/dataset pair.
