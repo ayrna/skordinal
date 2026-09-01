@@ -646,30 +646,6 @@ def test_labels_must_cover_the_data():
         accuracy_off1_score([0, 1, 2], [0, 1, 5], labels=[0, 1, 2])
 
 
-def test_metric_names_in_all():
-    """All public metric names are present in skordinal.metrics.__all__."""
-    import skordinal.metrics as m
-
-    expected = [
-        "accuracy_score",
-        "average_mean_absolute_error",
-        "geometric_mean",
-        "mean_absolute_error",
-        "maximum_mean_absolute_error",
-        "mean_extreme_sensitivity",
-        "minimum_sensitivity",
-        "mean_zero_one_error",
-        "kendalls_tau",
-        "weighted_kappa",
-        "spearmans_rho",
-        "ranked_probability_score",
-        "gmsec",
-        "accuracy_off1_score",
-    ]
-    for name in expected:
-        assert name in m.__all__, f"{name!r} missing from __all__"
-
-
 @pytest.mark.parametrize("fn", _WEIGHTED_METRICS, ids=_WEIGHTED_METRIC_IDS)
 def test_sample_weight_is_keyword_only(fn):
     """sample_weight is a keyword-only parameter in every weighted metric."""

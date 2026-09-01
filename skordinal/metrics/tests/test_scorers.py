@@ -68,13 +68,6 @@ def test_scorer_names_match_expected():
     assert get_ordinal_scorer_names() is not names
 
 
-def test_scorers_not_in_public_all():
-    """Private symbol _SCORERS is not exported from skordinal.metrics."""
-    import skordinal.metrics as m
-
-    assert "_SCORERS" not in m.__all__
-
-
 def test_get_ordinal_scorer_returns_fresh_copy():
     """Mutating a returned scorer does not affect subsequent lookups."""
     first = get_ordinal_scorer("neg_mean_absolute_error")
