@@ -313,4 +313,7 @@ class Benchmark:
             try:
                 save_summary(self.results_path, split=split)
             except ValueError:
-                pass
+                # No stored metrics to summarise for this split: either nothing
+                # has been run yet, or no pair produced a report
+                if self.verbose:
+                    print("  No metrics to summarise for the", split, "split")
