@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math as math
 import warnings
 from numbers import Integral, Real
 
