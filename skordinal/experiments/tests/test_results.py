@@ -6,6 +6,8 @@ import numpy.testing as npt
 import pandas as pd
 import pytest
 from sklearn.metrics import confusion_matrix
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.classifiers import LogisticAT
@@ -44,6 +46,7 @@ def _make_result(
     train_index=None,
     test_index=None,
     y_proba=None,
+    scaler=None,
 ) -> ExperimentResult:
     if estimator is None:
         estimator = _fitted_svc()
@@ -66,6 +69,7 @@ def _make_result(
         test_true_y=test_true_y,
         train_index=train_index,
         test_index=test_index,
+        scaler=scaler,
     )
 
 
@@ -612,9 +616,195 @@ def test_load(tmp_path):
     """Results.load() returns a Results pointing at the given folder; does not raise if folder is absent."""
     r = Results.load(tmp_path)
     assert isinstance(r, Results)
-    assert r._experiment_folder == tmp_path
+    assert r.path == tmp_path
 
     Results.load("/nonexistent/path/that/does/not/exist")
+
+
+def test_path_is_expanded_and_absolute(monkeypatch, tmp_path):
+    """Results.path expands a leading ~ and resolves a relative path."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert Results("~/my-run").path == tmp_path / "my-run"
+    monkeypatch.chdir(tmp_path)
+    assert Results("my-run").path == tmp_path / "my-run"
+
+
+def test_report_and_hyperparameters_round_trip(tmp_path):
+    """report and hyperparameters read back what save wrote, without precision loss."""
+    results = Results(tmp_path)
+    results.save(
+        _make_result(
+            partition=7,
+            dataset="toy",
+            configuration="conf_1",
+            best_params={"clf__C": 0.12345678901234566},
+            train_metrics={"mae_train": 0.12345678901234566},
+            test_metrics={"mae_test": 0.25},
+            train_predicted_y=np.array([1, 2, 3]),
+            test_predicted_y=np.array([1, 2, 2]),
+        ),
+        save_model=False,
+    )
+
+    report = results.report("conf_1", "toy")
+    assert list(report.index.astype(str)) == ["7"]
+    assert report.loc[7, "mae_train"] == 0.12345678901234566
+    assert report.loc[7, "mae_test"] == 0.25
+
+    hyper = results.hyperparameters("conf_1", "toy")
+    assert list(hyper["Seed"]) == [7]
+    assert hyper.loc[0, "C"] == 0.12345678901234566
+
+
+def test_predictions_reads_the_requested_split(tmp_path):
+    """predictions returns the split's own rows, not the other split's."""
+    results = Results(tmp_path)
+    results.save(
+        _make_result(
+            partition=0,
+            dataset="toy",
+            configuration="conf_1",
+            best_params={},
+            train_metrics={},
+            test_metrics={},
+            train_predicted_y=np.array([1, 2, 3, 3]),
+            test_predicted_y=np.array([1, 1]),
+            train_true_y=np.array([1, 2, 3, 1]),
+            test_true_y=np.array([1, 3]),
+        ),
+        save_model=False,
+    )
+
+    test_df = results.predictions("conf_1", "toy", 0)
+    npt.assert_array_equal(test_df["Target"], [0, 2])
+    npt.assert_array_equal(test_df["Prediction"], [0, 0])
+
+    train_df = results.predictions("conf_1", "toy", 0, split="train")
+    npt.assert_array_equal(train_df["Target"], [0, 1, 2, 0])
+    npt.assert_array_equal(train_df["Prediction"], [0, 1, 2, 2])
+
+
+def test_predictions_parse_proba(tmp_path):
+    """parse_proba expands the stored cells into rows; the default leaves strings."""
+    proba = np.array([[0.7, 0.2, 0.1], [0.1, 0.3, 0.6]])
+    results = Results(tmp_path)
+    results.save(
+        _make_result(
+            partition=0,
+            dataset="toy",
+            configuration="conf_1",
+            best_params={},
+            train_metrics={},
+            test_metrics={},
+            train_predicted_y=np.array([1, 2]),
+            test_predicted_y=np.array([1, 3]),
+            y_proba=proba,
+        ),
+        save_model=False,
+    )
+
+    parsed = results.predictions("conf_1", "toy", 0, parse_proba=True)
+    npt.assert_allclose(np.vstack(parsed["Prediction probabilities"]), proba)
+
+    raw = results.predictions("conf_1", "toy", 0)
+    assert raw["Prediction probabilities"].iloc[0].startswith("[")
+
+
+def test_model_round_trips_the_bare_estimator(tmp_path):
+    """Without a scaler, model loads back the estimator itself, not a Pipeline."""
+    estimator = _fitted_svc()
+    results = Results(tmp_path)
+    results.save(
+        _make_result(
+            partition=0,
+            dataset="toy",
+            configuration="conf_1",
+            best_params={},
+            train_metrics={},
+            test_metrics={},
+            train_predicted_y=np.array([1, 2]),
+            test_predicted_y=None,
+            estimator=estimator,
+        )
+    )
+
+    loaded = results.model("conf_1", "toy", 0)
+    assert not isinstance(loaded, Pipeline)
+    npt.assert_array_equal(loaded.classes_, estimator.classes_)
+
+
+@pytest.mark.parametrize(
+    "reader,args",
+    [
+        ("report", ("conf_1", "toy")),
+        ("hyperparameters", ("conf_1", "toy")),
+        ("predictions", ("conf_1", "toy", 0)),
+        ("model", ("conf_1", "toy", 0)),
+    ],
+)
+def test_readers_raise_for_a_missing_artefact(tmp_path, reader, args):
+    """Every reader reports the absent path rather than an empty result."""
+    with pytest.raises(FileNotFoundError):
+        getattr(Results(tmp_path), reader)(*args)
+
+
+@pytest.mark.parametrize(
+    "reader,args",
+    [
+        ("report", (1, "toy")),
+        ("hyperparameters", ("conf_1", 1)),
+        ("predictions", (1, "toy", 0)),
+        ("model", ("conf_1", 1, 0)),
+    ],
+)
+def test_readers_reject_non_string_names(tmp_path, reader, args):
+    """Every reader validates its path components the way exists does."""
+    with pytest.raises(TypeError, match="must be a str"):
+        getattr(Results(tmp_path), reader)(*args)
+
+
+@pytest.mark.parametrize(
+    "reader,args",
+    [
+        ("report", ("..", "toy")),
+        ("hyperparameters", ("conf_1", "a/b")),
+        ("predictions", ("conf_1", "toy", "..")),
+        ("model", ("conf_1", "toy", "a/b")),
+    ],
+)
+def test_readers_reject_escaping_names(tmp_path, reader, args):
+    """Every reader rejects components that would escape the results tree."""
+    with pytest.raises(ValueError):
+        getattr(Results(tmp_path), reader)(*args)
+
+
+def test_predictions_rejects_unknown_split(tmp_path):
+    """predictions has no 'both' split to read."""
+    with pytest.raises(ValueError, match="split must be"):
+        Results(tmp_path).predictions("conf_1", "toy", 0, split="both")
+
+
+def test_iter_experiments_yields_readable_pairs_sorted(tmp_path):
+    """A report.csv or a predictions directory qualifies a pair; nothing else does."""
+    _make_pair_csv(tmp_path, "clf_b", "ds_2", [{"mae_test": 0.1}])
+    _make_pair_csv(tmp_path, "clf_a", "ds_2", [{"mae_test": 0.2}])
+    _make_pair_csv(tmp_path, "clf_a", "ds_1", [{"mae_test": 0.3}])
+    # Predictions without a report.csv, as in a tree written by another tool
+    (tmp_path / "clf_a" / "ds_3" / "predictions_by_seed").mkdir(parents=True)
+    (tmp_path / "clf_a" / "ds_0").mkdir()
+    (tmp_path / "stray.txt").write_text("noise")
+
+    assert list(Results(tmp_path).iter_experiments()) == [
+        ("clf_a", "ds_1"),
+        ("clf_a", "ds_2"),
+        ("clf_a", "ds_3"),
+        ("clf_b", "ds_2"),
+    ]
+
+
+def test_iter_experiments_on_a_missing_folder_is_empty(tmp_path):
+    """iter_experiments yields nothing rather than raising on an absent root."""
+    assert list(Results(tmp_path / "absent").iter_experiments()) == []
 
 
 def test_exists(tmp_path):
@@ -940,3 +1130,34 @@ def test_resave_crash_before_uncommit_leaves_prior_run_intact(tmp_path, monkeypa
     assert r.exists("clf", "ds", "0") is True
     seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
     assert (seed / "train_predictions.csv").is_file()
+
+
+def test_save_composes_the_scaler_into_the_model_artefact(tmp_path):
+    """A scaled run persists a Pipeline that accepts raw, unscaled features."""
+    raw = np.repeat([[1.0], [100.0], [10000.0]], 4, axis=0)
+    labels = np.repeat([1, 2, 3], 4)
+    scaler = StandardScaler().fit(raw)
+    estimator = SVC().fit(scaler.transform(raw), labels)
+
+    results = Results(tmp_path)
+    results.save(
+        _make_result(
+            partition=0,
+            dataset="toy",
+            configuration="conf_1",
+            best_params={},
+            train_metrics={},
+            test_metrics={},
+            train_predicted_y=estimator.predict(scaler.transform(raw)),
+            test_predicted_y=None,
+            estimator=estimator,
+            train_true_y=labels,
+            scaler=scaler,
+        )
+    )
+
+    artefact = results.model("conf_1", "toy", 0)
+    assert isinstance(artefact, Pipeline)
+    npt.assert_array_equal(
+        artefact.predict(raw), estimator.predict(scaler.transform(raw))
+    )

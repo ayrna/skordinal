@@ -31,6 +31,13 @@ def _check_resample_id(resample_id: Any) -> None:
     _check_path_component(str(resample_id), "resample_id")
 
 
+def _check_split(split: str, *, allow_both: bool) -> None:
+    """Raise ValueError when split is not a recognised value."""
+    valid = {"test", "train", "both"} if allow_both else {"test", "train"}
+    if split not in valid:
+        raise ValueError(f"split must be one of {sorted(valid)!r}, got {split!r}.")
+
+
 def _ensure_parent(path: Path) -> None:
     """Create path's parent directory, wrapping OSError with the failing path."""
     try:

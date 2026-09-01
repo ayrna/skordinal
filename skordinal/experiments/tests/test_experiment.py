@@ -5,6 +5,7 @@ import math
 import numpy as np
 import numpy.testing as npt
 import pytest
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.experiments import Experiment, ExperimentResult, ModelConfig
@@ -293,3 +294,27 @@ def test_run_proba_none_when_predict_proba_raises(split_with_test, monkeypatch):
 
     assert result.train_y_proba is None
     assert result.y_proba is None
+
+
+@pytest.mark.parametrize(
+    "input_preprocessing,expected_type",
+    [("std", StandardScaler), ("norm", MinMaxScaler), (None, type(None))],
+)
+def test_run_records_the_fitted_scaler(
+    split_with_test, input_preprocessing, expected_type
+):
+    """run() hands back the scaler it fitted, so save can persist it."""
+    X_train, y_train, X_test, y_test = split_with_test
+    result = _call_run(
+        _make_experiment(input_preprocessing=input_preprocessing),
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+    )
+    assert isinstance(result.scaler, expected_type)
+    if input_preprocessing is not None:
+        npt.assert_allclose(
+            result.scaler.transform(X_train)[0],
+            expected_type().fit(X_train).transform(X_train)[0],
+        )

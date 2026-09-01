@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 from sklearn import preprocessing
+from sklearn.base import BaseEstimator
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import get_ordinal_scorer
@@ -101,7 +102,6 @@ class Experiment:
     ...     classifier_name="SVM",
     ...     resample_id=0,
     ... )
-
     """
 
     def __init__(
@@ -202,11 +202,11 @@ class Experiment:
         -------
         ExperimentResult
             Fully populated result for this partition. No side effects.
-
         """
         # Apply preprocessing on local copies so the caller's arrays are not mutated.
         train_inputs: np.ndarray = X_train
         test_inputs: np.ndarray | None = X_test
+        scaler: BaseEstimator | None = None
 
         if self.input_preprocessing in {"norm", "std"}:
             scaler_cls = (
@@ -312,4 +312,5 @@ class Experiment:
             train_index=train_index,
             test_index=test_index,
             train_y_proba=train_y_proba,
+            scaler=scaler,
         )

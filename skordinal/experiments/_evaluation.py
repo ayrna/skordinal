@@ -1,35 +1,162 @@
 """Read-back aggregation over saved experiment results."""
 
 import math
-from pathlib import Path
 
 import pandas as pd
 
-from ._io import _atomic_write
+from skordinal.metrics._metrics import _resolve_label_metric
+
+from ._io import _atomic_write, _check_split
+from ._results import Results
 
 
-def _check_split(split, *, allow_both):
-    """Raise ValueError when split is not a recognised value."""
-    valid = {"test", "train", "both"} if allow_both else {"test", "train"}
-    if split not in valid:
-        raise ValueError(f"split must be one of {sorted(valid)!r}, got {split!r}.")
+def _existing_results(results_path):
+    """Return a Results over results_path, raising when the root is absent."""
+    results = Results(results_path)
+    if not results.path.is_dir():
+        raise FileNotFoundError(f"No results directory at {results.path}.")
+    return results
 
 
-def _iter_pairs(results_path):
-    """Yield ``(classifier, dataset, csv_path)`` for each results pair."""
-    root = Path(results_path)
-    for clf_dir in sorted(root.iterdir()):
-        if not clf_dir.is_dir():
+def _iter_reports(results):
+    """Yield ``(classifier, dataset, report)`` for each pair that stores metrics."""
+    for clf, ds in results.iter_experiments():
+        try:
+            report = results.report(clf, ds)
+        except FileNotFoundError:
+            # A pair with predictions but no report.csv stores no metrics
             continue
-        for ds_dir in sorted(clf_dir.iterdir()):
-            if not ds_dir.is_dir():
-                continue
-            csv_path = ds_dir / "report.csv"
-            if csv_path.is_file():
-                yield clf_dir.name, ds_dir.name, csv_path
+        yield clf, ds, report
 
 
-def summarize(results_path, *, labels=None, split="test"):
+def evaluate(
+    results_path,
+    classifier_name,
+    dataset_name,
+    *,
+    metrics=None,
+    split="test",
+):
+    """Recompute metrics from the saved per-seed predictions of one pair.
+
+    Useful for adding a metric to a finished benchmark without re-fitting any
+    estimator. Where a ``report.csv`` exists, only the resamples committed to
+    it are read. Where the pair has none, every seed directory holding the
+    split's predictions file is read, so a results tree written by another
+    tool sharing this layout is readable too.
+
+    Parameters
+    ----------
+    results_path : str or Path
+        Root folder of the experiment results.
+
+    classifier_name : str
+        Name of the classifier configuration.
+
+    dataset_name : str
+        Name of the dataset.
+
+    metrics : iterable of str or None, default=None
+        Metric names, from the registry ``Experiment``'s ``eval_metrics``
+        uses; scorer names like ``"neg_mean_absolute_error"`` are rejected.
+        ``None`` computes ``"mean_absolute_error"`` and ``"accuracy_score"``.
+
+    split : {"test", "train"}, default="test"
+        Which per-seed predictions file to read.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per resample read, indexed by ``resample_id`` and sorted
+        like ``report.csv``'s index, with one column per requested metric.
+        Empty, with those columns, when no predictions file is readable.
+
+    Raises
+    ------
+    ValueError
+        If ``split`` is not ``"test"`` or ``"train"``, if ``metrics`` is
+        empty or holds an unregistered name, if ``classifier_name`` or
+        ``dataset_name`` is empty, a dot segment, or contains a path
+        separator, or if a predictions file lacks the ``Target`` or
+        ``Prediction`` column.
+
+    TypeError
+        If ``classifier_name`` or ``dataset_name`` is not a string, or if
+        ``metrics`` is a bare string instead of an iterable of strings or
+        contains a non-string element.
+
+    FileNotFoundError
+        If ``results_path`` does not exist, or the pair has no
+        ``predictions_by_seed`` directory.
+
+    Warns
+    -----
+    RuntimeWarning
+        If a resample committed to ``report.csv`` with metrics for ``split``
+        has no predictions file for it.
+
+    Notes
+    -----
+    The stored ``Target`` and ``Prediction`` columns are zero-based ranks into
+    ``best_model.classes_``, so metrics are recomputed in rank space, where
+    adjacent categories are always distance 1. ``report.csv``'s own values are
+    computed on the raw labels, so the two agree only while the label set is
+    contiguous.
+
+    Examples
+    --------
+    >>> from skordinal.experiments import evaluate
+    >>> df = evaluate("/path/to/my-run", "LR", "era")  # doctest: +SKIP
+    """
+    _check_split(split, allow_both=False)
+
+    if isinstance(metrics, str):
+        raise TypeError(
+            "metrics must be an iterable of metric name strings, not a bare string; "
+            f"pass [{metrics!r}] to compute a single metric."
+        )
+    metric_names = (
+        tuple(metrics)
+        if metrics is not None
+        else ("mean_absolute_error", "accuracy_score")
+    )
+    if not metric_names:
+        raise ValueError("'metrics' must be non-empty; got an empty sequence.")
+    for name in metric_names:
+        if not isinstance(name, str):
+            raise TypeError(
+                "metrics must contain only metric name strings; got "
+                f"{type(name).__name__!r}."
+            )
+    # Key the columns by the stripped name, like Experiment's report.csv
+    metric_names = tuple(name.strip() for name in metric_names)
+    # Resolve up front so an unknown name raises before any file is read
+    resolved = {name: _resolve_label_metric(name) for name in metric_names}
+
+    results = _existing_results(results_path)
+    rows = {}
+    for resample_id, path in results._readable_seed_files(
+        classifier_name, dataset_name, split
+    ):
+        df = pd.read_csv(path)
+        missing = {"Target", "Prediction"} - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"Malformed predictions file at {path}: missing the "
+                f"{sorted(missing)} column(s)."
+            )
+        y_true = df["Target"].to_numpy()
+        y_pred = df["Prediction"].to_numpy()
+        rows[resample_id] = {
+            name: float(metric(y_true, y_pred)) for name, metric in resolved.items()
+        }
+
+    return pd.DataFrame.from_dict(
+        rows, orient="index", columns=list(metric_names)
+    ).rename_axis("resample_id")
+
+
+def summarize(results_path, *, classifiers=None, split="test"):
     """Aggregate per-pair report CSVs into a multi-index summary DataFrame.
 
     Parameters
@@ -38,10 +165,10 @@ def summarize(results_path, *, labels=None, split="test"):
         Root folder of the experiment results. The function descends into
         ``<results_path>/<classifier>/<dataset>/report.csv`` for each pair.
 
-    labels : iterable of str or None, default=None
+    classifiers : iterable of str or None, default=None
         When provided, only pairs whose classifier name is contained in
-        ``labels`` are included.  Must be an iterable of strings, not a
-        bare string.
+        ``classifiers`` are included.  Must be an iterable of strings, not
+        a bare string.
 
     split : {"test", "train", "both"}, default="test"
         Which metric columns to include.
@@ -65,7 +192,11 @@ def summarize(results_path, *, labels=None, split="test"):
         If ``split`` is not ``"test"``, ``"train"``, or ``"both"``.
 
     TypeError
-        If ``labels`` is a bare string instead of an iterable of strings.
+        If ``classifiers`` is a bare string instead of an iterable of
+        strings.
+
+    FileNotFoundError
+        If ``results_path`` does not exist.
 
     Examples
     --------
@@ -74,21 +205,19 @@ def summarize(results_path, *, labels=None, split="test"):
     """
     _check_split(split, allow_both=True)
 
-    if isinstance(labels, str):
+    if isinstance(classifiers, str):
         raise TypeError(
-            "labels must be an iterable of classifier name strings, not a bare string; "
-            f"pass [{labels!r}] to filter by a single classifier."
+            "classifiers must be an iterable of classifier name strings, not a bare "
+            f"string; pass [{classifiers!r}] to filter by a single classifier."
         )
 
-    label_set = set(labels) if labels is not None else None
+    classifier_set = set(classifiers) if classifiers is not None else None
+    results = _existing_results(results_path)
     rows = []
 
-    for clf, ds, csv_path in _iter_pairs(results_path):
-        # Skip pairs not in the requested label filter
-        if label_set is not None and clf not in label_set:
+    for clf, ds, df in _iter_reports(results):
+        if classifier_set is not None and clf not in classifier_set:
             continue
-
-        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
 
         # Select columns for the requested split
         if split == "test":
@@ -149,6 +278,9 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     ValueError
         If ``split`` is not ``"test"`` or ``"train"``.
 
+    FileNotFoundError
+        If ``results_path`` does not exist.
+
     Examples
     --------
     >>> from skordinal.experiments import tabulate_results
@@ -161,10 +293,10 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     _check_split(split, allow_both=False)
 
     col = f"{metric}_{split}"
+    results = _existing_results(results_path)
     rows = []
 
-    for clf, ds, csv_path in _iter_pairs(results_path):
-        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
+    for clf, ds, df in _iter_reports(results):
         # Format as "mean +/- std", or "n/a" when metric is absent or all-NaN
         if col not in df.columns or df[col].isna().all():
             cell = "n/a"
@@ -214,18 +346,22 @@ def save_summary(results_path, *, split="test"):
         If ``split`` is not a recognised value (via ``summarize`` →
         ``_check_split``) or if there are no results in ``results_path``.
 
+    FileNotFoundError
+        If ``results_path`` does not exist.
+
     Examples
     --------
     >>> from skordinal.experiments import save_summary
     >>> path = save_summary("/path/to/my-run", split="test")  # doctest: +SKIP
     """
-    df = summarize(results_path, split=split)
+    root = _existing_results(results_path).path
+    df = summarize(root, split=split)
     if df.empty:
         raise ValueError("No results found to summarise.")
     flat = df.copy()
     flat.columns = [
         f"{outer}_{inner}" if inner else outer for outer, inner in flat.columns
     ]
-    out_path = Path(results_path) / f"{split}_summary.csv"
+    out_path = root / f"{split}_summary.csv"
     _atomic_write(out_path, flat.to_csv())
     return out_path
