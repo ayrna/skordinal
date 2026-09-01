@@ -30,6 +30,10 @@ jobs:
         with:
           languages: python
           queries: security-and-quality
+          config: |
+            paths-ignore:
+              # Vendored upstream C/C++ backends, excluded from ruff and mypy too
+              - skordinal/classifiers/src
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v4.37.3
