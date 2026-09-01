@@ -99,6 +99,9 @@ class NNPOM(ClassifierMixin, BaseEstimator):
     If the L-BFGS-B solver stops before converging, a ``ConvergenceWarning``
     is raised and ``n_iter_`` reports the iterations actually run.
 
+    Ported from the ORCA MATLAB toolbox by P. A. Gutiérrez, M. Pérez-Ortiz
+    and J. Sánchez-Monedero, https://github.com/ayrna/orca.
+
     References
     ----------
     .. [1] P. McCullagh, "Regression models for ordinal data", Journal of the
@@ -113,20 +116,6 @@ class NNPOM(ClassifierMixin, BaseEstimator):
            study", IEEE Transactions on Knowledge and Data Engineering, Vol. 28. Issue
            1, 2016,
            https://doi.org/10.1109/TKDE.2015.2457911
-
-    Copyright
-    ---------
-    This software is released under the The GNU General Public License v3.0 licence
-    available at http://www.gnu.org/licenses/gpl-3.0.html
-
-    Authors
-    -------
-    Pedro Antonio Gutiérrez, María Pérez Ortiz, Javier Sánchez Monedero
-
-    Citation
-    --------
-    If you use this code, please cite the associated paper
-    http://www.uco.es/grupos/ayrna/orreview
 
     """
 

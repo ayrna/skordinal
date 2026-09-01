@@ -353,10 +353,10 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
 def gmsec(y_true, y_pred, *, labels=None, sample_weight=None):
     """Geometric mean of the sensitivities of the extreme ordinal classes.
 
-    Proposed in :footcite:t:`vargas2024improving` to assess the
-    classification performance on the first and the last classes of an
-    ordinal scale. Returns the geometric mean of the recall of the
-    lowest and the highest classes that appear in ``y_true``.
+    Proposed in [1]_ to assess the classification performance on the
+    first and the last classes of an ordinal scale. Returns the geometric
+    mean of the recall of the lowest and the highest classes that appear
+    in ``y_true``.
 
     Parameters
     ----------
@@ -381,7 +381,11 @@ def gmsec(y_true, y_pred, *, labels=None, sample_weight=None):
 
     References
     ----------
-    .. footbibliography::
+    .. [1] V. M. Vargas, P. A. Gutiérrez, J. Barbero-Gómez and
+           C. Hervás-Martínez, "Improving the classification of extreme
+           classes by means of loss regularisation and generalised beta
+           distributions", arXiv:2407.12417, 2024,
+           https://doi.org/10.48550/arXiv.2407.12417
 
     Examples
     --------
@@ -790,8 +794,8 @@ def ranked_probability_score(y_true, y_proba, *, labels=None, sample_weight=None
 
     Quadratic distance between the cumulative ground-truth indicator
     function and the cumulative predicted distribution, averaged over
-    samples. The lower the value, the better. Defined for ordinal
-    targets in :footcite:t:`janitza2016random`.
+    samples. The lower the value, the better. Defined for ordinal targets
+    in [1]_.
 
     Parameters
     ----------
@@ -829,7 +833,10 @@ def ranked_probability_score(y_true, y_proba, *, labels=None, sample_weight=None
 
     References
     ----------
-    .. footbibliography::
+    .. [1] S. Janitza, G. Tutz and A.-L. Boulesteix, "Random forest for ordinal
+           responses: prediction and variable selection", Computational
+           Statistics & Data Analysis, vol. 96, pp. 57-73, 2016,
+           https://doi.org/10.1016/j.csda.2015.10.005
 
     Examples
     --------
