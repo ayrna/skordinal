@@ -453,3 +453,19 @@ def test_results_path_resolved_once_across_chdir(tmp_path, monkeypatch):
     # Results land under the construction-time root, not the new cwd
     assert (work_a / "runs" / "SVM" / _BUNDLED_DS / "report.csv").is_file()
     assert not (work_b / "runs").exists()
+
+
+def test_summarize_without_results_reports_instead_of_raising(tmp_path, capsys):
+    """summarize() over a folder with no stored metrics warns instead of raising."""
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path,
+        resamples=2,
+        cv=2,
+        verbose=True,
+        random_state=0,
+    )
+    b.summarize()
+    assert "No metrics to summarise" in capsys.readouterr().out
