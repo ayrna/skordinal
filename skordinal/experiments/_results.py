@@ -699,8 +699,9 @@ class Results:
         csv_path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not csv_path.is_file():
             return False
-        df = pd.read_csv(csv_path, index_col=0)
-        return str(resample_id) in df.index.astype(str)
+        # Only the index decides, and a resumed run reads it once per resample
+        index = pd.read_csv(csv_path, index_col=0, usecols=[0]).index
+        return str(resample_id) in index.astype(str)
 
     def iter_experiments(self) -> Iterator[tuple[str, str]]:
         """Yield every readable pair as ``(classifier_name, dataset_name)``.
