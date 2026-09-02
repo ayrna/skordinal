@@ -122,6 +122,7 @@ sphinx_gallery_conf = {
             "../examples/getting_started",
             "../examples/classifiers",
             "../examples/metrics",
+            "../examples/experiments",
         ]
     ),
     "within_subsection_order": "FileNameSortKey",
