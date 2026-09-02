@@ -101,3 +101,4 @@ full multi-classifier × multi-dataset benchmark.
    summarize
    save_summary
    tabulate_results
+   evaluate

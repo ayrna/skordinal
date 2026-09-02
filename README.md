@@ -8,7 +8,7 @@
 
 ## What is skordinal?
 
-**skordinal** is an experimental framework built on Python that integrates with scikit-learn to automate machine learning experiments through simple JSON configuration files. Initially designed for ordinal classification, it supports regular classification algorithms as long as they are compatible with scikit-learn, making it easy to run reproducible experiments across multiple datasets and classification methods.
+**skordinal** is an experimental framework built on Python that integrates with scikit-learn to automate machine learning experiments through simple Python recipe files. Initially designed for ordinal classification, it supports regular classification algorithms as long as they are compatible with scikit-learn, making it easy to run reproducible experiments across multiple datasets and classification methods.
 
 ## Table of Contents
 
@@ -182,12 +182,17 @@ These keys control how the benchmark is executed.
 - **`n_jobs`** (default `1`): parallel jobs for `GridSearchCV`.
 - **`input_preprocessing`** (default `None`): `"std"` for standardisation,
   `"norm"` for normalisation, `None` for no scaling.
-- **`resamples`** (default `30`): number of train/test resamples per dataset.
+- **`resamples`** (default `30`): number of train/test resamples per dataset,
+  or the explicit list of resample ids to run.
 - **`test_size`** (default `0.3`): fraction of samples held out for testing
   when partitions are generated rather than read from a masks file.
 - **`data_home`** (default `None`): base directory for dataset files; `None`
   uses the bundled datasets.
-- **`random_state`** (default `None`): integer seed for reproducibility.
+- **`random_state`** (default `0`): integer seed for reproducibility. A
+  non-integer (including `None`) is resolved to one concrete seed at
+  construction, so every resample of a run shares one partitioning scheme.
+- **`overwrite`** (default `False`): recompute resamples that are already
+  saved; `False` makes a run resumable.
 - **`verbose`** (default `True`): print progress during the run.
 
 ### models

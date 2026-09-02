@@ -34,8 +34,8 @@ class Benchmark:
 
     data_home : str, Path, or None, default=None
         Optional base directory used to locate dataset files. When ``None``,
-        dataset names are resolved against a direct path or the bundled
-        collection via the dataset-loading layer.
+        dataset names are resolved against the bundled collection via the
+        dataset-loading layer.
 
     datasets : list of str
         Names of the datasets to load, resolved via the dataset-loading layer.
@@ -52,9 +52,9 @@ class Benchmark:
         an absolute path at construction, so a later working-directory
         change does not affect where results are written or read.
 
-    resamples : int, default=30
-        Number of resamples (train/test splits) to load per dataset. Forwarded
-        to ``load_partitions``.
+    resamples : int or list of int, default=30
+        Resamples (train/test splits) to load per dataset, forwarded verbatim
+        to ``load_partitions``: a count, or the list of resample ids to use.
 
     test_size : float, default=0.3
         Fraction of samples held out for testing when ``load_partitions``
@@ -124,7 +124,7 @@ class Benchmark:
         datasets: list[str],
         eval_metrics: list[str],
         results_path: str | Path,
-        resamples: int = 30,
+        resamples: int | list[int] = 30,
         test_size: float = 0.3,
         tuning_metric: str = "neg_mean_absolute_error",
         cv: int = 3,
@@ -168,7 +168,7 @@ class Benchmark:
         self._results = Results(results_path)
         # Reuse the resolved root so a later chdir cannot split write from read
         self.results_path = self._results.path
-        self.resamples: int = resamples
+        self.resamples: int | list[int] = resamples
         self.test_size: float = test_size
         self.tuning_metric = tuning_metric
         self.cv = cv
