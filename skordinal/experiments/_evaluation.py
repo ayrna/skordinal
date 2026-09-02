@@ -6,7 +6,7 @@ import pandas as pd
 
 from skordinal.metrics._metrics import _resolve_label_metric
 
-from ._base import _check_split
+from ._base import _check_metric_names, _check_split
 from ._io import _atomic_write
 from ._results import Results
 
@@ -110,28 +110,10 @@ def evaluate(
     """
     _check_split(split, allow_both=False)
 
-    if isinstance(metrics, str):
-        raise TypeError(
-            "metrics must be an iterable of metric name strings, not a bare string; "
-            f"pass [{metrics!r}] to compute a single metric."
-        )
-    metric_names = (
-        tuple(metrics)
-        if metrics is not None
-        else ("mean_absolute_error", "accuracy_score")
-    )
-    if not metric_names:
-        raise ValueError("'metrics' must be non-empty; got an empty sequence.")
-    for name in metric_names:
-        if not isinstance(name, str):
-            raise TypeError(
-                "metrics must contain only metric name strings; got "
-                f"{type(name).__name__!r}."
-            )
-    # Key the columns by the stripped name, like Experiment's report.csv
-    metric_names = tuple(name.strip() for name in metric_names)
-    # Resolve up front so an unknown name raises before any file is read
-    resolved = {name: _resolve_label_metric(name) for name in metric_names}
+    if metrics is None:
+        metrics = ("mean_absolute_error", "accuracy_score")
+    # Stripped names key the columns, like Experiment's report.csv
+    metric_names = tuple(_check_metric_names(metrics, param="metrics"))
 
     results = _existing_results(results_path)
     rows = {}
@@ -148,7 +130,8 @@ def evaluate(
         y_true = df["Target"].to_numpy()
         y_pred = df["Prediction"].to_numpy()
         rows[resample_id] = {
-            name: float(metric(y_true, y_pred)) for name, metric in resolved.items()
+            name: float(_resolve_label_metric(name)(y_true, y_pred))
+            for name in metric_names
         }
 
     return pd.DataFrame.from_dict(

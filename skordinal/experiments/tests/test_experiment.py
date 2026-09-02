@@ -253,12 +253,16 @@ def test_run_metric_keys_for_each_eval_metric(split_with_test):
         assert result.test_metrics[name + "_test"] >= 0
 
 
-def test_run_rejects_unknown_eval_metric(split_with_test):
-    """An unknown eval_metric name raises ValueError naming the metric."""
-    X_train, y_train, X_test, y_test = split_with_test
-    exp = _make_experiment(eval_metrics=["ranked_probability_score"])
+def test_rejects_unknown_eval_metric_at_construction():
+    """An unknown eval_metric name raises before anything is fitted."""
     with pytest.raises(ValueError, match="ranked_probability_score"):
-        _call_run(exp, X_train, y_train, X_test, y_test)
+        _make_experiment(eval_metrics=["ranked_probability_score"])
+
+
+def test_rejects_bare_loss_tuning_metric_at_construction():
+    """A bare-loss tuning metric raises even when the model needs no search."""
+    with pytest.raises(ValueError, match="only registered as 'neg_"):
+        _make_experiment(tuning_metric="mean_absolute_error")
 
 
 def test_run_proba_absent_without_predict_proba(split_with_test):

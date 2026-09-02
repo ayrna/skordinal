@@ -21,6 +21,32 @@ _INVALID_CONSTRUCTOR_CASES = [
     pytest.param(
         {"eval_metrics": []}, ValueError, "non-empty", id="empty-eval-metrics"
     ),
+    pytest.param(
+        {"eval_metrics": "accuracy_score"},
+        TypeError,
+        r"not a bare string; pass \['accuracy_score'\]",
+        id="bare-string-eval-metrics",
+    ),
+    pytest.param(
+        {"eval_metrics": [3]},
+        TypeError,
+        r"must contain only metric name strings; got 'int'",
+        id="non-str-eval-metric",
+    ),
+    # Eval metrics use the label registry, where a loss keeps its plain name
+    pytest.param(
+        {"eval_metrics": ["neg_mean_absolute_error"]},
+        ValueError,
+        r"Unknown metric name: 'neg_mean_absolute_error'\.",
+        id="scorer-name-as-eval-metric",
+    ),
+    # Tuning metrics use the scorer registry, where a loss exists only as neg_
+    pytest.param(
+        {"tuning_metric": "mean_absolute_error"},
+        ValueError,
+        r"a loss is only registered as 'neg_mean_absolute_error'",
+        id="bare-loss-as-tuning-metric",
+    ),
     # Both name a directory in the results tree, so they fail eagerly
     pytest.param(
         {"datasets": ["dir/era"]},
@@ -33,6 +59,12 @@ _INVALID_CONSTRUCTOR_CASES = [
         ValueError,
         "model label must not contain a path separator",
         id="path-model-label",
+    ),
+    pytest.param(
+        {"tuning_metric": 5},
+        TypeError,
+        "scoring",
+        id="non-string-tuning-metric",
     ),
     pytest.param(
         {"models": {"cfg": SVC()}},
@@ -86,6 +118,18 @@ def test_benchmark_constructor_validation(tmp_path, overrides, exc_type, match):
     }
     with pytest.raises(exc_type, match=match):
         Benchmark(**kwargs)
+
+
+def test_names_stored_stripped(tmp_path):
+    """Metric and dataset names are stripped; a one-shot iterable is kept."""
+    b = Benchmark(
+        _MINIMAL_CONF,
+        datasets=[f" {_BUNDLED_DS} "],
+        eval_metrics=(m for m in [" mean_absolute_error "]),
+        results_path=tmp_path,
+    )
+    assert b.eval_metrics == ["mean_absolute_error"]
+    assert b.datasets == [_BUNDLED_DS]
 
 
 @pytest.mark.parametrize("bad_value", ["minmax", ""])

@@ -7,6 +7,9 @@ from typing import Any
 
 import numpy as np
 
+from skordinal.metrics import get_ordinal_scorer
+from skordinal.metrics._metrics import _resolve_label_metric
+
 
 def _check_path_component(name: Any, what: str) -> None:
     """Reject a path component that cannot safely name one directory."""
@@ -34,3 +37,39 @@ def _check_split(split: str, *, allow_both: bool) -> None:
     valid = {"test", "train", "both"} if allow_both else {"test", "train"}
     if split not in valid:
         raise ValueError(f"split must be one of {sorted(valid)!r}, got {split!r}.")
+
+
+def _check_metric_names(metrics: Any, *, param: str) -> list[str]:
+    """Check an iterable of metric names, returning them stripped and unique."""
+    if isinstance(metrics, str):
+        raise TypeError(
+            f"'{param}' must be an iterable of metric name strings, not a "
+            f"bare string; pass [{metrics!r}] to use a single metric."
+        )
+    # An iterator is always truthy, and a name array has no single truth value
+    try:
+        metrics = list(metrics)
+    except TypeError:
+        raise TypeError(
+            f"'{param}' must be an iterable of metric name strings; got "
+            f"{type(metrics).__name__}."
+        ) from None
+    if not metrics:
+        raise ValueError(f"'{param}' must be a non-empty list; got an empty sequence.")
+    for name in metrics:
+        if not isinstance(name, str):
+            raise TypeError(
+                f"'{param}' must contain only metric name strings; got "
+                f"{type(name).__name__!r}."
+            )
+    # A repeat would compute the metric twice and duplicate evaluate's column
+    metrics = list(dict.fromkeys(name.strip() for name in metrics))
+    # Resolve now: a typo otherwise costs a full grid search
+    for name in metrics:
+        _resolve_label_metric(name)
+    return metrics
+
+
+def _check_tuning_metric(tuning_metric: Any) -> None:
+    """Resolve the tuning metric, which a search-free run never would."""
+    get_ordinal_scorer(tuning_metric)

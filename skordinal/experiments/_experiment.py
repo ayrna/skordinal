@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
+from collections.abc import Callable
 from time import perf_counter
 from typing import Any
 
@@ -15,6 +16,7 @@ from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from skordinal.metrics import get_ordinal_scorer
 from skordinal.metrics._metrics import _resolve_label_metric
 
+from ._base import _check_metric_names, _check_tuning_metric
 from ._model_config import ModelConfig
 from ._results import ExperimentResult
 
@@ -46,13 +48,16 @@ class Experiment:
         Metric names to compute for every partition (e.g.
         ``["mean_absolute_error", "average_mean_absolute_error"]``). Names
         must match a ``skordinal.metrics`` metric that scores predicted
-        labels, which excludes ``ranked_probability_score``.
+        labels, which excludes ``ranked_probability_score``. Each name is
+        stripped and resolved at construction, so a typo fails before any
+        fitting starts.
 
-    tuning_metric : str, default="neg_mean_absolute_error"
-        Metric used as the cross-validation scoring criterion when selecting
-        the best hyper-parameter combination. Must be recognised by
-        ``skordinal.metrics.get_ordinal_scorer``; validation is deferred to
-        runtime.
+    tuning_metric : str, callable or None, default="neg_mean_absolute_error"
+        Cross-validation scoring criterion used to select the best
+        hyper-parameter combination. A string is resolved at construction
+        with ``skordinal.metrics.get_ordinal_scorer``; a callable is passed
+        to ``GridSearchCV`` verbatim, and ``None`` falls back to the
+        estimator's own ``score``.
 
     cv : int, default=3
         Number of folds used in hyper-parameter cross-validation.
@@ -72,6 +77,16 @@ class Experiment:
         cross-validation splitter (``StratifiedKFold``) used during
         hyper-parameter search. When ``None``, both use their own default
         random behaviour.
+
+    Raises
+    ------
+    TypeError
+        If ``model`` is not a ``ModelConfig``, or if ``eval_metrics`` is a
+        bare string, not iterable, or holds a non-string name.
+
+    ValueError
+        If ``eval_metrics`` is empty or holds an unregistered label-metric
+        name, or if a string ``tuning_metric`` is not a registered scorer name.
 
     Examples
     --------
@@ -94,7 +109,7 @@ class Experiment:
         model: ModelConfig,
         *,
         eval_metrics: list[str],
-        tuning_metric: str = "neg_mean_absolute_error",
+        tuning_metric: str | Callable[..., float] | None = "neg_mean_absolute_error",
         cv: int = 3,
         n_jobs: int = 1,
         input_preprocessing: str | None = None,
@@ -104,10 +119,8 @@ class Experiment:
             raise TypeError(
                 f"'model' must be a ModelConfig instance; got {type(model).__name__!r}."
             )
-        if not eval_metrics:
-            raise ValueError(
-                "'eval_metrics' must be a non-empty list; got an empty sequence."
-            )
+        eval_metrics = _check_metric_names(eval_metrics, param="eval_metrics")
+        _check_tuning_metric(tuning_metric)
 
         _allowed_preproc = {"std", "norm"}
         if input_preprocessing is not None:
@@ -120,7 +133,7 @@ class Experiment:
             input_preprocessing = _normalized
 
         self.model = model
-        self.eval_metrics: list[str] = list(eval_metrics)
+        self.eval_metrics: list[str] = eval_metrics
         self.tuning_metric = tuning_metric
         self.cv = cv
         self.n_jobs = n_jobs
@@ -282,13 +295,13 @@ class Experiment:
                 y_train,
                 train_predicted_y,
             )
-            train_metrics[metric_name.strip() + "_train"] = train_score
+            train_metrics[metric_name + "_train"] = train_score
 
-            test_metrics[metric_name.strip() + "_test"] = np.nan
+            test_metrics[metric_name + "_test"] = np.nan
             if y_test is not None:
                 assert test_predicted_y is not None
                 test_score = _compute_metric(metric_name, y_test, test_predicted_y)
-                test_metrics[metric_name.strip() + "_test"] = test_score
+                test_metrics[metric_name + "_test"] = test_score
 
         # Assemble timing keys, the cv_* pair stays NaN unless a search ran
         train_metrics["cv_time_train"] = cv_time_train

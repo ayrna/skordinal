@@ -110,6 +110,12 @@ def test_evaluate_recomputes_metrics_per_seed(seed_folder):
     assert list(df["accuracy_score"]) == pytest.approx([0.75, 0.5])
 
 
+def test_evaluate_ignores_a_repeated_metric_name(seed_folder):
+    """A repeated name must not become two identical columns."""
+    df = evaluate(seed_folder, "A", "d1", metrics=["mean_absolute_error"] * 2)
+    assert list(df.columns) == ["mean_absolute_error"]
+
+
 def test_evaluate_reads_the_requested_split(seed_folder):
     """evaluate scores the train files when split='train'."""
     df = evaluate(seed_folder, "A", "d1", split="train")

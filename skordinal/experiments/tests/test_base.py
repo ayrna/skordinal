@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from skordinal.experiments._base import (
+    _check_metric_names,
     _check_path_component,
     _check_resample_id,
 )
@@ -52,3 +53,38 @@ def test_check_resample_id_rejects_traversal(bad):
     """_check_resample_id rejects a non-int id that fails path validation."""
     with pytest.raises(ValueError, match="resample_id"):
         _check_resample_id(bad)
+
+
+@pytest.mark.parametrize(
+    "bad, exc_type, match",
+    [
+        pytest.param(
+            iter([]),
+            ValueError,
+            "non-empty",
+            id="empty-one-shot-iterable",
+        ),
+        pytest.param("", TypeError, "not a bare string", id="empty-string"),
+        pytest.param(None, TypeError, "got NoneType", id="none"),
+    ],
+)
+def test_check_metric_names_rejects_degenerate_input(bad, exc_type, match):
+    """Emptiness is judged after materialising, so lazy iterables cannot hide."""
+    with pytest.raises(exc_type, match=match):
+        _check_metric_names(bad, param="eval_metrics")
+
+
+def test_check_metric_names_drops_an_exact_duplicate():
+    """A repeat would compute the metric twice and duplicate evaluate's column."""
+    names = _check_metric_names(
+        ["mean_absolute_error", " mean_absolute_error ", "accuracy_score"], param="m"
+    )
+    assert names == ["mean_absolute_error", "accuracy_score"]
+
+
+def test_check_metric_names_accepts_array_likes():
+    """A numpy array of names materialises instead of raising ambiguous truth."""
+    names = _check_metric_names(
+        np.array(["mean_absolute_error", " accuracy_score "]), param="metrics"
+    )
+    assert names == ["mean_absolute_error", "accuracy_score"]

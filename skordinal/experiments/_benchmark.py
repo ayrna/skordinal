@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from numbers import Integral
 from pathlib import Path
 
@@ -10,7 +11,11 @@ from sklearn.utils import check_random_state
 
 from skordinal.datasets import load_partitions
 
-from ._base import _check_path_component
+from ._base import (
+    _check_metric_names,
+    _check_path_component,
+    _check_tuning_metric,
+)
 from ._evaluation import save_summary
 from ._experiment import Experiment
 from ._model_config import ModelConfig
@@ -41,15 +46,17 @@ class Benchmark:
 
     datasets : list of str
         Names of the datasets to load, resolved via the dataset-loading layer.
-        Each name is checked at construction: it also names the per-dataset
-        results folder, so it must be a plain name or filename without path
-        separators.
+        Each name is stripped and checked at construction: it also names the
+        per-dataset results folder, so it must be a plain name or filename
+        without path separators.
 
     eval_metrics : list of str
         Metric names to compute for every resample (e.g.
         ``["mean_absolute_error", "average_mean_absolute_error"]``). Names
         must match a ``skordinal.metrics`` metric that scores predicted
-        labels, which excludes ``ranked_probability_score``.
+        labels, which excludes ``ranked_probability_score``. Each name is
+        stripped and resolved at construction, so a typo fails before any
+        fitting starts.
 
     results_path : str or Path
         Directory where result files are written. Expanded and resolved to
@@ -64,11 +71,12 @@ class Benchmark:
         Fraction of samples held out for testing when ``load_partitions``
         generates the splits; ignored when a masks file supplies them.
 
-    tuning_metric : str, default="neg_mean_absolute_error"
-        Metric used as the cross-validation scoring criterion when selecting the
-        best hyper-parameter combination. Must be recognised by
-        ``skordinal.metrics.get_ordinal_scorer``; validation is deferred to
-        runtime.
+    tuning_metric : str, callable or None, default="neg_mean_absolute_error"
+        Cross-validation scoring criterion used to select the best
+        hyper-parameter combination. A string is resolved at construction
+        with ``skordinal.metrics.get_ordinal_scorer``; a callable is passed
+        to ``GridSearchCV`` verbatim, and ``None`` falls back to the
+        estimator's own ``score``.
 
     cv : int, default=3
         Number of folds used in hyper-parameter cross-validation.
@@ -103,12 +111,15 @@ class Benchmark:
     ------
     TypeError
         If ``models`` is not a dict or any of its values is not a
-        ``ModelConfig``, if a model label or dataset name is not a str, or
-        if ``datasets`` is a bare string.
+        ``ModelConfig``, if a model label or dataset name is not a str, if
+        ``datasets`` or ``eval_metrics`` is a bare string, or if
+        ``eval_metrics`` is not iterable or holds a non-string name.
 
     ValueError
-        If ``models``, ``datasets`` or ``eval_metrics`` is empty, or if a
-        model label or dataset name is empty or holds a path separator.
+        If ``models``, ``datasets`` or ``eval_metrics`` is empty, if a model
+        label or dataset name is not a usable path component, if a name in
+        ``eval_metrics`` is not a registered label metric, or if a string
+        ``tuning_metric`` is not a registered scorer name.
 
     Attributes
     ----------
@@ -141,7 +152,7 @@ class Benchmark:
         results_path: str | Path,
         resamples: int | list[int] = 30,
         test_size: float = 0.3,
-        tuning_metric: str = "neg_mean_absolute_error",
+        tuning_metric: str | Callable[..., float] | None = "neg_mean_absolute_error",
         cv: int = 3,
         n_jobs: int = 1,
         input_preprocessing: str | None = None,
@@ -174,12 +185,11 @@ class Benchmark:
         # Both name a directory in the results tree
         for label in models:
             _check_path_component(label, "model label")
+        datasets = [x.strip() if isinstance(x, str) else x for x in datasets]
         for name in datasets:
             _check_path_component(name, "dataset name")
-        if not eval_metrics:
-            raise ValueError(
-                "'eval_metrics' must be a non-empty list; got an empty sequence."
-            )
+        eval_metrics = _check_metric_names(eval_metrics, param="eval_metrics")
+        _check_tuning_metric(tuning_metric)
 
         _allowed_preproc = {"std", "norm"}
         if input_preprocessing is not None:
@@ -194,7 +204,7 @@ class Benchmark:
         self.models: dict[str, ModelConfig] = dict(models)
         self.data_home: str | Path | None = data_home
         self.datasets: list[str] = list(datasets)
-        self.eval_metrics: list[str] = list(eval_metrics)
+        self.eval_metrics: list[str] = eval_metrics
         self._results = Results(results_path)
         # Reuse the resolved root so a later chdir cannot split write from read
         self.results_path = self._results.path
@@ -283,9 +293,7 @@ class Benchmark:
             print("###############################")
 
         # Iterate over datasets
-        for x in self.datasets:
-            dataset_name = x.strip()
-
+        for dataset_name in self.datasets:
             if self.verbose:
                 print("\nRunning", dataset_name, "dataset")
                 print("--------------------------")
