@@ -9,13 +9,17 @@ import numpy as np
 
 
 def _check_path_component(name: Any, what: str) -> None:
-    """Reject a path component that is empty, dotted or holds a separator."""
+    """Reject a path component that cannot safely name one directory."""
     if not isinstance(name, str):
         raise TypeError(f"{what} must be a str; got {type(name).__name__}.")
     if name in ("", ".", ".."):
         raise ValueError(f"{what} must not be empty or a dot segment; got {name!r}.")
-    if any(sep in name for sep in (os.sep, "/", os.altsep) if sep):
+    # os.altsep is None on POSIX, so a backslash escapes only once read on Windows
+    if any(sep in name for sep in (os.sep, "/", "\\", os.altsep) if sep):
         raise ValueError(f"{what} must not contain a path separator; got {name!r}.")
+    # On Windows "D:" resolves outside the results root and "C:" drops a level
+    if ":" in name:
+        raise ValueError(f"{what} must not contain a colon; got {name!r}.")
 
 
 def _check_resample_id(resample_id: Any) -> None:

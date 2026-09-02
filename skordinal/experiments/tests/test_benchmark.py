@@ -16,26 +16,42 @@ _MINIMAL_CONF: dict[str, ModelConfig] = {"cfg": ModelConfig(SVC())}
 _BUNDLED_DS = "balance_scale"
 
 _INVALID_CONSTRUCTOR_CASES = [
+    pytest.param({"models": {}}, ValueError, "non-empty", id="empty-configurations"),
+    pytest.param({"datasets": []}, ValueError, "non-empty", id="empty-datasets"),
     pytest.param(
-        {},
-        [_BUNDLED_DS],
-        ["mean_absolute_error"],
-        "non-empty",
-        id="empty-configurations",
+        {"eval_metrics": []}, ValueError, "non-empty", id="empty-eval-metrics"
+    ),
+    # Both name a directory in the results tree, so they fail eagerly
+    pytest.param(
+        {"datasets": ["dir/era"]},
+        ValueError,
+        "dataset name must not contain a path separator",
+        id="path-dataset-name",
     ),
     pytest.param(
-        _MINIMAL_CONF,
-        [],
-        ["mean_absolute_error"],
-        "non-empty",
-        id="empty-datasets",
+        {"models": {"a/b": ModelConfig(SVC())}},
+        ValueError,
+        "model label must not contain a path separator",
+        id="path-model-label",
     ),
     pytest.param(
-        _MINIMAL_CONF,
-        [_BUNDLED_DS],
-        [],
-        "non-empty",
-        id="empty-eval-metrics",
+        {"models": {"cfg": SVC()}},
+        TypeError,
+        "must be ModelConfig instances",
+        id="non-modelconfig-value",
+    ),
+    pytest.param(
+        {"models": [ModelConfig(SVC())]},
+        TypeError,
+        "'models' must be a dict",
+        id="models-not-a-dict",
+    ),
+    # A bare string would otherwise become one dataset per character
+    pytest.param(
+        {"datasets": _BUNDLED_DS},
+        TypeError,
+        r"not a bare string; pass \['balance_scale'\]",
+        id="bare-string-datasets",
     ),
 ]
 
@@ -58,21 +74,18 @@ def csv_ds_dir(tmp_path):
     return tmp_path
 
 
-@pytest.mark.parametrize(
-    "configurations, datasets, eval_metrics, match",
-    _INVALID_CONSTRUCTOR_CASES,
-)
-def test_benchmark_constructor_validation(
-    tmp_path, configurations, datasets, eval_metrics, match
-):
-    """Constructor raises ValueError for each category of invalid argument."""
-    with pytest.raises(ValueError, match=match):
-        Benchmark(
-            configurations,
-            datasets=datasets,
-            eval_metrics=eval_metrics,
-            results_path=tmp_path,
-        )
+@pytest.mark.parametrize("overrides, exc_type, match", _INVALID_CONSTRUCTOR_CASES)
+def test_benchmark_constructor_validation(tmp_path, overrides, exc_type, match):
+    """Each invalid constructor argument raises at construction."""
+    kwargs = {
+        "models": _MINIMAL_CONF,
+        "datasets": [_BUNDLED_DS],
+        "eval_metrics": ["mean_absolute_error"],
+        "results_path": tmp_path,
+        **overrides,
+    }
+    with pytest.raises(exc_type, match=match):
+        Benchmark(**kwargs)
 
 
 @pytest.mark.parametrize("bad_value", ["minmax", ""])
@@ -455,13 +468,35 @@ def test_results_path_resolved_once_across_chdir(tmp_path, monkeypatch):
     assert not (work_b / "runs").exists()
 
 
-def test_summarize_without_results_reports_instead_of_raising(tmp_path, capsys):
-    """summarize() over a folder with no stored metrics warns instead of raising."""
+def test_summarize_reraises_a_corrupt_report(tmp_path):
+    """An unreadable report.csv is data loss, so it must not read as 'nothing'."""
+    pair = tmp_path / "out" / "cfg" / _BUNDLED_DS
+    pair.mkdir(parents=True)
+    (pair / "report.csv").write_text("", encoding="utf-8")
+    b = Benchmark(
+        _MINIMAL_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path / "out",
+        verbose=True,
+    )
+    with pytest.raises(pd.errors.EmptyDataError):
+        b.summarize()
+
+
+@pytest.mark.parametrize("make_dir", [True, False], ids=["empty-dir", "missing-dir"])
+def test_summarize_without_results_reports_instead_of_raising(
+    tmp_path, capsys, make_dir
+):
+    """summarize() over an empty or never-created folder warns, never raises."""
+    results_path = tmp_path / "out"
+    if make_dir:
+        results_path.mkdir()
     b = Benchmark(
         _SVC_CONF,
         datasets=[_BUNDLED_DS],
         eval_metrics=["mean_absolute_error"],
-        results_path=tmp_path,
+        results_path=results_path,
         resamples=2,
         cv=2,
         verbose=True,

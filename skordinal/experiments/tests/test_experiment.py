@@ -61,6 +61,12 @@ def test_empty_eval_metrics_raises():
         Experiment(ModelConfig(SVC()), eval_metrics=[])
 
 
+def test_rejects_a_non_model_config():
+    """A bare estimator instead of a ModelConfig raises TypeError."""
+    with pytest.raises(TypeError, match="'model' must be a ModelConfig instance"):
+        Experiment(SVC(), eval_metrics=["mean_absolute_error"])
+
+
 @pytest.mark.parametrize(
     "raw, expected",
     [
@@ -203,6 +209,13 @@ def test_run_preprocessing_train_only_does_not_raise(
 
     assert result.test_predicted_y is None
     assert math.isnan(result.test_metrics["mean_absolute_error_test"])
+
+
+def test_run_rejects_y_test_without_x_test(split_train_only):
+    """y_test without X_test raises ValueError, not a bare assert."""
+    X_train, y_train, _, _ = split_train_only
+    with pytest.raises(ValueError, match="'y_test' was given without 'X_test'"):
+        _call_run(_make_experiment(), X_train, y_train, None, y_train)
 
 
 def test_run_best_model_carries_no_refit_metadata(split_with_test):

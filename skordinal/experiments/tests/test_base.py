@@ -1,6 +1,7 @@
 """Tests for the experiments shared validation helpers."""
 
 import os
+from pathlib import PureWindowsPath
 
 import numpy as np
 import pytest
@@ -23,6 +24,21 @@ def test_check_path_component_rejects_non_str(bad):
     """_check_path_component rejects a non-string component."""
     with pytest.raises(TypeError):
         _check_path_component(bad, "classifier_name")
+
+
+def test_check_path_component_rejects_a_windows_drive():
+    """A drive-qualified name would resolve outside the results root."""
+    # No Windows runner needed: PureWindowsPath shows the escape anywhere
+    assert PureWindowsPath("C:/runs/exp") / "D:" / "ds" == PureWindowsPath("D:ds")
+    with pytest.raises(ValueError, match="must not contain a colon"):
+        _check_path_component("D:", "model label")
+
+
+@pytest.mark.parametrize("bad", ["x\\y", "..\\esc"], ids=["nested", "traversal"])
+def test_check_path_component_rejects_a_backslash(bad):
+    """os.altsep is None on POSIX, so a backslash must be rejected outright."""
+    with pytest.raises(ValueError, match="must not contain a path separator"):
+        _check_path_component(bad, "model label")
 
 
 @pytest.mark.parametrize("good", [0, -1, np.int64(3), "0"])

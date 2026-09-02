@@ -202,7 +202,15 @@ class Experiment:
         -------
         ExperimentResult
             Fully populated result for this partition. No side effects.
+
+        Raises
+        ------
+        ValueError
+            If ``y_test`` is given without ``X_test``.
         """
+        if y_test is not None and X_test is None:
+            raise ValueError("'y_test' was given without 'X_test'.")
+
         # Apply preprocessing on local copies so the caller's arrays are not mutated.
         train_inputs: np.ndarray = X_train
         test_inputs: np.ndarray | None = X_test

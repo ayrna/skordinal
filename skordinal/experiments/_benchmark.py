@@ -5,10 +5,12 @@ from __future__ import annotations
 from numbers import Integral
 from pathlib import Path
 
+import pandas as pd
 from sklearn.utils import check_random_state
 
 from skordinal.datasets import load_partitions
 
+from ._base import _check_path_component
 from ._evaluation import save_summary
 from ._experiment import Experiment
 from ._model_config import ModelConfig
@@ -39,7 +41,9 @@ class Benchmark:
 
     datasets : list of str
         Names of the datasets to load, resolved via the dataset-loading layer.
-        Each name is passed directly to ``load_partitions``.
+        Each name is checked at construction: it also names the per-dataset
+        results folder, so it must be a plain name or filename without path
+        separators.
 
     eval_metrics : list of str
         Metric names to compute for every resample (e.g.
@@ -95,6 +99,17 @@ class Benchmark:
     verbose : bool, default=True
         If ``True``, progress messages are printed to stdout.
 
+    Raises
+    ------
+    TypeError
+        If ``models`` is not a dict or any of its values is not a
+        ``ModelConfig``, if a model label or dataset name is not a str, or
+        if ``datasets`` is a bare string.
+
+    ValueError
+        If ``models``, ``datasets`` or ``eval_metrics`` is empty, or if a
+        model label or dataset name is empty or holds a path separator.
+
     Attributes
     ----------
     _results : Results
@@ -134,6 +149,11 @@ class Benchmark:
         overwrite: bool = False,
         verbose: bool = True,
     ) -> None:
+        if not isinstance(models, dict):
+            raise TypeError(
+                f"'models' must be a dict of label to ModelConfig; got "
+                f"{type(models).__name__}."
+            )
         if not models:
             raise ValueError("'models' must be a non-empty dict; got an empty mapping.")
         _bad = [k for k, v in models.items() if not isinstance(v, ModelConfig)]
@@ -142,10 +162,20 @@ class Benchmark:
                 f"All values in 'models' must be ModelConfig instances; "
                 f"got non-ModelConfig value(s) for key(s): {_bad}."
             )
+        if isinstance(datasets, str):
+            raise TypeError(
+                f"'datasets' must be an iterable of dataset names, not a bare "
+                f"string; pass [{datasets!r}] to use a single dataset."
+            )
         if not datasets:
             raise ValueError(
                 "'datasets' must be a non-empty list; got an empty sequence."
             )
+        # Both name a directory in the results tree
+        for label in models:
+            _check_path_component(label, "model label")
+        for name in datasets:
+            _check_path_component(name, "dataset name")
         if not eval_metrics:
             raise ValueError(
                 "'eval_metrics' must be a non-empty list; got an empty sequence."
@@ -218,10 +248,12 @@ class Benchmark:
             If the recipe file does not define a top-level ``RECIPE`` dict.
 
         TypeError
-            If the recipe fails structural type validation.
+            If the recipe fails structural type validation, or if the
+            resulting configuration fails ``Benchmark.__init__``'s validation.
 
         ValueError
-            If the recipe fails structural constraint validation.
+            If the recipe fails structural constraint validation, or if the
+            resulting configuration fails ``Benchmark.__init__``'s validation.
         """
         recipe = dict(load_recipe(recipe_path))
         recipe.update(overrides)
@@ -312,8 +344,10 @@ class Benchmark:
         for split in ("train", "test"):
             try:
                 save_summary(self.results_path, split=split)
-            except ValueError:
-                # No stored metrics to summarise for this split: either nothing
-                # has been run yet, or no pair produced a report
+            except (pd.errors.EmptyDataError, pd.errors.ParserError):
+                # A corrupt report.csv is data loss, never "nothing to do"
+                raise
+            except (FileNotFoundError, ValueError):
+                # Nothing run yet (the folder may not exist), or no pair reported
                 if self.verbose:
                     print("  No metrics to summarise for the", split, "split")

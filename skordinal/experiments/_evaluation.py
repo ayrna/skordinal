@@ -77,9 +77,8 @@ def evaluate(
     ValueError
         If ``split`` is not ``"test"`` or ``"train"``, if ``metrics`` is
         empty or holds an unregistered name, if ``classifier_name`` or
-        ``dataset_name`` is empty, a dot segment, or contains a path
-        separator, or if a predictions file lacks the ``Target`` or
-        ``Prediction`` column.
+        ``dataset_name`` is not a usable path component, or if a predictions
+        file lacks the ``Target`` or ``Prediction`` column.
 
     TypeError
         If ``classifier_name`` or ``dataset_name`` is not a string, or if

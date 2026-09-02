@@ -202,14 +202,14 @@ class Results:
 
         ValueError
             If ``result.classifier_name``, ``result.dataset_name`` or a
-            non-int ``result.resample_id`` is empty, a dot segment, or
-            contains a path separator, if ``result`` lacks the true labels
-            required for the ``Target`` column (``train_true_y``, or
-            ``test_true_y`` when test predictions are present), if a true
-            or predicted label is not one of ``best_model.classes_``, or if
-            a probability matrix does not hold one row per sample and one
-            column per class. Files already written for a preceding split
-            are left in place; nothing else is recorded for the partition.
+            non-int ``result.resample_id`` is not a usable path component,
+            if ``result`` lacks the true labels required for the ``Target``
+            column (``train_true_y``, or ``test_true_y`` when test
+            predictions are present), if a true or predicted label is not one
+            of ``best_model.classes_``, or if a probability matrix does not
+            hold one row per sample and one column per class. Files already
+            written for a preceding split are left in place; nothing else is
+            recorded for the partition.
 
         OSError
             If a stale artefact cannot be removed or the folder cannot be
@@ -472,8 +472,8 @@ class Results:
             If ``classifier_name`` or ``dataset_name`` is not a string.
 
         ValueError
-            If ``classifier_name`` or ``dataset_name`` is empty, a dot
-            segment, or contains a path separator.
+            If ``classifier_name`` or ``dataset_name`` is not a usable
+            path component.
 
         FileNotFoundError
             If the pair has no ``report.csv``.
@@ -512,8 +512,8 @@ class Results:
             If ``classifier_name`` or ``dataset_name`` is not a string.
 
         ValueError
-            If ``classifier_name`` or ``dataset_name`` is empty, a dot
-            segment, or contains a path separator.
+            If ``classifier_name`` or ``dataset_name`` is not a usable
+            path component.
 
         FileNotFoundError
             If the pair has no ``hyperparameter_configuration.csv``.
@@ -574,8 +574,8 @@ class Results:
 
         ValueError
             If ``classifier_name``, ``dataset_name`` or a non-int
-            ``resample_id`` is empty, a dot segment, or contains a path
-            separator, or if ``split`` is not ``"test"`` or ``"train"``.
+            ``resample_id`` is not a usable path component, or if ``split``
+            is not ``"test"`` or ``"train"``.
 
         FileNotFoundError
             If the resample has no predictions file for ``split``.
@@ -634,8 +634,7 @@ class Results:
 
         ValueError
             If ``classifier_name``, ``dataset_name`` or a non-int
-            ``resample_id`` is empty, a dot segment, or contains a path
-            separator.
+            ``resample_id`` is not a usable path component.
 
         FileNotFoundError
             If the resample was saved with ``save_model=False`` or its
@@ -687,8 +686,7 @@ class Results:
 
         ValueError
             If ``classifier_name``, ``dataset_name`` or a non-int
-            ``resample_id`` is empty, a dot segment, or contains a path
-            separator.
+            ``resample_id`` is not a usable path component.
 
         Examples
         --------
