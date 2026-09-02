@@ -12,12 +12,11 @@ from skordinal.experiments._io import (
     _TEMP_PREFIX,
     _atomic_dump,
     _atomic_write,
-    _check_path_component,
-    _check_resample_id,
     _ensure_parent,
     _format_proba_column,
     _parse_proba_column,
     _sweep_orphaned_temp_files,
+    _write_split_files,
 )
 
 
@@ -110,33 +109,31 @@ def test_atomic_dump_round_trips_no_temp(tmp_path):
     assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
 
 
-@pytest.mark.parametrize("bad", ["", ".", "..", "a/b", f"a{os.sep}b"])
-def test_check_path_component_rejects_bad_strings(bad):
-    """_check_path_component rejects empty, dotted or separator names."""
-    with pytest.raises(ValueError):
-        _check_path_component(bad, "classifier_name")
-
-
-@pytest.mark.parametrize("bad", [3, None, ("x",)])
-def test_check_path_component_rejects_non_str(bad):
-    """_check_path_component rejects a non-string component."""
-    with pytest.raises(TypeError):
-        _check_path_component(bad, "classifier_name")
-
-
-@pytest.mark.parametrize("good", [0, -1, np.int64(3), "0"])
-def test_check_resample_id_accepts_int_like(good):
-    """_check_resample_id passes through ints, numpy ints and int-like strings."""
-    _check_resample_id(good)
-
-
-@pytest.mark.parametrize("bad", ["../../../../tmp/evil", "..", "", "a/b"])
-def test_check_resample_id_rejects_traversal(bad):
-    """_check_resample_id rejects a non-int id that fails path validation."""
-    with pytest.raises(ValueError, match="resample_id"):
-        _check_resample_id(bad)
-
-
 def test_sweep_orphaned_temp_files_ignores_missing_dir(tmp_path):
     """The sweep is a no-op when the base directory does not exist."""
     _sweep_orphaned_temp_files(tmp_path / "absent")
+
+
+def test_confusion_matrix_not_elided_for_many_classes(tmp_path):
+    """A large confusion matrix is written in full, without summarising."""
+    labels = np.arange(40)
+    _write_split_files(
+        tmp_path,
+        "train",
+        index=None,
+        true_y=labels,
+        predicted_y=labels,
+        proba=None,
+        classes=labels,
+        resample_id=0,
+    )
+
+    body = (
+        (tmp_path / "train_confusion_matrix.txt")
+        .read_text()
+        .split("\n", 2)[2]
+        .rstrip("\n")
+    )
+    assert "..." not in body
+    # Check the matrix keeps one physical line per row (no wrapping)
+    assert body.count("\n") == 39

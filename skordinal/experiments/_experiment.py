@@ -24,21 +24,6 @@ def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) ->
     return _resolve_label_metric(metric_name.strip())(y_true, y_pred)
 
 
-def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
-    """Return class probabilities, or ``None`` when the estimator cannot."""
-    if not hasattr(estimator, "predict_proba"):
-        return None
-    try:
-        return estimator.predict_proba(inputs)
-    except AttributeError as exc:
-        warnings.warn(
-            f"predict_proba raised AttributeError; probabilities are omitted: {exc}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return None
-
-
 class Experiment:
     """Run a single classifier configuration on one train/test partition.
 
@@ -141,6 +126,21 @@ class Experiment:
         self.n_jobs = n_jobs
         self.input_preprocessing = input_preprocessing
         self.random_state = random_state
+
+    @staticmethod
+    def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
+        """Return class probabilities, or ``None`` when the estimator cannot."""
+        if not hasattr(estimator, "predict_proba"):
+            return None
+        try:
+            return estimator.predict_proba(inputs)
+        except AttributeError as exc:
+            warnings.warn(
+                f"predict_proba raised AttributeError; probabilities are omitted: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return None
 
     def run(
         self,
@@ -289,11 +289,11 @@ class Experiment:
         test_metrics["time_test"] = elapsed
 
         # Compute class probabilities on each split when supported
-        train_y_proba = _predict_proba_or_none(best_estimator, train_inputs)
+        train_y_proba = self._predict_proba_or_none(best_estimator, train_inputs)
         y_proba = None
         if y_test is not None:
             assert test_inputs is not None
-            y_proba = _predict_proba_or_none(best_estimator, test_inputs)
+            y_proba = self._predict_proba_or_none(best_estimator, test_inputs)
 
         # Build and return the ExperimentResult; no persistence here.
         return ExperimentResult(

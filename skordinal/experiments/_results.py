@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shutil
-import sys
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -14,18 +13,15 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
-from sklearn.metrics import confusion_matrix
 from sklearn.pipeline import Pipeline
 
+from ._base import _check_path_component, _check_resample_id, _check_split
 from ._io import (
     _atomic_dump,
     _atomic_write,
-    _check_path_component,
-    _check_resample_id,
-    _check_split,
-    _format_proba_column,
     _parse_proba_column,
     _sweep_orphaned_temp_files,
+    _write_split_files,
 )
 
 
@@ -116,55 +112,6 @@ class ExperimentResult:
     test_index: np.ndarray | None = None
     train_y_proba: np.ndarray | None = None
     scaler: BaseEstimator | None = None
-
-
-def _write_split_files(
-    seed_dir: Path,
-    split: str,
-    *,
-    index: np.ndarray | None,
-    true_y: np.ndarray,
-    predicted_y: np.ndarray,
-    proba: np.ndarray | None,
-    classes: np.ndarray,
-    resample_id: int,
-) -> None:
-    """Encode one split's labels and write its per-seed output files."""
-    if not np.isin(true_y, classes).all():
-        raise ValueError(
-            f"'{split}' true labels contain classes unknown to the fitted model."
-        )
-    pattern_id = index if index is not None else np.arange(predicted_y.shape[0])
-    target = np.searchsorted(classes, true_y)
-    if not np.isin(predicted_y, classes).all():
-        raise ValueError(
-            f"'{split}' predicted labels contain classes unknown to the fitted model."
-        )
-    # Record the estimator's actual decision, never a proba argmax substitute
-    prediction = np.searchsorted(classes, predicted_y)
-
-    columns: dict[str, object] = {"Pattern ID": pattern_id, "Target": target}
-    if proba is not None:
-        if proba.shape != (true_y.shape[0], classes.size):
-            raise ValueError(
-                f"'{split}' probabilities have shape {proba.shape}; expected "
-                f"({true_y.shape[0]}, {classes.size})."
-            )
-        columns["Prediction probabilities"] = _format_proba_column(proba)
-    columns["Prediction"] = prediction
-    _atomic_write(
-        seed_dir / f"{split}_predictions.csv",
-        pd.DataFrame(columns).to_csv(index=False),
-    )
-
-    cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
-    body = np.array2string(
-        cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
-    )
-    _atomic_write(
-        seed_dir / f"{split}_confusion_matrix.txt",
-        f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
-    )
 
 
 class Results:

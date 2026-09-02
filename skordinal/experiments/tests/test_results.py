@@ -18,7 +18,6 @@ from skordinal.experiments import (
     Results,
 )
 from skordinal.experiments._io import _TEMP_PREFIX
-from skordinal.experiments._results import _write_split_files
 from skordinal.metrics import accuracy_score, mean_absolute_error
 
 
@@ -427,31 +426,6 @@ def test_save_writes_confusion_matrices(tmp_path):
     assert text.endswith("\n")
     body = text.split("\n", 2)[2].rstrip("\n")
     assert body == np.array2string(expected, separator=", ")
-
-
-def test_confusion_matrix_not_elided_for_many_classes(tmp_path):
-    """A large confusion matrix is written in full, without summarising."""
-    labels = np.arange(40)
-    _write_split_files(
-        tmp_path,
-        "train",
-        index=None,
-        true_y=labels,
-        predicted_y=labels,
-        proba=None,
-        classes=labels,
-        resample_id=0,
-    )
-
-    body = (
-        (tmp_path / "train_confusion_matrix.txt")
-        .read_text()
-        .split("\n", 2)[2]
-        .rstrip("\n")
-    )
-    assert "..." not in body
-    # Check the matrix keeps one physical line per row (no wrapping)
-    assert body.count("\n") == 39
 
 
 @pytest.mark.parametrize("with_indices", [False, True])

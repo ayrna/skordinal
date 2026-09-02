@@ -6,7 +6,8 @@ import pandas as pd
 
 from skordinal.metrics._metrics import _resolve_label_metric
 
-from ._io import _atomic_write, _check_split
+from ._base import _check_split
+from ._io import _atomic_write
 from ._results import Results
 
 
