@@ -346,15 +346,24 @@ class Results:
 
         csv_path = base_dir / "hyperparameter_configuration.csv"
         df = pd.DataFrame([row])
+        # Note which columns hold integers before the union can upcast them
+        integral = {c for c in df.columns if pd.api.types.is_integer_dtype(df[c])}
         if csv_path.is_file():
             existing = pd.read_csv(csv_path, float_precision="round_trip")
+            integral |= {
+                c
+                for c in existing.columns
+                if pd.api.types.is_integer_dtype(existing[c])
+            }
             existing = existing[existing["Seed"] != result.resample_id]
             df = pd.concat([existing, df], ignore_index=True)
 
         columns = ["Seed"] + sorted(c for c in df.columns if c != "Seed")
         df = df[columns].sort_values("Seed").reset_index(drop=True)
-        # Restore integer dtypes upcast to float by the NaN column union
-        _atomic_write(csv_path, df.convert_dtypes().to_csv(index=False))
+        # Restore only those, so a searched float like 10.0 is not written as 10
+        for col in integral & set(df.columns):
+            df[col] = df[col].convert_dtypes()
+        _atomic_write(csv_path, df.to_csv(index=False))
 
     @classmethod
     def load(cls, path: str | Path) -> Results:

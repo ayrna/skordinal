@@ -546,6 +546,33 @@ def test_hyperparameters_prefix_strip_and_union(tmp_path):
     assert "2.0" not in raw
 
 
+def test_hyperparameters_keep_a_searched_float_a_float(tmp_path):
+    """A float grid value stays 10.0; the int column beside it stays an int."""
+    r = Results(tmp_path)
+    for seed, params in (
+        (0, {"clf__C": 10.0, "clf__degree": 2}),
+        (1, {"clf__C": 1.0, "clf__degree": 3}),
+    ):
+        r.save(
+            _make_result(
+                partition=seed,
+                dataset="ds",
+                configuration="clf",
+                best_params=params,
+                train_metrics={"mae_train": 0.1},
+                test_metrics={"mae_test": 0.1},
+                train_predicted_y=np.array([1]),
+                test_predicted_y=np.array([1]),
+            ),
+            save_model=False,
+        )
+
+    raw = (tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv").read_text()
+    # convert_dtypes() used to rewrite an all-integral float column as ints
+    assert "10.0" in raw
+    assert "3.0" not in raw
+
+
 def test_hyperparameters_empty_params(tmp_path):
     """Empty best_params yields a one-column CSV holding only Seed."""
     Results(tmp_path).save(
