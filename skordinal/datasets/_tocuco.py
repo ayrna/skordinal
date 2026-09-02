@@ -1,11 +1,12 @@
 import json
-import urllib.request
 import tempfile
-from pathlib import Path
+import urllib.request
 from numbers import Integral
+from pathlib import Path
 
-import pandas as pd
+import joblib
 import numpy as np
+import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import Bunch
 
@@ -16,9 +17,8 @@ def load_tocuco_partitions(
     resamples=30,
 ):
     """Yield one train/test partition per resample for 'tocuco' style datasets.
-
     This method downloads pre-computed train masks from a ``train_masks.json`` file
-    and the corresponding CSV dataset from the remote server to a temporary directory. 
+    and the corresponding CSV dataset from the remote server to a temporary directory.
     Once loaded into memory, the temporary files are automatically deleted. It then
     applies a standard scaler to the features, and yields train/test splits accordingly.
 
@@ -43,19 +43,19 @@ def load_tocuco_partitions(
     KeyError
         When a requested resample key does not exist in the mask file.
     """
-    
+
     dataset_name = str(name)
     base_url = f"https://www.uco.es/ayrna/tocuco/files/{dataset_name}"
-    
+
     csv_url = f"{base_url}/{dataset_name}.csv"
     masks_url = f"{base_url}/train_masks.json"
-    
+
     with tempfile.TemporaryDirectory() as tmpdirname:
         tmp_path = Path(tmpdirname)
-        
+
         csv_path = tmp_path / f"{dataset_name}.csv"
         masks_path = tmp_path / "train_masks.json"
-        
+
         try:
             urllib.request.urlretrieve(csv_url, csv_path)
             urllib.request.urlretrieve(masks_url, masks_path)
@@ -65,9 +65,13 @@ def load_tocuco_partitions(
                     f"Dataset '{dataset_name}' not found. "
                     f"Check that the name is correct (attempted URL: {csv_url})"
                 ) from None
-            raise RuntimeError(f"HTTP error {e.code} while downloading dataset '{dataset_name}'.") from e
+            raise RuntimeError(
+                f"HTTP error {e.code} while downloading dataset '{dataset_name}'."
+            ) from e
         except urllib.error.URLError as e:
-            raise RuntimeError(f"Connection error while downloading dataset '{dataset_name}': {e.reason}") from e
+            raise RuntimeError(
+                f"Connection error while downloading dataset '{dataset_name}': {e.reason}"
+            ) from e
 
         with open(csv_path, "r", encoding="utf-8", errors="ignore") as check_file:
             first_chars = check_file.read(200).lower()
@@ -81,10 +85,12 @@ def load_tocuco_partitions(
         try:
             dataset = pd.read_csv(csv_path)
         except pd.errors.ParserError as e:
-            raise ValueError(f"Could not parse the CSV file for '{dataset_name}'. The file might be corrupted.") from e
-        
+            raise ValueError(
+                f"Could not parse the CSV file for '{dataset_name}'. The file might be corrupted."
+            ) from e
+
         dataset = pd.read_csv(csv_path)
-        
+
         with open(masks_path, "r", encoding="utf-8") as f:
             train_masks = json.load(f)
 
@@ -98,12 +104,12 @@ def load_tocuco_partitions(
     def _iter():
         for resample_id in ids:
             mask_key = str(resample_id)
-            
+
             if mask_key not in train_masks:
                 raise KeyError(f"Mask key '{mask_key}' not found in train_masks.json")
-            
+
             dataset_seed_train_mask = np.array(train_masks[mask_key], dtype=bool)
-            
+
             train = dataset.loc[dataset_seed_train_mask]
             test = dataset.loc[~dataset_seed_train_mask]
 
@@ -147,7 +153,6 @@ def load_tocuco_partitions_old(
     resamples=30,
 ):
     """Yield one train/test partition per resample for 'tocuco' style datasets.
-
     This method loads pre-computed train masks from a ``train_masks.pkl`` file
     located within the specified data directory, loads the corresponding CSV dataset
     from the data subdirectory, applies a standard scaler to the features, and
@@ -204,9 +209,9 @@ def load_tocuco_partitions_old(
     KeyError
         When a requested resample key does not exist in the mask file.
     """
-    
+
     tocuco_path = Path(data_home) if data_home is not None else Path(".")
-    
+
     with open(tocuco_path / "train_masks.pkl", "rb") as train_masks_binary:
         train_masks = joblib.load(train_masks_binary)
 
@@ -226,11 +231,11 @@ def load_tocuco_partitions_old(
             mask_key = f"{dataset_name}_seed_{resample_id}"
             if mask_key not in train_masks:
                 raise KeyError(f"Mask key '{mask_key}' not found in train_masks.pkl")
-            
+
             dataset_seed_train_mask = train_masks[mask_key]
             if isinstance(dataset_seed_train_mask, pd.Series):
                 dataset_seed_train_mask = dataset_seed_train_mask.to_numpy()
-            
+
             train = dataset.loc[dataset_seed_train_mask]
             test = dataset.loc[~dataset_seed_train_mask]
 

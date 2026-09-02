@@ -93,6 +93,46 @@ ext-modules = [
             "skordinal/classifiers/src/libsvmrank/python/svm-model-python.cpp",
             "skordinal/classifiers/src/libsvmrank/python/svm.cpp",
         ], extra-compile-args = ["-Wno-unused-result"]},
+    {name = "skordinal.classifiers._libsvorex", language = "c", sources = [
+            "skordinal/classifiers/src/svorex/svorex_module.c",
+            "skordinal/classifiers/src/svorex/svorex_train.c",
+            "skordinal/classifiers/src/svorex/svorex_predict.c",
+            "skordinal/classifiers/src/svorex/alphas.c",
+            "skordinal/classifiers/src/svorex/cachelist.c",
+            "skordinal/classifiers/src/svorex/datalist.c",
+            "skordinal/classifiers/src/svorex/def_settings.c",
+            "skordinal/classifiers/src/svorex/loadfile.c",
+            "skordinal/classifiers/src/svorex/ordinal_takestep.c",
+            "skordinal/classifiers/src/svorex/setandfi.c",
+            "skordinal/classifiers/src/svorex/smo_kernel.c",
+            "skordinal/classifiers/src/svorex/smo_routine.c",
+            "skordinal/classifiers/src/svorex/smo_settings.c",
+            "skordinal/classifiers/src/svorex/smo_timer.c",
+            "skordinal/classifiers/src/svorex/svc_predict.c",
+            "skordinal/classifiers/src/svorex/smo_model_python.c",
+            "skordinal/classifiers/src/svorex/smo_loadproblem_python.c",
+            "skordinal/classifiers/src/svorex/smo_routine_python.c",
+        ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off", "-fvisibility=hidden"], libraries = ["m"]},
+    {name = "skordinal.classifiers._libsvorim", language = "c", sources = [
+            "skordinal/classifiers/src/svorim/svorim_module.c",
+            "skordinal/classifiers/src/svorim/svorim_train.c",
+            "skordinal/classifiers/src/svorim/svorim_predict.c",
+            "skordinal/classifiers/src/svorim/alphas.c",
+            "skordinal/classifiers/src/svorim/cachelist.c",
+            "skordinal/classifiers/src/svorim/datalist.c",
+            "skordinal/classifiers/src/svorim/def_settings.c",
+            "skordinal/classifiers/src/svorim/loadfile.c",
+            "skordinal/classifiers/src/svorim/ordinal_takestep.c",
+            "skordinal/classifiers/src/svorim/setandfi.c",
+            "skordinal/classifiers/src/svorim/smo_kernel.c",
+            "skordinal/classifiers/src/svorim/smo_routine.c",
+            "skordinal/classifiers/src/svorim/smo_settings.c",
+            "skordinal/classifiers/src/svorim/smo_timer.c",
+            "skordinal/classifiers/src/svorim/svc_predict.c",
+            "skordinal/classifiers/src/svorim/smo_model_python.c",
+            "skordinal/classifiers/src/svorim/smo_loadproblem_python.c",
+            "skordinal/classifiers/src/svorim/smo_routine_python.c",
+        ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off", "-fvisibility=hidden"], libraries = ["m"]},
     {name = "skordinal.classifiers._libsvor", language = "c", sources = [
             "skordinal/classifiers/src/svor/svor_module.c",
             "skordinal/classifiers/src/svor/svor_train.c",
@@ -164,6 +204,7 @@ exclude = [
     "build",
     "dist",
     "skordinal/classifiers/src/libsvmrank/",
+    "skordinal/classifiers/src/svorex/setup.py",
 ]
 
 [tool.ruff.lint]
@@ -174,7 +215,7 @@ ignore = ["E501"]
 python_version = "3.10"
 ignore_missing_imports = true
 allow_redefinition = true
-exclude = ["skordinal/classifiers/src/libsvmrank/", "skordinal/classifiers/src/svor/"]
+exclude = ["skordinal/classifiers/src/libsvmrank/", "skordinal/classifiers/src/svorex/", "skordinal/classifiers/src/svorim/", "skordinal/classifiers/src/svor/"]
 
 [tool.check-sdist]
 git-only = [
@@ -191,6 +232,10 @@ git-only = [
     "skordinal/classifiers/src/libsvmrank/README",
     "skordinal/classifiers/src/libsvmrank/python/setup.py",
     "skordinal/classifiers/src/libsvmrank/python/makefile",
+    "skordinal/classifiers/src/svorex/main.c",
+    "skordinal/classifiers/src/svorex/Makefile",
+    "skordinal/classifiers/src/svorex/README.svorex",
+    "skordinal/classifiers/src/svorex/setup.py",
     "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/LEMGA.dox",
     "skordinal/classifiers/src/orensemble/python/lemga-20060516/lemga/Makefile",
 ]
