@@ -655,6 +655,12 @@ def load_partitions(
     >>> for bunch in load_partitions("era", resamples=3):  # doctest: +SKIP
     ...     print(bunch.resample_id, bunch.data_train.shape[0])
     """
+    if str(name).startswith("tocuco"):
+        from ._tocuco import load_tocuco_partitions
+
+        return load_tocuco_partitions(name.replace("tocuco_", ""), resamples=resamples)
+        # return load_tocuco_partitions(name.replace("tocuco_", ""), data_home=str(Path(data_home)), resamples=resamples)
+
     csv_path, _ = _resolve_csv_path(name, data_home)
     if not csv_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {csv_path}")
