@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.experiments import Benchmark, ModelConfig, load_recipe, validate_recipe
@@ -66,7 +67,7 @@ def test_validate_recipe_all_optional_keys_accepted():
         "tuning_metric": "neg_mean_absolute_error",
         "cv": 3,
         "n_jobs": 1,
-        "input_preprocessing": "std",
+        "input_preprocessing": StandardScaler(),
         "random_state": 0,
         "overwrite": True,
         "verbose": False,

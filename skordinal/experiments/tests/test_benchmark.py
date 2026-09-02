@@ -47,6 +47,12 @@ _INVALID_CONSTRUCTOR_CASES = [
         r"a loss is only registered as 'neg_mean_absolute_error'",
         id="bare-loss-as-tuning-metric",
     ),
+    pytest.param(
+        {"input_preprocessing": "std"},
+        TypeError,
+        "'input_preprocessing' must be None",
+        id="string-input-preprocessing",
+    ),
     # Both name a directory in the results tree, so they fail eagerly
     pytest.param(
         {"datasets": ["dir/era"]},
@@ -130,41 +136,6 @@ def test_names_stored_stripped(tmp_path):
     )
     assert b.eval_metrics == ["mean_absolute_error"]
     assert b.datasets == [_BUNDLED_DS]
-
-
-@pytest.mark.parametrize("bad_value", ["minmax", ""])
-def test_input_preprocessing_invalid_raises(tmp_path, bad_value):
-    """Unrecognised input_preprocessing values raise ValueError."""
-    with pytest.raises(ValueError, match="'input_preprocessing' must be one of"):
-        Benchmark(
-            _MINIMAL_CONF,
-            datasets=[_BUNDLED_DS],
-            eval_metrics=["mean_absolute_error"],
-            results_path=tmp_path,
-            input_preprocessing=bad_value,
-        )
-
-
-@pytest.mark.parametrize(
-    "raw, expected",
-    [
-        (None, None),
-        ("std", "std"),
-        ("norm", "norm"),
-        (" STD ", "std"),
-        ("NORM", "norm"),
-    ],
-)
-def test_input_preprocessing_accepted_and_normalised(tmp_path, raw, expected):
-    """Valid input_preprocessing values are accepted and lower-stripped."""
-    b = Benchmark(
-        _MINIMAL_CONF,
-        datasets=[_BUNDLED_DS],
-        eval_metrics=["mean_absolute_error"],
-        results_path=tmp_path,
-        input_preprocessing=raw,
-    )
-    assert b.input_preprocessing == expected
 
 
 def test_data_home_str_stays_str(tmp_path):

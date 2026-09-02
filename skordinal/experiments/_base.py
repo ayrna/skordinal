@@ -70,6 +70,40 @@ def _check_metric_names(metrics: Any, *, param: str) -> list[str]:
     return metrics
 
 
+def _check_input_preprocessing(input_preprocessing: Any) -> None:
+    """Reject an input_preprocessing that is not a clonable transformer."""
+    if input_preprocessing is None:
+        return
+    # A class answers every hasattr an instance would, and clone needs get_params
+    if not isinstance(input_preprocessing, type) and all(
+        hasattr(input_preprocessing, name)
+        for name in ("fit", "transform", "get_params", "set_params")
+    ):
+        return
+    got = (
+        f"the {input_preprocessing.__name__} class"
+        if isinstance(input_preprocessing, type)
+        else type(input_preprocessing).__name__
+    )
+    raise TypeError(
+        f"'input_preprocessing' must be None or a transformer instance "
+        f"implementing fit, transform and get_params; got {got}."
+    )
+
+
 def _check_tuning_metric(tuning_metric: Any) -> None:
     """Resolve the tuning metric, which a search-free run never would."""
     get_ordinal_scorer(tuning_metric)
+
+
+def _set_nested_random_state(estimator: Any, random_state: int | None) -> None:
+    """Forward the seed to every nested random_state parameter of a clone."""
+    if random_state is None:
+        return
+    estimator.set_params(
+        **{
+            key: random_state
+            for key in estimator.get_params(deep=True)
+            if key == "random_state" or key.endswith("__random_state")
+        }
+    )

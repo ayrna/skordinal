@@ -5,8 +5,11 @@ from pathlib import PureWindowsPath
 
 import numpy as np
 import pytest
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
 from skordinal.experiments._base import (
+    _check_input_preprocessing,
     _check_metric_names,
     _check_path_component,
     _check_resample_id,
@@ -88,3 +91,20 @@ def test_check_metric_names_accepts_array_likes():
         np.array(["mean_absolute_error", " accuracy_score "]), param="metrics"
     )
     assert names == ["mean_absolute_error", "accuracy_score"]
+
+
+def test_check_input_preprocessing_accepts_a_transformer():
+    """A transformer instance and None both pass the check."""
+    _check_input_preprocessing(StandardScaler())
+    _check_input_preprocessing(None)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [SVC(), "std", StandardScaler],
+    ids=["no-transform", "old-token", "class-not-instance"],
+)
+def test_check_input_preprocessing_rejects_a_non_transformer(bad):
+    """A non-transformer, a removed token or a class (forgotten parens) raises."""
+    with pytest.raises(TypeError, match="'input_preprocessing' must be None"):
+        _check_input_preprocessing(bad)

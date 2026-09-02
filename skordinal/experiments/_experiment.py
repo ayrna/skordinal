@@ -9,14 +9,18 @@ from time import perf_counter
 from typing import Any
 
 import numpy as np
-from sklearn import preprocessing
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import get_ordinal_scorer
 from skordinal.metrics._metrics import _resolve_label_metric
 
-from ._base import _check_metric_names, _check_tuning_metric
+from ._base import (
+    _check_input_preprocessing,
+    _check_metric_names,
+    _check_tuning_metric,
+    _set_nested_random_state,
+)
 from ._model_config import ModelConfig
 from ._results import ExperimentResult
 
@@ -65,24 +69,26 @@ class Experiment:
     n_jobs : int, default=1
         Number of parallel jobs forwarded to ``GridSearchCV``.
 
-    input_preprocessing : {"std", "norm"} or None, default=None
-        Optional feature preprocessing applied to every partition before
-        fitting: ``"norm"`` applies min-max normalisation and ``"std"`` applies
-        z-score standardisation. Both scalers are fitted on the training split
+    input_preprocessing : transformer or None, default=None
+        Optional preprocessing applied before fitting: a transformer
+        instance, e.g. a scaler or a ``Pipeline``, cloned and seeded with
+        ``random_state`` for each partition. Fitted on the training split
         only, then applied to the train split and, when present, the test
         split. ``None`` means no preprocessing.
 
     random_state : int or None, default=None
-        Seed used for two sources of randomness: the base estimator and the
-        cross-validation splitter (``StratifiedKFold``) used during
-        hyper-parameter search. When ``None``, both use their own default
-        random behaviour.
+        Seed forwarded to the base estimator, to the ``StratifiedKFold``
+        splitter of a hyper-parameter search, and to the
+        ``input_preprocessing`` clone. When ``None``, each keeps its own
+        default random behaviour.
 
     Raises
     ------
     TypeError
-        If ``model`` is not a ``ModelConfig``, or if ``eval_metrics`` is a
-        bare string, not iterable, or holds a non-string name.
+        If ``model`` is not a ``ModelConfig``, if ``eval_metrics`` is a
+        bare string, not iterable, or holds a non-string name, or if
+        ``input_preprocessing`` is neither ``None`` nor a transformer
+        instance.
 
     ValueError
         If ``eval_metrics`` is empty or holds an unregistered label-metric
@@ -112,7 +118,7 @@ class Experiment:
         tuning_metric: str | Callable[..., float] | None = "neg_mean_absolute_error",
         cv: int = 3,
         n_jobs: int = 1,
-        input_preprocessing: str | None = None,
+        input_preprocessing: BaseEstimator | None = None,
         random_state: int | None = None,
     ) -> None:
         if not isinstance(model, ModelConfig):
@@ -121,16 +127,7 @@ class Experiment:
             )
         eval_metrics = _check_metric_names(eval_metrics, param="eval_metrics")
         _check_tuning_metric(tuning_metric)
-
-        _allowed_preproc = {"std", "norm"}
-        if input_preprocessing is not None:
-            _normalized = str(input_preprocessing).strip().lower()
-            if _normalized not in _allowed_preproc:
-                raise ValueError(
-                    f"'input_preprocessing' must be one of {None, 'std', 'norm'}; "
-                    f"got '{input_preprocessing}'."
-                )
-            input_preprocessing = _normalized
+        _check_input_preprocessing(input_preprocessing)
 
         self.model = model
         self.eval_metrics: list[str] = eval_metrics
@@ -139,6 +136,15 @@ class Experiment:
         self.n_jobs = n_jobs
         self.input_preprocessing = input_preprocessing
         self.random_state = random_state
+
+    def _build_scaler(self) -> BaseEstimator | None:
+        """Return a fresh, seeded scaler for one partition, or None."""
+        if self.input_preprocessing is None:
+            return None
+        # Never fit the caller's instance, and seed it like the estimator
+        scaler = clone(self.input_preprocessing)
+        _set_nested_random_state(scaler, self.random_state)
+        return scaler
 
     @staticmethod
     def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
@@ -227,16 +233,10 @@ class Experiment:
         # Apply preprocessing on local copies so the caller's arrays are not mutated.
         train_inputs: np.ndarray = X_train
         test_inputs: np.ndarray | None = X_test
-        scaler: BaseEstimator | None = None
+        scaler = self._build_scaler()
 
-        if self.input_preprocessing in {"norm", "std"}:
-            scaler_cls = (
-                preprocessing.MinMaxScaler
-                if self.input_preprocessing == "norm"
-                else preprocessing.StandardScaler
-            )
-            scaler = scaler_cls().fit(train_inputs)
-            train_inputs = scaler.transform(train_inputs)
+        if scaler is not None:
+            train_inputs = scaler.fit(train_inputs).transform(train_inputs)
             # A train-only run has no test split to transform
             if X_test is not None:
                 test_inputs = scaler.transform(X_test)

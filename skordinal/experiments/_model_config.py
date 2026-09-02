@@ -7,6 +7,8 @@ from typing import Any
 
 from sklearn.base import BaseEstimator, clone
 
+from ._base import _set_nested_random_state
+
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -124,12 +126,5 @@ class ModelConfig:
             An unfitted clone ready for ``fit``.
         """
         est = clone(self.estimator)
-        if random_state is not None:
-            est.set_params(
-                **{
-                    key: random_state
-                    for key in est.get_params(deep=True)
-                    if key == "random_state" or key.endswith("__random_state")
-                }
-            )
+        _set_nested_random_state(est, random_state)
         return est

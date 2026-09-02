@@ -5,7 +5,7 @@ import math
 import numpy as np
 import numpy.testing as npt
 import pytest
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.experiments import Experiment, ExperimentResult, ModelConfig
@@ -67,32 +67,13 @@ def test_rejects_a_non_model_config():
         Experiment(SVC(), eval_metrics=["mean_absolute_error"])
 
 
-@pytest.mark.parametrize(
-    "raw, expected",
-    [
-        (None, None),
-        ("std", "std"),
-        ("norm", "norm"),
-        (" STD ", "std"),
-        ("NORM", "norm"),
-    ],
-)
-def test_input_preprocessing_accepted_and_normalized(raw, expected):
-    """Valid input_preprocessing values are accepted and lower-stripped."""
-    exp = Experiment(
-        _MINIMAL_CONF, eval_metrics=["mean_absolute_error"], input_preprocessing=raw
-    )
-    assert exp.input_preprocessing == expected
-
-
-@pytest.mark.parametrize("bad_value", ["minmax", ""])
-def test_input_preprocessing_invalid_raises(bad_value):
-    """Unrecognised input_preprocessing values raise ValueError."""
-    with pytest.raises(ValueError, match="'input_preprocessing' must be one of"):
+def test_input_preprocessing_rejects_a_string():
+    """The removed "std"/"norm" tokens raise TypeError at construction."""
+    with pytest.raises(TypeError, match="'input_preprocessing' must be None"):
         Experiment(
             _MINIMAL_CONF,
             eval_metrics=["mean_absolute_error"],
-            input_preprocessing=bad_value,
+            input_preprocessing="std",
         )
 
 
@@ -197,12 +178,9 @@ def test_run_timing_with_cv(split_with_test):
     assert result.best_params.get("C") in _CONF_CV.param_grid["C"]
 
 
-@pytest.mark.parametrize("input_preprocessing", ["std", "norm"])
-def test_run_preprocessing_train_only_does_not_raise(
-    split_train_only, input_preprocessing
-):
+def test_run_preprocessing_train_only_does_not_raise(split_train_only):
     """input_preprocessing with X_test=None runs without transforming None."""
-    exp = _make_experiment(input_preprocessing=input_preprocessing)
+    exp = _make_experiment(input_preprocessing=StandardScaler())
     X_train, y_train, X_test, y_test = split_train_only
 
     result = _call_run(exp, X_train, y_train, X_test, y_test)
@@ -229,8 +207,8 @@ def test_run_best_model_carries_no_refit_metadata(split_with_test):
 
 
 def test_run_preprocessing_does_not_mutate_inputs(split_with_test):
-    """input_preprocessing='std' operates on copies; caller's arrays are unchanged."""
-    exp = _make_experiment(input_preprocessing="std")
+    """Preprocessing operates on copies; the caller's arrays are unchanged."""
+    exp = _make_experiment(input_preprocessing=StandardScaler())
     X_train, y_train, X_test, y_test = split_with_test
     train_before = X_train.copy()
     test_before = X_test.copy()
@@ -315,7 +293,8 @@ def test_run_proba_none_when_predict_proba_raises(split_with_test, monkeypatch):
 
 @pytest.mark.parametrize(
     "input_preprocessing,expected_type",
-    [("std", StandardScaler), ("norm", MinMaxScaler), (None, type(None))],
+    [(StandardScaler(), StandardScaler), (None, type(None))],
+    ids=["scaler", "none"],
 )
 def test_run_records_the_fitted_scaler(
     split_with_test, input_preprocessing, expected_type
@@ -335,3 +314,20 @@ def test_run_records_the_fitted_scaler(
             result.scaler.transform(X_train)[0],
             expected_type().fit(X_train).transform(X_train)[0],
         )
+
+
+def test_transformer_instance_is_cloned_and_seeded(split_with_test):
+    """The caller's transformer is never fitted; its clone gets the run seed."""
+    from sklearn.decomposition import PCA
+
+    X_train, y_train, X_test, y_test = split_with_test
+    transformer = PCA(n_components=2)
+    exp = _make_experiment(input_preprocessing=transformer, random_state=7)
+    result = _call_run(exp, X_train, y_train, X_test, y_test)
+
+    assert result.scaler is not transformer
+    assert not hasattr(transformer, "components_")
+    assert result.scaler.random_state == 7
+    assert transformer.random_state is None
+    # The estimator saw the reduced features, so both splits were transformed
+    assert result.best_model.n_features_in_ == 2

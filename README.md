@@ -81,6 +81,7 @@ optional and fall back to the `Benchmark` defaults.
 
 ```python
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.classifiers import OrdinalDecomposition
@@ -90,7 +91,7 @@ RECIPE = {
     "datasets": ["balance_scale", "era", "esl"],
     "cv": 3,
     "n_jobs": 1,
-    "input_preprocessing": "std",
+    "input_preprocessing": StandardScaler(),
     "results_path": "results/",
     "eval_metrics": [
         "accuracy_score",
@@ -180,8 +181,9 @@ These keys control how the benchmark is executed.
   passed to `GridSearchCV` to select the best hyperparameters.
 - **`cv`** (default `3`): number of cross-validation folds.
 - **`n_jobs`** (default `1`): parallel jobs for `GridSearchCV`.
-- **`input_preprocessing`** (default `None`): `"std"` for standardisation,
-  `"norm"` for normalisation, `None` for no scaling.
+- **`input_preprocessing`** (default `None`): a transformer instance (e.g.
+  `StandardScaler()` or a `Pipeline`) fitted on each training split, or
+  `None` for no preprocessing.
 - **`resamples`** (default `30`): number of train/test resamples per dataset,
   or the explicit list of resample ids to run.
 - **`test_size`** (default `0.3`): fraction of samples held out for testing

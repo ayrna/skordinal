@@ -7,11 +7,13 @@ from numbers import Integral
 from pathlib import Path
 
 import pandas as pd
+from sklearn.base import BaseEstimator
 from sklearn.utils import check_random_state
 
 from skordinal.datasets import load_partitions
 
 from ._base import (
+    _check_input_preprocessing,
     _check_metric_names,
     _check_path_component,
     _check_tuning_metric,
@@ -84,21 +86,20 @@ class Benchmark:
     n_jobs : int, default=1
         Number of parallel jobs forwarded to ``GridSearchCV``.
 
-    input_preprocessing : {"std", "norm"} or None, default=None
-        Optional feature preprocessing applied to every resample before
-        fitting: ``"norm"`` applies min-max normalisation and ``"std"`` applies
-        z-score standardisation. Both scalers are fitted on the training split
-        only, then applied to both train and test splits. ``None`` means no
+    input_preprocessing : transformer or None, default=None
+        Optional preprocessing applied before fitting: a transformer
+        instance, e.g. a scaler or a ``Pipeline``, cloned and seeded with
+        ``random_state`` for each resample. Fitted on the training split
+        only, then applied to both splits. ``None`` means no
         preprocessing.
 
     random_state : int or None, default=0
-        Seed used for two sources of randomness: the base estimator and the
-        cross-validation splitter (``StratifiedKFold``) used during
-        hyper-parameter search. Also forwarded to ``load_partitions`` when a
-        fallback split is generated. A non-integer value (including ``None``)
-        is resolved to one concrete integer at construction, so every
-        ``load_partitions`` call in ``run`` shares the same partitioning
-        scheme.
+        Seed forwarded to the base estimator, to the ``StratifiedKFold``
+        splitter of a hyper-parameter search, to the ``input_preprocessing``
+        clone, and to ``load_partitions`` when it generates the splits. A
+        non-integer value (including ``None``) is resolved to one concrete
+        integer at construction, so every ``load_partitions`` call in ``run``
+        shares the same partitioning scheme.
 
     overwrite : bool, default=False
         If ``False``, resamples already saved are skipped, making runs
@@ -112,8 +113,10 @@ class Benchmark:
     TypeError
         If ``models`` is not a dict or any of its values is not a
         ``ModelConfig``, if a model label or dataset name is not a str, if
-        ``datasets`` or ``eval_metrics`` is a bare string, or if
-        ``eval_metrics`` is not iterable or holds a non-string name.
+        ``datasets`` or ``eval_metrics`` is a bare string, if
+        ``eval_metrics`` is not iterable or holds a non-string name, or if
+        ``input_preprocessing`` is neither ``None`` nor a transformer
+        instance.
 
     ValueError
         If ``models``, ``datasets`` or ``eval_metrics`` is empty, if a model
@@ -155,7 +158,7 @@ class Benchmark:
         tuning_metric: str | Callable[..., float] | None = "neg_mean_absolute_error",
         cv: int = 3,
         n_jobs: int = 1,
-        input_preprocessing: str | None = None,
+        input_preprocessing: BaseEstimator | None = None,
         random_state: int | None = 0,
         overwrite: bool = False,
         verbose: bool = True,
@@ -190,16 +193,7 @@ class Benchmark:
             _check_path_component(name, "dataset name")
         eval_metrics = _check_metric_names(eval_metrics, param="eval_metrics")
         _check_tuning_metric(tuning_metric)
-
-        _allowed_preproc = {"std", "norm"}
-        if input_preprocessing is not None:
-            _normalized = str(input_preprocessing).strip().lower()
-            if _normalized not in _allowed_preproc:
-                raise ValueError(
-                    f"'input_preprocessing' must be one of {None, 'std', 'norm'}; "
-                    f"got '{input_preprocessing}'."
-                )
-            input_preprocessing = _normalized
+        _check_input_preprocessing(input_preprocessing)
 
         self.models: dict[str, ModelConfig] = dict(models)
         self.data_home: str | Path | None = data_home

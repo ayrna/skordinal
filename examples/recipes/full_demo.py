@@ -2,6 +2,7 @@
 
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.classifiers import REDSVM, SVOREX, SVORIM, OrdinalDecomposition
@@ -11,7 +12,7 @@ RECIPE = {
     "datasets": ["balance_scale", "era", "esl"],
     "cv": 3,
     "n_jobs": 1,
-    "input_preprocessing": "std",
+    "input_preprocessing": StandardScaler(),
     "results_path": "results/",
     "eval_metrics": [
         "accuracy_score",
