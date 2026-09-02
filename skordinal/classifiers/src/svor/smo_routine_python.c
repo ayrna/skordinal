@@ -20,12 +20,12 @@
 \*******************************************************************************/
 
 unsigned int active_threshold (smo_Settings * settings) {
-	unsigned int i, j = 0 ; double active = 0, temp = 0 ; 
-	for (i=1;i<settings->pairs->classes;i++) {
-		temp = settings->bj_low[i-1]-settings->bj_up[i-1] ;
-		if (temp>active && temp>TOL) { active = temp ; j = i ; }
-	}
-	return j ; 
+    unsigned int i, j = 0 ; double active = 0, temp = 0 ; 
+    for (i=1;i<settings->pairs->classes;i++) {
+        temp = settings->bj_low[i-1]-settings->bj_up[i-1] ;
+        if (temp>active && temp>TOL) { active = temp ; j = i ; }
+    }
+    return j ; 
 } /* end of active_threshold */
 
 
@@ -43,12 +43,12 @@ unsigned int active_threshold (smo_Settings * settings) {
 \*******************************************************************************/
 
 unsigned int active_cross_threshold (smo_Settings * settings) {
-	unsigned int i, j = 0 ; double active = 0, temp = 0 ; 
-	for (i=1;i<settings->pairs->classes;i++) {
-		temp = settings->bmu_low[i-1]-settings->bmu_up[i-1] ;
-		if (temp>active && temp>TOL) { active = temp ; j = i ; }
-	}
-	return j ;
+    unsigned int i, j = 0 ; double active = 0, temp = 0 ; 
+    for (i=1;i<settings->pairs->classes;i++) {
+        temp = settings->bmu_low[i-1]-settings->bmu_up[i-1] ;
+        if (temp>active && temp>TOL) { active = temp ; j = i ; }
+    }
+    return j ;
 }  /* end of active_cross_threshold */
 
 
@@ -67,76 +67,76 @@ unsigned int active_cross_threshold (smo_Settings * settings) {
 \*******************************************************************************/
 
 BOOL ordinal_examine_example_SVOREX ( Alphas * alpha, smo_Settings * settings ) {
-	double F2 = 0 ; unsigned int y2 = 0, b1 = 0, b2 = 0, loop = 0 ;
-	long unsigned int i1 = 0, i2 = 0, i3 = 0 ;
-	BOOL optimal = TRUE ; Set_Name set_up, set_dw ;
+    double F2 = 0 ; unsigned int y2 = 0, b1 = 0, b2 = 0, loop = 0 ;
+    long unsigned int i1 = 0, i2 = 0, i3 = 0 ;
+    BOOL optimal = TRUE ; Set_Name set_up, set_dw ;
 
-	i2 = alpha - settings->alpha + 1 ;
-	set_up = alpha->setname_up ; set_dw = alpha->setname_dw ; y2 = alpha->pair->target ;
+    i2 = alpha - settings->alpha + 1 ;
+    set_up = alpha->setname_up ; set_dw = alpha->setname_dw ; y2 = alpha->pair->target ;
 
-	if ( set_up == Io_a || set_dw == Io_b ) F2 = alpha->f_cache ;
-	else {
-		F2 = Calculate_Ordinal_Fi(i2, settings) ; alpha->f_cache = F2 ;		
-		if (y2<settings->pairs->classes) {
-			if ( (I_Thr == set_up || Io_a == set_up) && (F2+1 < settings->bj_up[y2-1]) ) { settings->bj_up[y2-1] = F2+1 ; settings->ij_up[y2-1] = i2 ; }
-			if ( (I_Two == set_up || Io_a == set_up ) && (F2+1 > settings->bj_low[y2-1]) ) { settings->bj_low[y2-1] = F2+1 ; settings->ij_low[y2-1] = i2 ; }
-		}		
-		if  (y2>1) {
-			if ( (I_One == set_dw || Io_b == set_dw) && (F2-1 < settings->bj_up[y2-2]) ) { settings->bj_up[y2-2] = F2-1 ; settings->ij_up[y2-2] = i2 ; }
-			if ( (I_Fou == set_dw || Io_b == set_dw) && (F2-1 > settings->bj_low[y2-2]) ) { settings->bj_low[y2-2] = F2-1 ; settings->ij_low[y2-2] = i2 ; }
-		}
-	}
+    if ( set_up == Io_a || set_dw == Io_b ) F2 = alpha->f_cache ;
+    else {
+        F2 = Calculate_Ordinal_Fi(i2, settings) ; alpha->f_cache = F2 ;     
+        if (y2<settings->pairs->classes) {
+            if ( (I_Thr == set_up || Io_a == set_up) && (F2+1 < settings->bj_up[y2-1]) ) { settings->bj_up[y2-1] = F2+1 ; settings->ij_up[y2-1] = i2 ; }
+            if ( (I_Two == set_up || Io_a == set_up ) && (F2+1 > settings->bj_low[y2-1]) ) { settings->bj_low[y2-1] = F2+1 ; settings->ij_low[y2-1] = i2 ; }
+        }       
+        if  (y2>1) {
+            if ( (I_One == set_dw || Io_b == set_dw) && (F2-1 < settings->bj_up[y2-2]) ) { settings->bj_up[y2-2] = F2-1 ; settings->ij_up[y2-2] = i2 ; }
+            if ( (I_Fou == set_dw || Io_b == set_dw) && (F2-1 > settings->bj_low[y2-2]) ) { settings->bj_low[y2-2] = F2-1 ; settings->ij_low[y2-2] = i2 ; }
+        }
+    }
 
-	for (loop = 1; loop < settings->pairs->classes; loop ++) {
-		settings->bmu_low[loop-1]=settings->bj_low[loop-1] ; settings->imu_low[loop-1]=loop ;
-		if (loop>1 && settings->bmu_low[loop-2]>settings->bmu_low[loop-1]) { settings->bmu_low[loop-1]=settings->bmu_low[loop-2] ; settings->imu_low[loop-1]=settings->imu_low[loop-2] ; }
-	}
-	for (loop = settings->pairs->classes-1; loop > 0; loop --) {
-		settings->bmu_up[loop-1]=settings->bj_up[loop-1] ; settings->imu_up[loop-1]=loop ;
-		if (loop<settings->pairs->classes-1 && settings->bmu_up[loop-1]>settings->bmu_up[loop]) { settings->bmu_up[loop-1]=settings->bmu_up[loop] ; settings->imu_up[loop-1]=settings->imu_up[loop] ; }			
-	}
-	for (loop = 2; loop < settings->pairs->classes; loop ++) {
-		if (settings->mu[loop-1]>EPS*EPS) {
-			if (settings->bmu_up[loop-1]>settings->bmu_up[loop-2]) { settings->bmu_up[loop-1]=settings->bmu_up[loop-2] ; settings->imu_up[loop-1]=settings->imu_up[loop-2] ; }
-			if (settings->bmu_low[loop-2]<settings->bmu_low[loop-1]) { settings->bmu_low[loop-2]=settings->bmu_low[loop-1] ; settings->imu_low[loop-2]=settings->imu_low[loop-1] ; }
-		}
-	}
-	
-	if (y2<settings->pairs->classes) {
-		if ( Io_a == set_up || I_Thr == set_up ) {
-			if ( settings->bmu_low[y2-1] - (F2+1) > TOL ) { optimal = FALSE ; i1 = i2 ; b1 = y2 ; i3 = settings->ij_low[settings->imu_low[y2-1]-1] ; b2 = settings->imu_low[y2-1] ; }
-		}
-		if ( Io_a == set_up || I_Two == set_up ) {
-			if ( (F2+1) - settings->bmu_up[y2-1] > TOL ) { optimal = FALSE ; i1 = settings->ij_up[settings->imu_up[y2-1]-1] ; b1 = settings->imu_up[y2-1] ; b2 = y2 ; i3 = i2 ; }
-		}
-		if (optimal == FALSE) {
-			if ( set_up == Io_a ) {
-				if ( settings->bmu_low[y2-1] - (F2+1) > (F2+1) - settings->bmu_up[y2-1] ) { i1 = i2 ; b1 = y2 ; b2 = settings->imu_low[y2-1] ; i3 = settings->ij_low[settings->imu_low[y2-1]-1] ; }
-				else { i1 = settings->ij_up[settings->imu_up[y2-1]-1] ; b1 = settings->imu_up[y2-1] ; b2 = y2 ; i3 = i2 ; }
-			}
-			if (i1==i3) { if (TRUE == ordinal_cross_identical( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2, settings) ) return TRUE ; }
-			if (b1==b2) { if (TRUE == ordinal_takestep( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2 , settings) ) return TRUE ; }
-			else { if (TRUE == ordinal_cross_takestep( settings->alpha + i1 - 1,b1, settings->alpha + i3 - 1, b2 , settings) ) return TRUE ; }
-		}
-	}
-	if (y2>1) {
-		if ( Io_b == set_dw || I_One == set_dw ) {		
-			if ( settings->bmu_low[y2-2] - (F2-1) > TOL ) { optimal = FALSE ; i1 = i2 ; b1 = y2-1 ; b2 = settings->imu_low[y2-2] ; i3 = settings->ij_low[settings->imu_low[y2-2]-1] ; }
-		}
-		if ( Io_b == set_dw || I_Fou == set_dw ) {
-			if ( (F2-1) - settings->bmu_up[y2-2] > TOL ) { optimal = FALSE ; b1 = settings->imu_up[y2-2] ; i1 = settings->ij_up[settings->imu_up[y2-2]-1] ; b2 = y2-1 ; i3 = i2 ; }
-		}
-		if (optimal == FALSE) {
-			if ( set_dw == Io_b ) {
-				if ( settings->bmu_low[y2-2] - (F2-1) > (F2-1) - settings->bmu_up[y2-2] ) { i1 = i2 ; b1 = y2-1 ; b2 = settings->imu_low[y2-2] ; i3 = settings->ij_low[settings->imu_low[y2-2]-1] ; }
-				else { b1 = settings->imu_up[y2-2] ; i1 = settings->ij_up[settings->imu_up[y2-2]-1] ; b2 = y2-1 ; i3 = i2 ; }
-			}
-			if (i1==i3) { if (TRUE == ordinal_cross_identical( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2-1, settings) ) return TRUE ; }
-			else if (b1==b2) { if (TRUE == ordinal_takestep( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2-1, settings) ) return TRUE ; }
-			else { if (TRUE == ordinal_cross_takestep( settings->alpha + i1 - 1, b1, settings->alpha + i3 - 1, b2, settings) ) return TRUE ; }
-		}
-	}
-	return FALSE ;
+    for (loop = 1; loop < settings->pairs->classes; loop ++) {
+        settings->bmu_low[loop-1]=settings->bj_low[loop-1] ; settings->imu_low[loop-1]=loop ;
+        if (loop>1 && settings->bmu_low[loop-2]>settings->bmu_low[loop-1]) { settings->bmu_low[loop-1]=settings->bmu_low[loop-2] ; settings->imu_low[loop-1]=settings->imu_low[loop-2] ; }
+    }
+    for (loop = settings->pairs->classes-1; loop > 0; loop --) {
+        settings->bmu_up[loop-1]=settings->bj_up[loop-1] ; settings->imu_up[loop-1]=loop ;
+        if (loop<settings->pairs->classes-1 && settings->bmu_up[loop-1]>settings->bmu_up[loop]) { settings->bmu_up[loop-1]=settings->bmu_up[loop] ; settings->imu_up[loop-1]=settings->imu_up[loop] ; }         
+    }
+    for (loop = 2; loop < settings->pairs->classes; loop ++) {
+        if (settings->mu[loop-1]>EPS*EPS) {
+            if (settings->bmu_up[loop-1]>settings->bmu_up[loop-2]) { settings->bmu_up[loop-1]=settings->bmu_up[loop-2] ; settings->imu_up[loop-1]=settings->imu_up[loop-2] ; }
+            if (settings->bmu_low[loop-2]<settings->bmu_low[loop-1]) { settings->bmu_low[loop-2]=settings->bmu_low[loop-1] ; settings->imu_low[loop-2]=settings->imu_low[loop-1] ; }
+        }
+    }
+    
+    if (y2<settings->pairs->classes) {
+        if ( Io_a == set_up || I_Thr == set_up ) {
+            if ( settings->bmu_low[y2-1] - (F2+1) > TOL ) { optimal = FALSE ; i1 = i2 ; b1 = y2 ; i3 = settings->ij_low[settings->imu_low[y2-1]-1] ; b2 = settings->imu_low[y2-1] ; }
+        }
+        if ( Io_a == set_up || I_Two == set_up ) {
+            if ( (F2+1) - settings->bmu_up[y2-1] > TOL ) { optimal = FALSE ; i1 = settings->ij_up[settings->imu_up[y2-1]-1] ; b1 = settings->imu_up[y2-1] ; b2 = y2 ; i3 = i2 ; }
+        }
+        if (optimal == FALSE) {
+            if ( set_up == Io_a ) {
+                if ( settings->bmu_low[y2-1] - (F2+1) > (F2+1) - settings->bmu_up[y2-1] ) { i1 = i2 ; b1 = y2 ; b2 = settings->imu_low[y2-1] ; i3 = settings->ij_low[settings->imu_low[y2-1]-1] ; }
+                else { i1 = settings->ij_up[settings->imu_up[y2-1]-1] ; b1 = settings->imu_up[y2-1] ; b2 = y2 ; i3 = i2 ; }
+            }
+            if (i1==i3) { if (TRUE == ordinal_cross_identical( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2, settings) ) return TRUE ; }
+            else if (b1==b2) { if (TRUE == ordinal_takestep( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2 , settings) ) return TRUE ; }
+            else { if (TRUE == ordinal_cross_takestep( settings->alpha + i1 - 1,b1, settings->alpha + i3 - 1, b2 , settings) ) return TRUE ; }
+        }
+    }
+    if (y2>1) {
+        if ( Io_b == set_dw || I_One == set_dw ) {      
+            if ( settings->bmu_low[y2-2] - (F2-1) > TOL ) { optimal = FALSE ; i1 = i2 ; b1 = y2-1 ; b2 = settings->imu_low[y2-2] ; i3 = settings->ij_low[settings->imu_low[y2-2]-1] ; }
+        }
+        if ( Io_b == set_dw || I_Fou == set_dw ) {
+            if ( (F2-1) - settings->bmu_up[y2-2] > TOL ) { optimal = FALSE ; b1 = settings->imu_up[y2-2] ; i1 = settings->ij_up[settings->imu_up[y2-2]-1] ; b2 = y2-1 ; i3 = i2 ; }
+        }
+        if (optimal == FALSE) {
+            if ( set_dw == Io_b ) {
+                if ( settings->bmu_low[y2-2] - (F2-1) > (F2-1) - settings->bmu_up[y2-2] ) { i1 = i2 ; b1 = y2-1 ; b2 = settings->imu_low[y2-2] ; i3 = settings->ij_low[settings->imu_low[y2-2]-1] ; }
+                else { b1 = settings->imu_up[y2-2] ; i1 = settings->ij_up[settings->imu_up[y2-2]-1] ; b2 = y2-1 ; i3 = i2 ; }
+            }
+            if (i1==i3) { if (TRUE == ordinal_cross_identical( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2-1, settings) ) return TRUE ; }
+            else if (b1==b2) { if (TRUE == ordinal_takestep( settings->alpha + i1 - 1, settings->alpha + i3 - 1, y2-1, settings) ) return TRUE ; }
+            else { if (TRUE == ordinal_cross_takestep( settings->alpha + i1 - 1, b1, settings->alpha + i3 - 1, b2, settings) ) return TRUE ; }
+        }
+    }
+    return FALSE ;
 }  /* end of ordinal_examine_example_SVORIM */
 
 
@@ -155,45 +155,45 @@ BOOL ordinal_examine_example_SVOREX ( Alphas * alpha, smo_Settings * settings ) 
 \*******************************************************************************/
 
 BOOL ordinal_examine_example_SVORIM ( Alphas * alpha, smo_Settings * settings ) {
-	double F2 = 0 ; unsigned int j = 0, loop ;
-	long unsigned int i1 = 0, i2 = alpha - settings->alpha + 1 ;
-	BOOL optimal = TRUE ; 
+    double F2 = 0 ; unsigned int j = 0, loop ;
+    long unsigned int i1 = 0, i2 = alpha - settings->alpha + 1 ;
+    BOOL optimal = TRUE ; 
 
-	if ( FALSE == Is_Io(alpha,settings) ) {
-		alpha->f_cache = Calculate_Ordinal_Fi(i2, settings) ;
-		for (loop = 0 ; loop < settings->pairs->classes-1 ; loop ++) {
-			if (alpha->pair->target > (loop+1) ) {
-				if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_One) { if (alpha->f_cache-1<=settings->bj_up[loop]) { settings->bj_up[loop] = alpha->f_cache-1 ; settings->ij_up[loop] = alpha - settings->alpha + 1 ; } }
-				if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_Fou) { if (alpha->f_cache-1>=settings->bj_low[loop]) { settings->bj_low[loop] = alpha->f_cache-1 ; settings->ij_low[loop] = alpha - settings->alpha + 1 ; } }
-			} else {
-				if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Thr) { if (alpha->f_cache+1<=settings->bj_up[loop]) { settings->bj_up[loop] = alpha->f_cache+1 ; settings->ij_up[loop] = alpha - settings->alpha + 1 ; } }
-				if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Two) { if (alpha->f_cache+1>=settings->bj_low[loop]) { settings->bj_low[loop] = alpha->f_cache+1 ; settings->ij_low[loop] = alpha - settings->alpha + 1 ; } }
-			}
-		}
-	}
-	
-	for (loop = 0 ; loop < settings->pairs->classes-1 ; loop ++) {
-		if (alpha->pair->target > (loop+1) ) {
-			if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_One) {
-				if ( settings->bj_low[loop] - (alpha->f_cache-1) > TOL ) { optimal = FALSE ; if (settings->bj_low[loop]-(alpha->f_cache-1)>F2) { i1 = settings->ij_low[loop] ; F2 = settings->bj_low[loop]-(alpha->f_cache-1) ; j = loop+1 ; } }
-			}
-			if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_Fou) {
-				if ( (alpha->f_cache-1) - settings->bj_up[loop] > TOL ) { optimal = FALSE ; if ((alpha->f_cache-1) - settings->bj_up[loop]>F2) { i1 = settings->ij_up[loop] ; F2 = (alpha->f_cache-1) - settings->bj_up[loop] ; j = loop+1 ; } }
-			}
-		} else {
-			if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Thr) {
-				if (settings->bj_low[loop]-(alpha->f_cache+1)>TOL) { optimal = FALSE ; if (settings->bj_low[loop]-(alpha->f_cache+1)>F2) { i1 = settings->ij_low[loop] ; F2 = settings->bj_low[loop]-(alpha->f_cache+1) ; j = loop+1 ; } }
-			}
-			if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Two) {
-				if ((alpha->f_cache+1)-settings->bj_up[loop]>TOL) { optimal = FALSE ; if ((alpha->f_cache+1)-settings->bj_up[loop]>F2) { i1 = settings->ij_up[loop] ; F2 = (alpha->f_cache+1)-settings->bj_up[loop] ; j = loop+1 ; } }
-			}
-		}
-	}
+    if ( FALSE == Is_Io(alpha,settings) ) {
+        alpha->f_cache = Calculate_Ordinal_Fi(i2, settings) ;
+        for (loop = 0 ; loop < settings->pairs->classes-1 ; loop ++) {
+            if (alpha->pair->target > (loop+1) ) {
+                if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_One) { if (alpha->f_cache-1<=settings->bj_up[loop]) { settings->bj_up[loop] = alpha->f_cache-1 ; settings->ij_up[loop] = alpha - settings->alpha + 1 ; } }
+                if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_Fou) { if (alpha->f_cache-1>=settings->bj_low[loop]) { settings->bj_low[loop] = alpha->f_cache-1 ; settings->ij_low[loop] = alpha - settings->alpha + 1 ; } }
+            } else {
+                if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Thr) { if (alpha->f_cache+1<=settings->bj_up[loop]) { settings->bj_up[loop] = alpha->f_cache+1 ; settings->ij_up[loop] = alpha - settings->alpha + 1 ; } }
+                if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Two) { if (alpha->f_cache+1>=settings->bj_low[loop]) { settings->bj_low[loop] = alpha->f_cache+1 ; settings->ij_low[loop] = alpha - settings->alpha + 1 ; } }
+            }
+        }
+    }
+    
+    for (loop = 0 ; loop < settings->pairs->classes-1 ; loop ++) {
+        if (alpha->pair->target > (loop+1) ) {
+            if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_One) {
+                if ( settings->bj_low[loop] - (alpha->f_cache-1) > TOL ) { optimal = FALSE ; if (settings->bj_low[loop]-(alpha->f_cache-1)>F2) { i1 = settings->ij_low[loop] ; F2 = settings->bj_low[loop]-(alpha->f_cache-1) ; j = loop+1 ; } }
+            }
+            if (alpha->setname_ptr[loop]==Io_b || alpha->setname_ptr[loop]==I_Fou) {
+                if ( (alpha->f_cache-1) - settings->bj_up[loop] > TOL ) { optimal = FALSE ; if ((alpha->f_cache-1) - settings->bj_up[loop]>F2) { i1 = settings->ij_up[loop] ; F2 = (alpha->f_cache-1) - settings->bj_up[loop] ; j = loop+1 ; } }
+            }
+        } else {
+            if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Thr) {
+                if (settings->bj_low[loop]-(alpha->f_cache+1)>TOL) { optimal = FALSE ; if (settings->bj_low[loop]-(alpha->f_cache+1)>F2) { i1 = settings->ij_low[loop] ; F2 = settings->bj_low[loop]-(alpha->f_cache+1) ; j = loop+1 ; } }
+            }
+            if (alpha->setname_ptr[loop]==Io_a || alpha->setname_ptr[loop]==I_Two) {
+                if ((alpha->f_cache+1)-settings->bj_up[loop]>TOL) { optimal = FALSE ; if ((alpha->f_cache+1)-settings->bj_up[loop]>F2) { i1 = settings->ij_up[loop] ; F2 = (alpha->f_cache+1)-settings->bj_up[loop] ; j = loop+1 ; } }
+            }
+        }
+    }
 
-	if (optimal == FALSE) {		
-		if (TRUE == ordinal_takestep( settings->alpha + i1 - 1, settings->alpha + i2 - 1, j , settings) ) return TRUE ;
-	}
-	return FALSE ;
+    if (optimal == FALSE) {     
+        if (TRUE == ordinal_takestep( settings->alpha + i1 - 1, settings->alpha + i2 - 1, j , settings) ) return TRUE ;
+    }
+    return FALSE ;
 } /* end of ordinal_examine_example_SVORIM */
 
 
@@ -212,8 +212,8 @@ BOOL ordinal_examine_example_SVORIM ( Alphas * alpha, smo_Settings * settings ) 
 \*******************************************************************************/
 
 BOOL ordinal_examine_example ( Alphas * alpha, smo_Settings * settings ) {
-	if (settings->model_type == 0) return ordinal_examine_example_SVOREX(alpha, settings);
-	else return ordinal_examine_example_SVORIM(alpha, settings);
+    if (settings->model_type == 0) return ordinal_examine_example_SVOREX(alpha, settings);
+    else return ordinal_examine_example_SVORIM(alpha, settings);
 } /* end of ordinal_examine_example */
 
 
@@ -233,80 +233,77 @@ BOOL ordinal_examine_example ( Alphas * alpha, smo_Settings * settings ) {
 
 BOOL smo_ordinal_Python_SVOREX (smo_Settings * settings)
 {
-	BOOL examineAll = TRUE ;
-	long unsigned int numChanged = 0 ;
-	long unsigned int loop = 0 ;
-	long unsigned int max_iter = 0;
-	long unsigned int iter_limit = settings->pairs->count * 100;
-	
-	BETA = 1 ;  
-	EPSILON = 0 ;
-	
-	if ( VC <= 0 || EPSILON < 0 ) return TRUE ;
-		
-	SMO_WORKING = TRUE ;
-	
-	if(Clean_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
-	if(Check_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
+    BOOL examineAll = TRUE ;
+    long unsigned int numChanged = 0 ;
+    long unsigned int loop = 0 ;
+    
+    BETA = 1 ;  
+    EPSILON = 0 ;
+    
+    if ( VC <= 0 || EPSILON < 0 ) return TRUE ;
+        
+    SMO_WORKING = TRUE ;
+    
+    if(Clean_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
+    if(Check_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
 
-	tstart() ; 
+    tstart() ; 
 
-	while ( (numChanged > 0 || examineAll) && max_iter < iter_limit )
-	{
-		max_iter++;
-		if ( examineAll )
-		{       
-			numChanged = 0 ;
-			for ( loop = 1; loop <= settings->pairs->count; loop ++ )
-			{
-				numChanged += ordinal_examine_example( settings->alpha + loop - 1, settings ) ; 
-			}           
-		}
-		else
-		{
-			loop = active_cross_threshold (settings) ;
-			while ( loop>0 && numChanged>0 )
-			{
-				if (TRUE == ordinal_cross_takestep (settings->alpha + settings->ij_up[settings->imu_up[loop-1]-1] - 1,settings->imu_up[loop-1],
-								settings->alpha + settings->ij_low[settings->imu_low[loop-1]-1] - 1,settings->imu_low[loop-1], settings) )
-				{
-					numChanged += 1 ;
-					loop = active_cross_threshold (settings) ;
-				}
-				else
-				{
-					break;
-				}
-			}
-			numChanged = 0 ;
-			if ( TRUE == settings->abort )
-			{
-				SMO_WORKING = FALSE ;
-				return TRUE ;
-			}
-		}
+    while ( numChanged > 0 || examineAll )
+    {
+        if ( examineAll )
+        {       
+            numChanged = 0 ;
+            for ( loop = 1; loop <= settings->pairs->count; loop ++ )
+            {
+                numChanged += ordinal_examine_example( settings->alpha + loop - 1, settings ) ; 
+            }           
+        }
+        else
+        {
+            loop = active_cross_threshold (settings) ;
+            while ( loop>0 && numChanged>0 )
+            {
+                if (TRUE == ordinal_cross_takestep (settings->alpha + settings->ij_up[settings->imu_up[loop-1]-1] - 1,settings->imu_up[loop-1],
+                                settings->alpha + settings->ij_low[settings->imu_low[loop-1]-1] - 1,settings->imu_low[loop-1], settings) )
+                {
+                    numChanged += 1 ;
+                    loop = active_cross_threshold (settings) ;
+                }
+                else
+                {
+                    break;
+                }
+            }
+            numChanged = 0 ;
+            if ( TRUE == settings->abort )
+            {
+                SMO_WORKING = FALSE ;
+                return TRUE ;
+            }
+        }
 
-		if ( TRUE == examineAll )
-			examineAll = FALSE ;
-		else if ( 0 == numChanged )
-			examineAll = TRUE ;
-	}
+        if ( TRUE == examineAll )
+            examineAll = FALSE ;
+        else if ( 0 == numChanged )
+            examineAll = TRUE ;
+    }
 
-	tend() ; 
-	settings->smo_timing = tval() ;
-	DURATION += settings->smo_timing ;
+    tend() ; 
+    settings->smo_timing = tval() ;
+    DURATION += settings->smo_timing ;
 
-	for (loop=1;loop<settings->pairs->classes;loop++)
-	{
-		settings->biasj[loop-1] = (settings->bmu_low[loop-1] + settings->bmu_up[loop-1])/2.0 ;
-		if (loop > 1 && settings->biasj[loop-1]<settings->biasj[loop-2])
-		{
-			settings->biasj[loop-1] = settings->biasj[loop-2] ;
-		}   
-	}
+    for (loop=1;loop<settings->pairs->classes;loop++)
+    {
+        settings->biasj[loop-1] = (settings->bmu_low[loop-1] + settings->bmu_up[loop-1])/2.0 ;
+        if (loop > 1 && settings->biasj[loop-1]<settings->biasj[loop-2])
+        {
+            settings->biasj[loop-1] = settings->biasj[loop-2] ;
+        }   
+    }
 
-	SMO_WORKING = FALSE ;
-	return TRUE ; 
+    SMO_WORKING = FALSE ;
+    return TRUE ; 
 } /* end of smo_ordinal_Python_SVOREX */
 
 
@@ -325,90 +322,88 @@ BOOL smo_ordinal_Python_SVOREX (smo_Settings * settings)
 
 BOOL smo_ordinal_Python_SVORIM (smo_Settings * settings)
 {
-	BOOL examineAll = TRUE ;
-	long unsigned int numChanged = 0 ;
-	long unsigned int loop = 0 ;
-	long unsigned int max_iter = 0;
-	long unsigned int iter_limit = settings->pairs->count * 100;
-	unsigned int j ;
-	
-	BETA = 1 ;  
-	EPSILON = 0 ;
-	
-	if ( VC <= 0 || EPSILON < 0 ) return TRUE ;
-		
-	SMO_WORKING = TRUE ;
-	
-	if(Clean_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
-	if(Check_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
+    BOOL examineAll = TRUE ;
+    long unsigned int numChanged = 0 ;
+    long unsigned int loop = 0 ;
+    unsigned int j ;
+    
+    BETA = 1 ;  
+    EPSILON = 0 ;
+    
+    if ( VC <= 0 || EPSILON < 0 ) return TRUE ;
+        
+    SMO_WORKING = TRUE ;
+    
+    if(Clean_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
+    if(Check_Alphas( settings->alpha, settings ) == FALSE) return FALSE;
 
-	tstart() ; 
+    tstart() ; 
 
-	while ( (numChanged > 0 || examineAll) && max_iter < iter_limit )
-	{
-		max_iter++;
-		if ( examineAll )
-		{       
-			numChanged = 0 ;
-			for ( loop = 1; loop <= settings->pairs->count; loop ++ )
-			{
-				numChanged += ordinal_examine_example( settings->alpha + loop - 1, settings ) ; 
-			}           
-		}
-		else
-		{
-			j = active_threshold (settings) ;
-			while ( numChanged>0 && j>0 )
-			{
-				if (TRUE == ordinal_takestep (settings->alpha + settings->ij_up[j-1] - 1, settings->alpha + settings->ij_low[j-1] - 1, j, settings) )
-				{
-					numChanged += 1 ;
-					j = active_threshold (settings) ;
-				}
-				else
-				{
-					break;
-				}
-			}
-			numChanged = 0 ;
-			if ( TRUE == settings->abort )
-			{
-				SMO_WORKING = FALSE ;
-				return TRUE ;
-			}
-		}
+    while ( numChanged > 0 || examineAll )
+    {
 
-		if ( TRUE == examineAll )
-			examineAll = FALSE ;
-		else if ( 0 == numChanged )
-			examineAll = TRUE ;
-	}
+        if ( examineAll )
+        {       
+            numChanged = 0 ;
+            for ( loop = 1; loop <= settings->pairs->count; loop ++ )
+            {
+                numChanged += ordinal_examine_example( settings->alpha + loop - 1, settings ) ; 
+            }           
+        }
+        else
+        {
+            j = active_threshold (settings) ;
+            while ( numChanged>0 && j>0 )
+            {
+                if (TRUE == ordinal_takestep (settings->alpha + settings->ij_up[j-1] - 1, settings->alpha + settings->ij_low[j-1] - 1, j, settings) )
+                {
+                    numChanged += 1 ;
+                    j = active_threshold (settings) ;
+                }
+                else
+                {
+                    break;
+                }
+            }
+            numChanged = 0 ;
+            if ( TRUE == settings->abort )
+            {
+                SMO_WORKING = FALSE ;
+                return TRUE ;
+            }
+        }
 
-	tend() ; 
-	settings->smo_timing = tval() ;
-	DURATION += settings->smo_timing ;
+        if ( TRUE == examineAll )
+            examineAll = FALSE ;
+        else if ( 0 == numChanged )
+            examineAll = TRUE ;
+    }
 
-	for (loop=1;loop<settings->pairs->classes;loop++)
-	{
-		settings->biasj[loop-1] = (settings->bj_low[loop-1] + settings->bj_up[loop-1])/2.0 ;
-		if (loop > 1 && settings->biasj[loop-1]<settings->biasj[loop-2])
-		{
-			settings->biasj[loop-1] = settings->biasj[loop-2] ;
-		}   
-	}
+    tend() ; 
+    settings->smo_timing = tval() ;
+    DURATION += settings->smo_timing ;
 
-	for ( loop = 1; loop <= settings->pairs->count; loop ++ ) {
-		Alphas *al = settings->alpha + loop - 1;
-		double alpha_sum = 0;
-		for(unsigned int k=0; k < settings->pairs->classes - 1; k++) {
-			if (al->pair->target <= k+1) alpha_sum -= al->alpha_ptr[k];
-			else alpha_sum += al->alpha_ptr[k];
-		}
-		al->alpha = alpha_sum; 
-	}
+    for (loop=1;loop<settings->pairs->classes;loop++)
+    {
+        settings->biasj[loop-1] = (settings->bj_low[loop-1] + settings->bj_up[loop-1])/2.0 ;
+        if (loop > 1 && settings->biasj[loop-1]<settings->biasj[loop-2])
+        {
+            settings->biasj[loop-1] = settings->biasj[loop-2] ;
+        }   
+    }
 
-	SMO_WORKING = FALSE ;
-	return TRUE ; 
+    for ( loop = 1; loop <= settings->pairs->count; loop ++ ) {
+        Alphas *al = settings->alpha + loop - 1;
+        double alpha_sum = 0;
+        for(unsigned int k=0; k < settings->pairs->classes - 1; k++) {
+            if (al->pair->target <= k+1) alpha_sum -= al->alpha_ptr[k];
+            else alpha_sum += al->alpha_ptr[k];
+        }
+        al->alpha = alpha_sum; 
+    }
+
+    SMO_WORKING = FALSE ;
+    return TRUE ; 
 } /* end of smo_ordinal_Python_SVORIM */
 
 
@@ -427,13 +422,13 @@ BOOL smo_ordinal_Python_SVORIM (smo_Settings * settings)
 
 BOOL smo_routine_Python (smo_Settings * settings)
 {
-	if (NULL == settings) return FALSE ;
-	if (ORDINAL != settings->pairs->datatype) {
-		PyErr_SetString(PyExc_ValueError, "SMO can not handle this data type");
-		return FALSE;
-	}
-	if (settings->model_type == 0) return smo_ordinal_Python_SVOREX (settings) ;
-	else return smo_ordinal_Python_SVORIM (settings) ;
+    if (NULL == settings) return FALSE ;
+    if (ORDINAL != settings->pairs->datatype) {
+        PyErr_SetString(PyExc_ValueError, "SMO can not handle this data type");
+        return FALSE;
+    }
+    if (settings->model_type == 0) return smo_ordinal_Python_SVOREX (settings) ;
+    else return smo_ordinal_Python_SVORIM (settings) ;
 } /* end of smo_routine_Python */
 
 // the end of smo_routine_python.c
