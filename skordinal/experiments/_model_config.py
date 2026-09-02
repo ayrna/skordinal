@@ -16,9 +16,8 @@ from ._base import _set_nested_random_state
 class ModelConfig:
     """Bind a sklearn estimator to an optional hyper-parameter grid.
 
-    ``ModelConfig`` is a pure, immutable description of what to run.
-    It carries no evaluation protocol (cv folds, metric, seed) — those
-    live on the orchestrator that consumes it.
+    An immutable description of what to run, carrying no evaluation
+    protocol (cv folds, metric, seed): those live on the orchestrator.
 
     Parameters
     ----------
@@ -127,18 +126,15 @@ class ModelConfig:
     def build(self, random_state: int | None = None) -> BaseEstimator:
         """Return a fresh clone of the estimator, optionally seeded.
 
-        Creates a clone via ``sklearn.base.clone`` so ``self.estimator``
-        is never mutated.  When ``random_state`` is not ``None``, the
-        seed is forwarded to every parameter named ``random_state`` or
-        ending in ``__random_state``, including those of nested
-        estimators and Pipeline steps.  When the estimator exposes no
-        such parameter, the seed is ignored.
+        Clones via ``sklearn.base.clone``, so ``self.estimator`` is never
+        mutated, then forwards a non-``None`` seed to every parameter named
+        ``random_state`` or ending in ``__random_state``, including those of
+        nested estimators and Pipeline steps.
 
         Parameters
         ----------
         random_state : int or None, default=None
-            Seed to forward to the cloned estimator.  Passing ``None``
-            leaves the estimator's own default unchanged.
+            Seed to forward to the cloned estimator.
 
         Returns
         -------

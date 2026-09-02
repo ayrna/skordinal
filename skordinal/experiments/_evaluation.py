@@ -282,7 +282,6 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     rows = []
 
     for clf, ds, df in _iter_reports(results):
-        # Format as "mean +/- std", or "n/a" when metric is absent or all-NaN
         if col not in df.columns or df[col].isna().all():
             cell = "n/a"
         else:

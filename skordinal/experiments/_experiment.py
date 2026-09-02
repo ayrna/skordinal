@@ -29,11 +29,8 @@ class Experiment:
     """Run a single classifier configuration on one train/test partition.
 
     Wraps one ``ModelConfig`` together with the cross-validation and
-    preprocessing settings shared across partitions. Calling ``run`` applies
-    optional preprocessing, selects and fits the best estimator, predicts on
-    the train and (when present) test splits, computes all evaluation metrics
-    and timing keys, and returns an ``ExperimentResult``. Nothing is written
-    to disk.
+    preprocessing settings shared across partitions. ``run`` does the work
+    for one partition and writes nothing to disk.
 
     Parameters
     ----------
@@ -192,30 +189,27 @@ class Experiment:
             Test labels. When ``None`` no test metrics are computed.
 
         dataset_name : str
-            Name of the dataset, forwarded to the returned
-            ``ExperimentResult``.
+            Name of the dataset, recorded on the result.
 
         classifier_name : str
-            Configuration label, used as ``classifier_name`` in the returned
-            ``ExperimentResult``.
+            Configuration label, recorded on the result.
 
         resample_id : int
-            Partition index, forwarded to the returned ``ExperimentResult``.
+            Partition index, recorded on the result.
 
         train_index : ndarray of shape (n_train_samples,) or None, default=None
             Zero-based positions of the training samples in the original
-            dataset array; forwarded to the returned ``ExperimentResult`` and
-            used as the ``Pattern ID`` column.
+            dataset array, recorded on the result as its ``Pattern ID``
+            column.
 
         test_index : ndarray of shape (n_test_samples,) or None, default=None
             Zero-based positions of the test samples in the original dataset
-            array; forwarded to the returned ``ExperimentResult`` and used as
-            the ``Pattern ID`` column.
+            array, recorded on the result as its ``Pattern ID`` column.
 
         Returns
         -------
         ExperimentResult
-            Fully populated result for this partition. No side effects.
+            Fully populated result for this partition.
 
         Raises
         ------
@@ -232,7 +226,6 @@ class Experiment:
 
         if scaler is not None:
             train_inputs = scaler.fit(train_inputs).transform(train_inputs)
-            # A train-only run has no test split to transform
             if X_test is not None:
                 test_inputs = scaler.transform(X_test)
 
@@ -296,7 +289,7 @@ class Experiment:
                 )
                 test_metrics[metric_name + "_test"] = test_score
 
-        # Assemble timing keys, the cv_* pair stays NaN unless a search ran
+        # The cv_* pair stays NaN unless a search ran
         train_metrics["cv_time_train"] = cv_time_train
         test_metrics["cv_time_test"] = cv_time_test
         train_metrics["time_train"] = refit_time

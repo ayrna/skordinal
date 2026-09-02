@@ -164,9 +164,9 @@ class Results:
     ``hyperparameter_configuration.csv`` records the best parameters per
     seed with the ``clf__`` pipeline prefix stripped; its ``Seed`` column
     always holds the resample identifier. ``report.csv`` is indexed by
-    ``resample_id``, in numeric order. The root-level ``train_summary.csv``
-    and ``test_summary.csv`` files are written by ``save_summary`` and are
-    absent until it is called.
+    ``resample_id``, in numeric order when the ids are integers. The
+    root-level ``train_summary.csv`` and ``test_summary.csv`` files are
+    written by ``save_summary`` and are absent until it is called.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -237,8 +237,7 @@ class Results:
         seed_dir, model_path = self._resample_paths(base_dir, result.resample_id)
         # Clear any temp file left by a prior crash before writing new ones
         _sweep_orphaned_temp_files(base_dir)
-        # Drop this resample's committed row so a crash mid-write cannot
-        # leave a report row describing predictions no longer on disk
+        # Uncommit first, so a crash cannot leave a row without its files
         self._uncommit_report_row(base_dir, result.resample_id)
         # Must run before the writes below recreate what it deletes
         self._remove_stale_artefacts(base_dir, result.resample_id)
@@ -394,17 +393,13 @@ class Results:
     ) -> list[tuple[int | str, Path]]:
         """Return sorted ``(resample_id, path)`` pairs of one split's readable seeds.
 
-        Where a ``report.csv`` exists it is the commit marker, so a seed
-        directory with no row in it was left behind by a crashed save and is
-        skipped, and a row that does carry ``{split}`` metrics but has no
-        predictions file is corruption, not a train-only run, and warns.
-
-        Where the pair has none there is no marker to consult, so every seed
-        holding the split's predictions file is read on the strength of that
-        file, which ``_atomic_write`` leaves either complete or absent. A save
-        that crashed before writing any report row falls here too.
-
-        Ids sort like ``report.csv``'s index.
+        With a ``report.csv`` it is the commit marker: a seed missing from it
+        was left behind by a crashed save and is skipped, while a committed row
+        carrying ``{split}`` metrics but no predictions file is corruption, not
+        a train-only run, and warns. Without one there is no marker, so every
+        seed holding the file is read on the strength of that file, which
+        ``_atomic_write`` leaves either complete or absent. Ids sort like
+        ``report.csv``'s index.
         """
         seeds_dir = (
             self._pair_dir(classifier_name, dataset_name) / "predictions_by_seed"
@@ -717,11 +712,9 @@ class Results:
 
         A pair qualifies on a ``report.csv``, the commit marker, or failing
         that on a ``predictions_by_seed`` directory, which is how a tree
-        written by another tool is discovered. Read a yielded pair with
-        ``report``, ``hyperparameters``, ``predictions`` or ``model``; each
-        raises ``FileNotFoundError`` when its own file is absent, so only
-        ``report`` is guaranteed to fail for a pair carrying no
-        ``report.csv``.
+        written by another tool is discovered. A yielded pair need not carry
+        every file: ``report``, ``hyperparameters``, ``predictions`` and
+        ``model`` each raise ``FileNotFoundError`` when their own is absent.
 
         Yields
         ------

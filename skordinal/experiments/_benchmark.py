@@ -39,11 +39,11 @@ except ImportError:  # pragma: no cover - the dev extra always installs tqdm
 class Benchmark:
     """Run a benchmark of M configurations across N datasets and their resamples.
 
-    Each configuration pairs a classifier method with one or more hyper-parameter
-    values. Calling ``run`` performs cross-validation for every resample of each
-    dataset-configuration pair, fits the selected model, predicts the test
-    labels, and stores all metrics in a ``Results`` object. ``summarize``
-    then writes the aggregated train and test summaries.
+    Each configuration pairs a classifier method with one or more
+    hyper-parameter values. ``run`` fits and scores every resample of each
+    dataset-configuration pair, cross-validating the grid when it holds more
+    than one candidate, and stores the metrics in a ``Results`` object.
+    ``summarize`` then writes the aggregated train and test summaries.
 
     Parameters
     ----------
@@ -142,8 +142,8 @@ class Benchmark:
 
     Attributes
     ----------
-    _results : Results
-        Manages and stores all information obtained during the experiment run.
+    results_path : Path
+        Absolute results root, resolved once at construction.
 
     Examples
     --------
@@ -256,8 +256,7 @@ class Benchmark:
         Returns
         -------
         benchmark : Benchmark
-            A fully configured ``Benchmark`` instance ready to call
-            ``run`` on.
+            A configured ``Benchmark``, ready to ``run``.
 
         Raises
         ------
@@ -283,13 +282,11 @@ class Benchmark:
     def run(self) -> None:
         """Run the benchmark over every dataset, configuration and resample.
 
-        Loads all datasets via the dataset-loading layer, one resample at a
-        time. Builds a model per resample, using cross-validation to find the
-        optimal values among the hyper-parameters to compare from.
-
-        Uses the built model to get train and test metrics, storing all the
-        information into a Results object. Resamples already saved are
-        skipped unless ``overwrite`` is ``True``.
+        Streams each dataset's resamples from the dataset-loading layer and
+        runs every configuration on each of them, cross-validating the grid
+        when that configuration needs a search. Every result is stored in the
+        ``Results`` object, and resamples already saved are skipped unless
+        ``overwrite`` is ``True``.
 
         Raises
         ------
