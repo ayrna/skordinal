@@ -143,4 +143,3 @@ def load_tocuco_partitions(
             )
 
     return _iter()
-
