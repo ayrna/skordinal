@@ -5,6 +5,8 @@ import math
 import numpy as np
 import numpy.testing as npt
 import pytest
+from sklearn.decomposition import PCA
+from sklearn.dummy import DummyClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
@@ -55,26 +57,50 @@ def _call_run(experiment, X_train, y_train, X_test, y_test):
     )
 
 
-def test_empty_eval_metrics_raises():
-    """An empty eval_metrics list raises ValueError."""
-    with pytest.raises(ValueError, match="'eval_metrics' must be a non-empty list"):
-        Experiment(ModelConfig(SVC()), eval_metrics=[])
-
-
-def test_rejects_a_non_model_config():
-    """A bare estimator instead of a ModelConfig raises TypeError."""
-    with pytest.raises(TypeError, match="'model' must be a ModelConfig instance"):
-        Experiment(SVC(), eval_metrics=["mean_absolute_error"])
-
-
-def test_input_preprocessing_rejects_a_string():
-    """The removed "std"/"norm" tokens raise TypeError at construction."""
-    with pytest.raises(TypeError, match="'input_preprocessing' must be None"):
-        Experiment(
-            _MINIMAL_CONF,
-            eval_metrics=["mean_absolute_error"],
-            input_preprocessing="std",
-        )
+@pytest.mark.parametrize(
+    "overrides, exc_type, match",
+    [
+        pytest.param(
+            {"model": SVC()},
+            TypeError,
+            "'model' must be a ModelConfig instance",
+            id="bare-estimator",
+        ),
+        pytest.param(
+            {"eval_metrics": []},
+            ValueError,
+            "'eval_metrics' must be a non-empty list",
+            id="empty-eval-metrics",
+        ),
+        pytest.param(
+            {"eval_metrics": ["ranked_probability_score"]},
+            ValueError,
+            "ranked_probability_score",
+            id="proba-only-eval-metric",
+        ),
+        pytest.param(
+            {"tuning_metric": "mean_absolute_error"},
+            ValueError,
+            "only registered as 'neg_",
+            id="bare-loss-tuning-metric",
+        ),
+        pytest.param(
+            {"input_preprocessing": "std"},
+            TypeError,
+            "'input_preprocessing' must be None",
+            id="string-input-preprocessing",
+        ),
+    ],
+)
+def test_constructor_rejects_invalid_arguments(overrides, exc_type, match):
+    """Each invalid argument raises at construction, before anything is fitted."""
+    kwargs = {
+        "model": _MINIMAL_CONF,
+        "eval_metrics": ["mean_absolute_error"],
+        **overrides,
+    }
+    with pytest.raises(exc_type, match=match):
+        Experiment(kwargs.pop("model"), **kwargs)
 
 
 @pytest.mark.parametrize("kwargs, expected", [({}, None), ({"random_state": 42}, 42)])
@@ -84,18 +110,13 @@ def test_random_state_stored(kwargs, expected):
     assert exp.random_state == expected
 
 
-def test_run_returns_experiment_result(split_with_test):
-    """run returns a populated ExperimentResult."""
+@pytest.mark.parametrize("with_indices", [True, False], ids=["indices", "defaults"])
+def test_run_forwards_identity_and_indices(split_with_test, with_indices):
+    """The result echoes the identity kwargs; indices verbatim or None."""
     X_train, y_train, X_test, y_test = split_with_test
-    result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
+    train_index = np.arange(X_train.shape[0]) if with_indices else None
+    test_index = np.arange(X_test.shape[0]) if with_indices else None
 
-    assert isinstance(result, ExperimentResult)
-    assert result.train_predicted_y.shape == (30,)
-
-
-def test_run_identity_passthrough(split_with_test):
-    """dataset_name, classifier_name, and resample_id are forwarded verbatim."""
-    X_train, y_train, X_test, y_test = split_with_test
     result = _make_experiment().run(
         X_train,
         y_train,
@@ -104,36 +125,21 @@ def test_run_identity_passthrough(split_with_test):
         dataset_name="my_dataset",
         classifier_name="my_conf",
         resample_id=42,
-    )
-
-    assert result.dataset_name == "my_dataset"
-    assert result.classifier_name == "my_conf"
-    assert result.resample_id == 42
-
-
-def test_run_forwards_partition_indices(split_with_test):
-    """train_index/test_index round-trip onto the result; default None."""
-    X_train, y_train, X_test, y_test = split_with_test
-    train_index = np.arange(X_train.shape[0])
-    test_index = np.arange(X_test.shape[0])
-
-    result = _make_experiment().run(
-        X_train,
-        y_train,
-        X_test,
-        y_test,
-        dataset_name="ds",
-        classifier_name="cfg",
-        resample_id=0,
         train_index=train_index,
         test_index=test_index,
     )
-    npt.assert_array_equal(result.train_index, train_index)
-    npt.assert_array_equal(result.test_index, test_index)
 
-    default_result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
-    assert default_result.train_index is None
-    assert default_result.test_index is None
+    assert isinstance(result, ExperimentResult)
+    assert result.train_predicted_y.shape == (30,)
+    assert result.dataset_name == "my_dataset"
+    assert result.classifier_name == "my_conf"
+    assert result.resample_id == 42
+    if with_indices:
+        npt.assert_array_equal(result.train_index, train_index)
+        npt.assert_array_equal(result.test_index, test_index)
+    else:
+        assert result.train_index is None
+        assert result.test_index is None
 
 
 @pytest.mark.parametrize("has_test", [True, False])
@@ -246,18 +252,6 @@ def test_run_metric_keys_for_each_eval_metric(split_with_test):
         assert result.test_metrics[name + "_test"] >= 0
 
 
-def test_rejects_unknown_eval_metric_at_construction():
-    """An unknown eval_metric name raises before anything is fitted."""
-    with pytest.raises(ValueError, match="ranked_probability_score"):
-        _make_experiment(eval_metrics=["ranked_probability_score"])
-
-
-def test_rejects_bare_loss_tuning_metric_at_construction():
-    """A bare-loss tuning metric raises even when the model needs no search."""
-    with pytest.raises(ValueError, match="only registered as 'neg_"):
-        _make_experiment(tuning_metric="mean_absolute_error")
-
-
 def test_run_proba_absent_without_predict_proba(split_with_test):
     """Both proba fields are None when the estimator has no predict_proba."""
     X_train, y_train, X_test, y_test = split_with_test
@@ -333,8 +327,6 @@ def test_run_records_the_fitted_scaler(
 
 def test_transformer_instance_is_cloned_and_seeded(split_with_test):
     """The caller's transformer is never fitted; its clone gets the run seed."""
-    from sklearn.decomposition import PCA
-
     X_train, y_train, X_test, y_test = split_with_test
     transformer = PCA(n_components=2)
     exp = _make_experiment(input_preprocessing=transformer, random_state=7)
@@ -348,9 +340,8 @@ def test_transformer_instance_is_cloned_and_seeded(split_with_test):
     assert result.best_model.n_features_in_ == 2
 
 
-def test_run_scores_on_the_fitted_scale_not_the_split(split_with_test):
+def test_run_scores_on_the_fitted_scale(split_with_test):
     """A split missing an intermediate class keeps the gaps the model was fitted on."""
-    from sklearn.dummy import DummyClassifier
 
     class Extremes(DummyClassifier):
         """Predicts only the two extreme classes, never the middle one."""

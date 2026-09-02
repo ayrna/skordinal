@@ -13,7 +13,7 @@ from sklearn.tree import DecisionTreeClassifier
 from skordinal.experiments import ModelConfig
 
 
-def test_modelconfig_stores_estimator_and_grid():
+def test_stores_estimator_and_grid():
     """Store estimator by identity and param_grid (None default, verbatim)."""
     lr = LogisticRegression(max_iter=200)
     cfg_default = ModelConfig(lr)
@@ -25,7 +25,7 @@ def test_modelconfig_stores_estimator_and_grid():
     assert cfg_with_grid.param_grid is grid
 
 
-def test_modelconfig_fields_are_frozen():
+def test_fields_are_frozen():
     """Assigning to a field of a frozen ``ModelConfig`` raises an error."""
     cfg = ModelConfig(LogisticRegression(), param_grid={"C": [1.0]})
     with pytest.raises((AttributeError, TypeError)):
@@ -37,7 +37,7 @@ def test_modelconfig_fields_are_frozen():
     ["not an estimator", 42, None],
     ids=["string", "int", "none"],
 )
-def test_modelconfig_rejects_non_estimator(bad_estimator):
+def test_rejects_non_estimator(bad_estimator):
     """Reject a non-``BaseEstimator`` with a ``TypeError``."""
     with pytest.raises(TypeError, match="BaseEstimator"):
         ModelConfig(bad_estimator)
@@ -48,13 +48,13 @@ def test_modelconfig_rejects_non_estimator(bad_estimator):
     [[1, 2], "C=0.1", 42],
     ids=["list", "string", "int"],
 )
-def test_modelconfig_rejects_bad_param_grid(bad_grid):
+def test_rejects_bad_param_grid(bad_grid):
     """Reject a non-dict, non-None ``param_grid`` with a ``TypeError``."""
     with pytest.raises(TypeError, match="param_grid"):
         ModelConfig(LogisticRegression(), param_grid=bad_grid)
 
 
-def test_modelconfig_param_grid_is_keyword_only():
+def test_param_grid_is_keyword_only():
     """``param_grid`` as a second positional argument raises ``TypeError``."""
     with pytest.raises(TypeError):
         ModelConfig(LogisticRegression(), {"C": [1]})  # type: ignore[call-arg]
@@ -70,6 +70,8 @@ def test_modelconfig_param_grid_is_keyword_only():
         ({"C": [0.1, 1.0], "max_iter": 200}, True),
         ({"C": np.logspace(-2, 0, 3)}, True),
         ({"solver": "lbfgs"}, False),
+        # A 0-d array holds one value and has no len() to enumerate
+        ({"C": np.asarray(0.5)}, False),
     ],
     ids=[
         "none",
@@ -79,6 +81,7 @@ def test_modelconfig_param_grid_is_keyword_only():
         "mixed_multi",
         "numpy_grid",
         "string_scalar",
+        "zero_d_array",
     ],
 )
 def test_needs_search(param_grid, expected):
@@ -101,13 +104,6 @@ def test_search_grid(param_grid, expected):
     assert cfg.search_grid() == expected
 
 
-def test_zero_d_array_counts_as_a_fixed_value():
-    """A 0-d array holds one value and has no len() to enumerate."""
-    cfg = ModelConfig(LogisticRegression(), param_grid={"C": np.asarray(0.5)})
-    assert cfg.needs_search is False
-    assert cfg.fixed_params()["C"] == 0.5
-
-
 @pytest.mark.parametrize(
     "param_grid, expected",
     [
@@ -115,9 +111,10 @@ def test_zero_d_array_counts_as_a_fixed_value():
         ({}, {}),
         ({"C": [0.5]}, {"C": 0.5}),
         ({"C": 0.5}, {"C": 0.5}),
+        ({"C": np.asarray(0.5)}, {"C": 0.5}),
         ({"C": []}, {}),
     ],
-    ids=["none", "empty", "singleton_list", "scalar", "empty_list"],
+    ids=["none", "empty", "singleton_list", "scalar", "zero_d_array", "empty_list"],
 )
 def test_fixed_params(param_grid, expected):
     """Unwrap singleton lists, pass scalars through, skip empty lists."""

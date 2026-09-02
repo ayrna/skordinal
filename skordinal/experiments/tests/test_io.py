@@ -5,7 +5,6 @@ import os
 import joblib
 import numpy as np
 import numpy.testing as npt
-import pandas as pd
 import pytest
 
 from skordinal.experiments._io import (
@@ -21,39 +20,23 @@ from skordinal.experiments._io import (
 )
 
 
-def test_format_proba_column_cells_round_trip():
-    """Wide probability cells stay single-line and parse back exactly."""
+def test_proba_column_round_trips():
+    """Wide probability rows stay single-line cells and parse back exactly."""
     rng = np.random.default_rng(0)
     raw = rng.random((3, 20))
     proba = raw / raw.sum(axis=1, keepdims=True)
 
-    for cell, row in zip(_format_proba_column(proba), proba):
-        assert "\n" not in cell
-        npt.assert_array_equal(np.fromstring(cell.strip("[]"), sep=","), row)
+    cells = _format_proba_column(proba)
+    assert all("\n" not in cell for cell in cells)
+    npt.assert_array_equal(_parse_proba_column(cells), proba)
 
 
-def test_parse_proba_column_round_trips_formatted_cells():
-    """_parse_proba_column reconstructs the matrix _format_proba_column wrote."""
-    rng = np.random.default_rng(0)
-    raw = rng.random((3, 5))
-    proba = raw / raw.sum(axis=1, keepdims=True)
-    parsed = _parse_proba_column(pd.Series(_format_proba_column(proba)))
-    npt.assert_array_equal(parsed, proba)
-
-
-def test_atomic_write_success_leaves_no_temp(tmp_path):
-    """_atomic_write writes full content and leaves no temp file."""
-    target = tmp_path / "f.csv"
-    _atomic_write(target, "a,b\n1,2\n")
-    assert target.read_text() == "a,b\n1,2\n"
-    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
-
-
-def test_atomic_write_creates_missing_parent(tmp_path):
-    """_atomic_write creates the target's parent directory if absent."""
+def test_atomic_write_round_trips(tmp_path):
+    """Content lands whole under a created parent, with no temp file left."""
     target = tmp_path / "nested" / "f.csv"
     _atomic_write(target, "a,b\n1,2\n")
     assert target.read_text() == "a,b\n1,2\n"
+    assert list(tmp_path.rglob(f"{_TEMP_PREFIX}*")) == []
 
 
 def test_ensure_parent_wraps_mkdir_failure(tmp_path, monkeypatch):
@@ -66,15 +49,23 @@ def test_ensure_parent_wraps_mkdir_failure(tmp_path, monkeypatch):
         _ensure_parent(tmp_path / "nested" / "f.csv")
 
 
-def test_atomic_write_cleans_up_on_failure(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "write",
+    [
+        lambda path: _atomic_write(path, "data"),
+        lambda path: _atomic_dump(path, {"k": 1}),
+    ],
+    ids=["write", "dump"],
+)
+def test_atomic_writers_clean_up_on_failure(tmp_path, monkeypatch, write):
     """A failing os.replace unlinks the temp file and re-raises."""
     monkeypatch.setattr(
         "skordinal.experiments._io.os.replace",
         lambda *a, **k: (_ for _ in ()).throw(OSError("boom")),
     )
     with pytest.raises(OSError, match="boom"):
-        _atomic_write(tmp_path / "f.csv", "data")
-    assert not (tmp_path / "f.csv").exists()
+        write(tmp_path / "target")
+    assert not (tmp_path / "target").exists()
     assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
 
 
@@ -90,18 +81,6 @@ def test_atomic_write_fsyncs(tmp_path, monkeypatch):
     assert len(calls) == 1
 
 
-def test_atomic_dump_cleans_up_on_failure(tmp_path, monkeypatch):
-    """A failing os.replace unlinks the dump's temp file and re-raises."""
-    monkeypatch.setattr(
-        "skordinal.experiments._io.os.replace",
-        lambda *a, **k: (_ for _ in ()).throw(OSError("boom")),
-    )
-    with pytest.raises(OSError, match="boom"):
-        _atomic_dump(tmp_path / "m.joblib", {"k": 1})
-    assert not (tmp_path / "m.joblib").exists()
-    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
-
-
 def test_atomic_dump_round_trips_no_temp(tmp_path):
     """_atomic_dump serialises an object recoverable by joblib.load."""
     target = tmp_path / "m.joblib"
@@ -110,9 +89,18 @@ def test_atomic_dump_round_trips_no_temp(tmp_path):
     assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
 
 
-def test_sweep_orphaned_temp_files_ignores_missing_dir(tmp_path):
-    """The sweep is a no-op when the base directory does not exist."""
+def test_sweep_removes_only_stray_temp_files(tmp_path):
+    """The sweep unlinks temp files, keeping directories; a missing root is a no-op."""
     _sweep_orphaned_temp_files(tmp_path / "absent")
+
+    stray = tmp_path / "sub" / f"{_TEMP_PREFIX}leftover.tmp"
+    stray.parent.mkdir()
+    stray.write_text("junk")
+    temp_dir = tmp_path / f"{_TEMP_PREFIX}dir"
+    temp_dir.mkdir()
+    _sweep_orphaned_temp_files(tmp_path)
+    assert not stray.exists()
+    assert temp_dir.is_dir()
 
 
 def test_confusion_matrix_not_elided_for_many_classes(tmp_path):

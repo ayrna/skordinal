@@ -30,15 +30,18 @@ def _fitted_svc(classes=(1, 2, 3), probability=False):
     return SVC(probability=probability).fit(features, targets)
 
 
+_KEEP = object()
+
+
 def _make_result(
-    partition: int,
-    dataset: str,
-    configuration: str,
-    best_params: dict,
-    train_metrics: dict,
-    test_metrics: dict,
-    train_predicted_y: np.ndarray,
-    test_predicted_y: np.ndarray | None,
+    partition: int = 0,
+    dataset: str = "ds",
+    configuration: str = "clf",
+    best_params: dict | None = None,
+    train_metrics: dict | None = None,
+    test_metrics: dict | None = None,
+    train_predicted_y: np.ndarray | None = None,
+    test_predicted_y=_KEEP,
     estimator=None,
     train_true_y=None,
     test_true_y=None,
@@ -47,6 +50,16 @@ def _make_result(
     y_proba=None,
     scaler=None,
 ) -> ExperimentResult:
+    if best_params is None:
+        best_params = {}
+    if train_metrics is None:
+        train_metrics = {"mae_train": 0.1}
+    if test_metrics is None:
+        test_metrics = {"mae_test": 0.1}
+    if train_predicted_y is None:
+        train_predicted_y = np.array([1])
+    if test_predicted_y is _KEEP:
+        test_predicted_y = np.array([1])
     if estimator is None:
         estimator = _fitted_svc()
     if train_true_y is None:
@@ -88,7 +101,6 @@ def test_save(tmp_path):
     results = Results(tmp_path)
 
     result_0 = _make_result(
-        partition=0,
         dataset="toy",
         configuration="conf_1",
         best_params={"C": 0.1, "gamma": 1},
@@ -153,10 +165,7 @@ def test_save_encodes_labels_zero_based(tmp_path):
     test_true = np.array([1, 2, 3, 1])
     test_pred = np.array([2, 2, 3, 1])
     result = _make_result(
-        partition=0,
         dataset="toy",
-        configuration="clf",
-        best_params={},
         train_metrics={"acc_train": 1.0},
         test_metrics={"acc_test": 1.0},
         train_predicted_y=np.array([2, 2, 3]),
@@ -180,7 +189,6 @@ def test_save_encodes_labels_zero_based(tmp_path):
 def test_save_model_false(tmp_path):
     """save_model=False writes the seed dir but no models/ folder."""
     result = _make_result(
-        partition=0,
         dataset="toy",
         configuration="conf_1",
         best_params={"C": 1},
@@ -331,12 +339,6 @@ def test_save_requires_true_labels(tmp_path):
 def test_save_rejects_unknown_labels(tmp_path, overrides, match):
     """A label absent from classes_ raises instead of mis-encoding."""
     kwargs = dict(
-        partition=0,
-        dataset="toy",
-        configuration="clf",
-        best_params={},
-        train_metrics={"acc_train": 1.0},
-        test_metrics={"acc_test": 1.0},
         train_predicted_y=np.array([1, 2, 3]),
         test_predicted_y=np.array([1, 2, 3]),
         train_true_y=np.array([1, 2, 3]),
@@ -346,7 +348,7 @@ def test_save_rejects_unknown_labels(tmp_path, overrides, match):
     with pytest.raises(ValueError, match=match):
         Results(tmp_path).save(_make_result(**kwargs))
     # Check the failed save left no model behind
-    assert not (tmp_path / "clf" / "toy" / "models" / "0.joblib").exists()
+    assert not (tmp_path / "clf" / "ds" / "models" / "0.joblib").exists()
 
 
 def test_save_rejects_misshaped_proba(tmp_path):
@@ -372,10 +374,7 @@ def test_save_rejects_misshaped_proba(tmp_path):
 def test_save_no_test_partition(tmp_path):
     """When test_predicted_y is None, no test files are written."""
     result = _make_result(
-        partition=0,
         dataset="toy",
-        configuration="clf",
-        best_params={},
         train_metrics={"ccr_train": 0.9},
         test_metrics={},
         train_predicted_y=np.array([1, 2, 3]),
@@ -396,10 +395,7 @@ def test_save_writes_confusion_matrices(tmp_path):
     test_true = np.array([1, 1, 2, 2, 3, 3])
     test_pred = np.array([1, 2, 2, 3, 3, 3])
     result = _make_result(
-        partition=0,
         dataset="toy",
-        configuration="clf",
-        best_params={},
         train_metrics={"acc_train": 1.0},
         test_metrics={"acc_test": 1.0},
         train_predicted_y=np.array([1, 2, 3]),
@@ -435,10 +431,7 @@ def test_save_pattern_id_fallback(tmp_path, with_indices):
     test_index = np.array([40, 41]) if with_indices else None
     Results(tmp_path).save(
         _make_result(
-            partition=0,
             dataset="toy",
-            configuration="clf",
-            best_params={},
             train_metrics={"acc_train": 1.0},
             test_metrics={"acc_test": 1.0},
             train_predicted_y=np.array([1, 2, 3, 1]),
@@ -465,13 +458,8 @@ def test_save_multiple_partitions_and_hyperparameter_upsert(tmp_path):
         r.save(
             _make_result(
                 partition=i,
-                dataset="ds",
-                configuration="clf",
-                best_params={},
                 train_metrics={"mae_train": float(i)},
                 test_metrics={"mae_test": float(i)},
-                train_predicted_y=np.array([1]),
-                test_predicted_y=np.array([1]),
             ),
             save_model=False,
         )
@@ -479,23 +467,12 @@ def test_save_multiple_partitions_and_hyperparameter_upsert(tmp_path):
     df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
     assert df.shape[0] == 3
 
-    base_result = dict(
-        dataset="ds",
-        configuration="clf",
-        train_metrics={"mae_train": 0.1},
-        test_metrics={"mae_test": 0.1},
-        train_predicted_y=np.array([1]),
-        test_predicted_y=np.array([1]),
-    )
-    r.save(
-        _make_result(partition=0, best_params={"C": 0.1}, **base_result),
-        save_model=False,
-    )
-    r.save(
-        _make_result(partition=0, best_params={"C": 1.0}, **base_result),
-        save_model=False,
-    )
+    r.save(_make_result(best_params={"C": 0.1}), save_model=False)
+    r.save(_make_result(best_params={"C": 1.0}), save_model=False)
 
+    # Re-saving seed 0 keeps one report row and one upserted parameter row
+    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
+    assert df.shape[0] == 3
     hyper = pd.read_csv(tmp_path / "clf" / "ds" / "hyperparameter_configuration.csv")
     seed_0 = hyper[hyper["Seed"] == 0]
     assert len(seed_0) == 1
@@ -508,28 +485,15 @@ def test_hyperparameters_prefix_strip_and_union(tmp_path):
     """The clf__ prefix is stripped and missing params union to NaN."""
     r = Results(tmp_path)
     r.save(
-        _make_result(
-            partition=0,
-            dataset="ds",
-            configuration="clf",
-            best_params={"clf__gamma": 1},
-            train_metrics={"mae_train": 0.1},
-            test_metrics={"mae_test": 0.1},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
-        ),
+        _make_result(best_params={"clf__gamma": 1}),
         save_model=False,
     )
     r.save(
         _make_result(
             partition=1,
-            dataset="ds",
-            configuration="clf",
             best_params={"clf__gamma": 0.3, "clf__alpha": 2},
             train_metrics={"mae_train": 0.2},
             test_metrics={"mae_test": 0.2},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
         ),
         save_model=False,
     )
@@ -554,16 +518,7 @@ def test_hyperparameters_keep_a_searched_float_a_float(tmp_path):
         (1, {"clf__C": 1.0, "clf__degree": 3}),
     ):
         r.save(
-            _make_result(
-                partition=seed,
-                dataset="ds",
-                configuration="clf",
-                best_params=params,
-                train_metrics={"mae_train": 0.1},
-                test_metrics={"mae_test": 0.1},
-                train_predicted_y=np.array([1]),
-                test_predicted_y=np.array([1]),
-            ),
+            _make_result(partition=seed, best_params=params),
             save_model=False,
         )
 
@@ -576,16 +531,7 @@ def test_hyperparameters_keep_a_searched_float_a_float(tmp_path):
 def test_hyperparameters_empty_params(tmp_path):
     """Empty best_params yields a one-column CSV holding only Seed."""
     Results(tmp_path).save(
-        _make_result(
-            partition=0,
-            dataset="ds",
-            configuration="clf",
-            best_params={},
-            train_metrics={"mae_train": 0.1},
-            test_metrics={"mae_test": 0.1},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
-        ),
+        _make_result(),
         save_model=False,
     )
 
@@ -596,16 +542,7 @@ def test_hyperparameters_empty_params(tmp_path):
 def test_hyperparameters_seed_param_cannot_shadow_key(tmp_path):
     """A parameter literally named Seed cannot overwrite the Seed column."""
     Results(tmp_path).save(
-        _make_result(
-            partition=5,
-            dataset="ds",
-            configuration="clf",
-            best_params={"Seed": 999},
-            train_metrics={"mae_train": 0.1},
-            test_metrics={"mae_test": 0.1},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
-        ),
+        _make_result(partition=5, best_params={"Seed": 999}),
         save_model=False,
     )
 
@@ -662,10 +599,8 @@ def test_predictions_reads_the_requested_split(tmp_path):
     results = Results(tmp_path)
     results.save(
         _make_result(
-            partition=0,
             dataset="toy",
             configuration="conf_1",
-            best_params={},
             train_metrics={},
             test_metrics={},
             train_predicted_y=np.array([1, 2, 3, 3]),
@@ -691,10 +626,8 @@ def test_predictions_parse_proba(tmp_path):
     results = Results(tmp_path)
     results.save(
         _make_result(
-            partition=0,
             dataset="toy",
             configuration="conf_1",
-            best_params={},
             train_metrics={},
             test_metrics={},
             train_predicted_y=np.array([1, 2]),
@@ -717,10 +650,8 @@ def test_model_round_trips_the_bare_estimator(tmp_path):
     results = Results(tmp_path)
     results.save(
         _make_result(
-            partition=0,
             dataset="toy",
             configuration="conf_1",
-            best_params={},
             train_metrics={},
             test_metrics={},
             train_predicted_y=np.array([1, 2]),
@@ -818,14 +749,7 @@ def test_exists(tmp_path):
 
     r.save(
         _make_result(
-            partition=0,
-            dataset="toy",
-            configuration="SVC",
-            best_params={},
-            train_metrics={"mae_train": 0.1},
-            test_metrics={"mae_test": 0.2},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
+            dataset="toy", configuration="SVC", test_metrics={"mae_test": 0.2}
         ),
         save_model=False,
     )
@@ -847,22 +771,22 @@ def test_report_csv_index_label_and_numeric_order(tmp_path):
     r = Results(tmp_path)
     for partition in (10, 2, 1):
         r.save(
-            _make_result(
-                partition=partition,
-                dataset="ds",
-                configuration="clf",
-                best_params={},
-                train_metrics={"mae_train": 0.1},
-                test_metrics={"mae_test": 0.1},
-                train_predicted_y=np.array([1]),
-                test_predicted_y=np.array([1]),
-            ),
+            _make_result(partition=partition),
             save_model=False,
         )
     csv_path = tmp_path / "clf" / "ds" / "report.csv"
     assert csv_path.read_text().splitlines()[0].split(",")[0] == "resample_id"
     df = pd.read_csv(csv_path, index_col=0)
     assert list(df.index) == [1, 2, 10]
+
+
+def test_report_rows_fall_back_to_lexicographic_order(tmp_path):
+    """Non-integer resample ids sort as strings instead of failing the save."""
+    r = Results(tmp_path)
+    for partition in ("fold_b", "fold_a"):
+        r.save(_make_result(partition=partition), save_model=False)
+    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
+    assert list(df.index) == ["fold_a", "fold_b"]
 
 
 def test_report_row_sort_preserves_pre_existing_duplicates(tmp_path):
@@ -882,13 +806,8 @@ def test_report_row_sort_preserves_pre_existing_duplicates(tmp_path):
     Results(tmp_path).save(
         _make_result(
             partition=2,
-            dataset="ds",
-            configuration="clf",
-            best_params={},
             train_metrics={"mae_train": 0.3},
             test_metrics={"mae_test": 0.3},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
         ),
         save_model=False,
     )
@@ -899,16 +818,7 @@ def test_save_removes_stale_artefacts(tmp_path):
     """Re-saving without a test split drops the prior run's test files and model."""
     r = Results(tmp_path)
     r.save(
-        _make_result(
-            partition=0,
-            dataset="ds",
-            configuration="clf",
-            best_params={},
-            train_metrics={"mae_train": 0.1},
-            test_metrics={"mae_test": 0.1},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
-        ),
+        _make_result(),
         save_model=True,
     )
     seed_dir = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
@@ -919,14 +829,7 @@ def test_save_removes_stale_artefacts(tmp_path):
 
     r.save(
         _make_result(
-            partition=0,
-            dataset="ds",
-            configuration="clf",
-            best_params={},
-            train_metrics={"mae_train": 0.2},
-            test_metrics={},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=None,
+            train_metrics={"mae_train": 0.2}, test_metrics={}, test_predicted_y=None
         ),
         save_model=False,
     )
@@ -938,6 +841,18 @@ def test_save_removes_stale_artefacts(tmp_path):
     assert df.shape[0] == 1
 
 
+def test_save_wraps_a_failing_stale_artefact_removal(tmp_path, monkeypatch):
+    """An OSError while clearing a prior run is wrapped with the failing dir."""
+    r = Results(tmp_path)
+    r.save(_make_result(), save_model=False)
+    monkeypatch.setattr(
+        "skordinal.experiments._results.shutil.rmtree",
+        lambda *a, **k: (_ for _ in ()).throw(OSError("denied")),
+    )
+    with pytest.raises(OSError, match="Could not remove stale results"):
+        r.save(_make_result(), save_model=False)
+
+
 @pytest.mark.parametrize(
     "overrides, match",
     [
@@ -947,19 +862,7 @@ def test_save_removes_stale_artefacts(tmp_path):
 )
 def test_save_rejects_traversal_before_writing(tmp_path, overrides, match):
     """save raises on a traversal name or resample id and writes nothing."""
-    result = _make_result(
-        **{
-            "partition": 0,
-            "dataset": "ds",
-            "configuration": "clf",
-            "best_params": {},
-            "train_metrics": {"mae_train": 0.1},
-            "test_metrics": {"mae_test": 0.1},
-            "train_predicted_y": np.array([1]),
-            "test_predicted_y": np.array([1]),
-            **overrides,
-        }
-    )
+    result = _make_result(**overrides)
     with pytest.raises(ValueError, match=match):
         Results(tmp_path).save(result, save_model=False)
     assert list(tmp_path.iterdir()) == []
@@ -970,29 +873,15 @@ def test_report_row_round_trip_precision(tmp_path):
     value = 0.12345678901234566
     r = Results(tmp_path)
     r.save(
-        _make_result(
-            partition=0,
-            dataset="ds",
-            configuration="clf",
-            best_params={},
-            train_metrics={"mae_train": value},
-            test_metrics={"mae_test": 0.1},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
-        ),
+        _make_result(train_metrics={"mae_train": value}),
         save_model=False,
     )
     # Second save reads report.csv back through the round-trip reader
     r.save(
         _make_result(
             partition=1,
-            dataset="ds",
-            configuration="clf",
-            best_params={},
             train_metrics={"mae_train": 0.2},
             test_metrics={"mae_test": 0.2},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
         ),
         save_model=False,
     )
@@ -1004,27 +893,6 @@ def test_report_row_round_trip_precision(tmp_path):
     assert df.loc[0, "mae_train"] == value
 
 
-def test_resave_is_idempotent_no_duplicate_row(tmp_path):
-    """Re-saving the same resample keeps exactly one report row."""
-    r = Results(tmp_path)
-    for _ in range(2):
-        r.save(
-            _make_result(
-                partition=0,
-                dataset="ds",
-                configuration="clf",
-                best_params={},
-                train_metrics={"mae_train": 0.1},
-                test_metrics={"mae_test": 0.1},
-                train_predicted_y=np.array([1]),
-                test_predicted_y=np.array([1]),
-            ),
-            save_model=False,
-        )
-    df = pd.read_csv(tmp_path / "clf" / "ds" / "report.csv", index_col=0)
-    assert df.shape[0] == 1
-
-
 def test_orphan_temp_file_swept_on_save(tmp_path):
     """A leftover temp file under the pair dir is removed by save."""
     pair = tmp_path / "clf" / "ds"
@@ -1032,16 +900,7 @@ def test_orphan_temp_file_swept_on_save(tmp_path):
     stale = pair / f"{_TEMP_PREFIX}leftover.tmp"
     stale.write_text("junk")
     Results(tmp_path).save(
-        _make_result(
-            partition=0,
-            dataset="ds",
-            configuration="clf",
-            best_params={},
-            train_metrics={"mae_train": 0.1},
-            test_metrics={"mae_test": 0.1},
-            train_predicted_y=np.array([1]),
-            test_predicted_y=np.array([1]),
-        ),
+        _make_result(),
         save_model=False,
     )
     assert not stale.exists()
@@ -1050,47 +909,27 @@ def test_orphan_temp_file_swept_on_save(tmp_path):
 def test_crash_between_predictions_and_report_not_committed(tmp_path, monkeypatch):
     """A crash before the report write leaves exists() False; rerun fixes it."""
     r = Results(tmp_path)
-    kwargs = dict(
-        partition=0,
-        dataset="ds",
-        configuration="clf",
-        best_params={},
-        train_metrics={"mae_train": 0.1},
-        test_metrics={"mae_test": 0.1},
-        train_predicted_y=np.array([1]),
-        test_predicted_y=np.array([1]),
-    )
     monkeypatch.setattr(
         Results,
         "_append_report_row",
         lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
     )
     with pytest.raises(RuntimeError):
-        r.save(_make_result(**kwargs), save_model=False)
+        r.save(_make_result(), save_model=False)
     # Predictions were written but no report row was committed
     seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
     assert (seed / "train_predictions.csv").is_file()
     assert r.exists("clf", "ds", "0") is False
     # A normal rerun commits the row
     monkeypatch.undo()
-    r.save(_make_result(**kwargs), save_model=False)
+    r.save(_make_result(), save_model=False)
     assert r.exists("clf", "ds", "0") is True
 
 
 def test_stale_report_row_uncommitted_on_crash_resave(tmp_path, monkeypatch):
     """Re-saving a resample uncommits its row; a crash leaves it uncommitted."""
     r = Results(tmp_path)
-    kwargs = dict(
-        partition=0,
-        dataset="ds",
-        configuration="clf",
-        best_params={},
-        train_metrics={"mae_train": 0.1},
-        test_metrics={"mae_test": 0.1},
-        train_predicted_y=np.array([1]),
-        test_predicted_y=np.array([1]),
-    )
-    r.save(_make_result(**kwargs), save_model=False)
+    r.save(_make_result(), save_model=False)
     assert r.exists("clf", "ds", "0") is True
     # Crash on re-save after the uncommit but before the recommit
     monkeypatch.setattr(
@@ -1099,34 +938,24 @@ def test_stale_report_row_uncommitted_on_crash_resave(tmp_path, monkeypatch):
         lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
     )
     with pytest.raises(RuntimeError):
-        r.save(_make_result(**kwargs), save_model=False)
+        r.save(_make_result(), save_model=False)
     assert r.exists("clf", "ds", "0") is False
     monkeypatch.undo()
-    r.save(_make_result(**kwargs), save_model=False)
+    r.save(_make_result(), save_model=False)
     assert r.exists("clf", "ds", "0") is True
 
 
 def test_resave_crash_before_uncommit_leaves_prior_run_intact(tmp_path, monkeypatch):
     """A re-save that crashes at the uncommit deletes nothing from the prior run."""
     r = Results(tmp_path)
-    kwargs = dict(
-        partition=0,
-        dataset="ds",
-        configuration="clf",
-        best_params={},
-        train_metrics={"mae_train": 0.1},
-        test_metrics={"mae_test": 0.1},
-        train_predicted_y=np.array([1]),
-        test_predicted_y=np.array([1]),
-    )
-    r.save(_make_result(**kwargs), save_model=False)
+    r.save(_make_result(), save_model=False)
     monkeypatch.setattr(
         Results,
         "_uncommit_report_row",
         lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("crash")),
     )
     with pytest.raises(RuntimeError):
-        r.save(_make_result(**kwargs), save_model=False)
+        r.save(_make_result(), save_model=False)
     # The committed row must never outlive the files it describes
     assert r.exists("clf", "ds", "0") is True
     seed = tmp_path / "clf" / "ds" / "predictions_by_seed" / "seed_0"
@@ -1143,10 +972,8 @@ def test_save_composes_the_scaler_into_the_model_artefact(tmp_path):
     results = Results(tmp_path)
     results.save(
         _make_result(
-            partition=0,
             dataset="toy",
             configuration="conf_1",
-            best_params={},
             train_metrics={},
             test_metrics={},
             train_predicted_y=estimator.predict(scaler.transform(raw)),
