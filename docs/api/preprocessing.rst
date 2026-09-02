@@ -10,5 +10,3 @@ building the coding matrix used by ordinal decomposition methods.
    :toctree: generated/
 
    build_coding_matrix
-   ordinal_to_binary_cumulative
-   binary_cumulative_to_ordinal
