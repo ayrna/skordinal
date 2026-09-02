@@ -106,6 +106,18 @@ def test_validate_recipe_empty_models_raises_value_error():
         validate_recipe({"models": {}, "datasets": ["balance_scale"]})
 
 
+def test_validate_recipe_rejects_a_non_dict_models():
+    """A list of models raises TypeError, as its own docstring promises."""
+    with pytest.raises(TypeError, match="'models' must be a dict"):
+        validate_recipe({"models": [_MINIMAL_MODELS], "datasets": ["balance_scale"]})
+
+
+def test_validate_recipe_rejects_a_bare_string_datasets():
+    """A bare string would silently become one dataset per character."""
+    with pytest.raises(TypeError, match=r"not a bare string; pass \['era'\]"):
+        validate_recipe({"models": _MINIMAL_MODELS, "datasets": "era"})
+
+
 def test_validate_recipe_models_value_not_modelconfig_raises_type_error():
     """A ``models`` value that is not a ``ModelConfig`` raises ``TypeError``."""
     with pytest.raises(TypeError, match="ModelConfig"):
