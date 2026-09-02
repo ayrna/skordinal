@@ -75,6 +75,15 @@ full multi-classifier × multi-dataset benchmark.
   resumable.  :meth:`~skordinal.experiments.Benchmark.summarize` writes the
   aggregated train and test summaries.
 
+  Progress is reported through the ``skordinal.experiments`` logger rather
+  than printed.  With ``verbose=True`` the records are emitted at INFO, and a
+  plain stdout handler is attached for the duration of the call only when the
+  application has configured no logging of its own, so an application that
+  sets up handlers keeps a single emission under its own formatting.
+  Installing the ``progress`` extra (``pip install "skordinal[progress]"``)
+  additionally draws a tqdm bar per (model, dataset) pair when running on a
+  terminal.
+
   The quickest way to run a study is via the recipe interface.  Define a
   ``RECIPE`` dict in a standalone Python file (see ``examples/recipes/`` for
   templates) and run it from the command line::

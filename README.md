@@ -60,6 +60,11 @@ All dependencies are managed through `pyproject.toml` and include:
    pip install -e .[dev]
    ```
 
+   Progress bars during a benchmark run need one optional extra:
+   ```bash
+   pip install skordinal[progress]
+   ```
+
 ### Testing Installation
 
 Test your installation with the provided example:
@@ -195,7 +200,11 @@ These keys control how the benchmark is executed.
   construction, so every resample of a run shares one partitioning scheme.
 - **`overwrite`** (default `False`): recompute resamples that are already
   saved; `False` makes a run resumable.
-- **`verbose`** (default `True`): print progress during the run.
+- **`verbose`** (default `True`): report progress during the run — INFO
+  messages on the `skordinal.experiments` logger (printed to stdout when
+  the application has not configured logging) and, with
+  `pip install skordinal[progress]`, a tqdm bar per (model, dataset) pair
+  on a terminal.
 
 ### models
 

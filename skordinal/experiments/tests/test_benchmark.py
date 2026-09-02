@@ -1,6 +1,7 @@
 """Tests for the benchmark runner module."""
 
 import json
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -92,6 +93,14 @@ _INVALID_CONSTRUCTOR_CASES = [
         id="bare-string-datasets",
     ),
 ]
+
+
+@pytest.fixture
+def unconfigured_logging(monkeypatch):
+    """Pretend no logging is configured; pytest's capture handlers would hide it."""
+    monkeypatch.setattr(
+        Benchmark, "_has_real_handler", staticmethod(lambda logger: False)
+    )
 
 
 @pytest.fixture
@@ -456,6 +465,114 @@ def test_verbose_false_no_stdout(tmp_path, capsys):
     assert captured.out == ""
 
 
+def test_run_emits_log_records_when_not_verbose(tmp_path, caplog):
+    """Progress reaches the skordinal.experiments logger even with verbose=False."""
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path / "out",
+        resamples=1,
+        cv=2,
+        verbose=False,
+    )
+    with caplog.at_level("INFO", logger="skordinal.experiments"):
+        b.run()
+    assert any("Running the" in m for m in caplog.messages)
+
+
+def test_run_verbose_without_tqdm_logs_to_stdout(
+    tmp_path, capsys, monkeypatch, unconfigured_logging
+):
+    """With verbose=True and no tqdm, progress falls back to stdout messages."""
+    monkeypatch.setattr("skordinal.experiments._benchmark.tqdm", None)
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path / "out",
+        resamples=1,
+        cv=2,
+        verbose=True,
+    )
+    b.run()
+    out = capsys.readouterr().out
+    assert f"Running the {_BUNDLED_DS} dataset" in out
+    # The label line attributes the resample lines that follow it
+    assert "Running SVM" in out
+    # Without a live bar the per-resample lines surface at INFO, as on stdout
+    assert "Running resample 0" in out
+    assert "1 resample(s) run, 0 skipped" in out
+
+
+def test_run_verbose_with_configured_logging_emits_once(tmp_path, capsys):
+    """An app-configured handler wins: no stdout duplicate is attached."""
+    records = []
+
+    class Recorder(logging.Handler):
+        def emit(self, record):
+            records.append(record.getMessage())
+
+    logger = logging.getLogger("skordinal.experiments")
+    handler = Recorder()
+    logger.addHandler(handler)
+    try:
+        b = Benchmark(
+            _SVC_CONF,
+            datasets=[_BUNDLED_DS],
+            eval_metrics=["mean_absolute_error"],
+            results_path=tmp_path / "out",
+            resamples=1,
+            cv=2,
+            verbose=True,
+        )
+        b.run()
+    finally:
+        logger.removeHandler(handler)
+    assert capsys.readouterr().out == ""
+    assert any("resample(s) run" in m for m in records)
+
+
+def test_run_wraps_resamples_in_a_progress_bar(tmp_path, monkeypatch, caplog):
+    """The bar gets the total and latest score, and supersedes the INFO lines."""
+    calls = {"postfixes": []}
+
+    class FakeBar:
+        def __init__(self, iterable, **kwargs):
+            calls["kwargs"] = kwargs
+            self._iterable = iterable
+            self.disable = False
+
+        def __iter__(self):
+            return iter(self._iterable)
+
+        def set_postfix(self, postfix, refresh=True):
+            calls["postfixes"].append(postfix)
+            calls["refresh"] = refresh
+
+    monkeypatch.setattr("skordinal.experiments._benchmark.tqdm", FakeBar)
+    b = Benchmark(
+        _SVC_CONF,
+        datasets=[_BUNDLED_DS],
+        eval_metrics=["mean_absolute_error"],
+        results_path=tmp_path / "out",
+        resamples=[0, 2],
+        cv=2,
+        verbose=True,
+    )
+    with caplog.at_level(logging.INFO, logger="skordinal.experiments"):
+        b.run()
+    assert calls["kwargs"]["total"] == 2
+    assert calls["kwargs"]["desc"] == "  SVM"
+    assert "mean_absolute_error_test" in calls["postfixes"][-1]
+    # Refreshing on the spot would redraw the counter before it advances
+    assert calls["refresh"] is False
+    # The bar already names the model and counts resamples: no INFO duplicates
+    assert not [m for m in caplog.messages if "Running SVM" in m]
+    assert not [m for m in caplog.messages if "Running resample" in m]
+    assert any("resample(s) run" in m for m in caplog.messages)
+
+
 def test_results_path_resolved_once_across_chdir(tmp_path, monkeypatch):
     """A relative results_path is anchored at construction, not at run."""
     work_a = tmp_path / "a"
@@ -483,7 +600,7 @@ def test_results_path_resolved_once_across_chdir(tmp_path, monkeypatch):
     assert not (work_b / "runs").exists()
 
 
-def test_summarize_reraises_a_corrupt_report(tmp_path):
+def test_summarize_reraises_a_corrupt_report(tmp_path, unconfigured_logging):
     """An unreadable report.csv is data loss, so it must not read as 'nothing'."""
     pair = tmp_path / "out" / "cfg" / _BUNDLED_DS
     pair.mkdir(parents=True)
@@ -499,9 +616,22 @@ def test_summarize_reraises_a_corrupt_report(tmp_path):
         b.summarize()
 
 
+def test_has_real_handler_walks_the_logger_chain():
+    """The walk stops at a non-propagating logger and at the end of the chain."""
+    orphan = logging.Logger("orphan-with-no-parent")
+    assert Benchmark._has_real_handler(orphan) is False
+
+    blocked = logging.getLogger("skordinal.experiments.tests.non-propagating")
+    blocked.propagate = False
+    try:
+        assert Benchmark._has_real_handler(blocked) is False
+    finally:
+        blocked.propagate = True
+
+
 @pytest.mark.parametrize("make_dir", [True, False], ids=["empty-dir", "missing-dir"])
 def test_summarize_without_results_reports_instead_of_raising(
-    tmp_path, capsys, make_dir
+    tmp_path, capsys, unconfigured_logging, make_dir
 ):
     """summarize() over an empty or never-created folder warns, never raises."""
     results_path = tmp_path / "out"

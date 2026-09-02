@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
+import math
+import sys
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from numbers import Integral
 from pathlib import Path
 
@@ -23,6 +27,13 @@ from ._experiment import Experiment
 from ._model_config import ModelConfig
 from ._recipes import load_recipe
 from ._results import Results
+
+_logger = logging.getLogger("skordinal.experiments")
+
+try:  # Soft dependency: progress bars appear only when tqdm is installed
+    from tqdm.auto import tqdm
+except ImportError:  # pragma: no cover - the dev extra always installs tqdm
+    tqdm = None
 
 
 class Benchmark:
@@ -58,7 +69,8 @@ class Benchmark:
         must match a ``skordinal.metrics`` metric that scores predicted
         labels, which excludes ``ranked_probability_score``. Each name is
         stripped and resolved at construction, so a typo fails before any
-        fitting starts.
+        fitting starts. The first name is the one surfaced in progress
+        output.
 
     results_path : str or Path
         Directory where result files are written. Expanded and resolved to
@@ -106,7 +118,11 @@ class Benchmark:
         resumable. ``True`` recomputes every resample.
 
     verbose : bool, default=True
-        If ``True``, progress messages are printed to stdout.
+        If ``True``, progress is reported at INFO on the
+        ``"skordinal.experiments"`` logger, with a stdout handler attached
+        for the call unless the application configured its own, plus a tqdm
+        bar per pair when tqdm is installed and stderr is a terminal. If
+        ``False``, the records are still emitted but no handler is attached.
 
     Raises
     ------
@@ -281,75 +297,146 @@ class Benchmark:
             If a dataset name cannot be resolved by the dataset-loading layer
             (no matching path and not present in the bundled collection).
         """
-        if self.verbose:
-            print("\n###############################")
-            print("\tRunning Benchmark")
-            print("###############################")
+        with self._stdout_logging():
+            _logger.info(
+                "Running benchmark: %d model(s) x %d dataset(s)",
+                len(self.models),
+                len(self.datasets),
+            )
+            for dataset_name in self.datasets:
+                _logger.info("Running the %s dataset", dataset_name)
 
-        # Iterate over datasets
-        for dataset_name in self.datasets:
-            if self.verbose:
-                print("\nRunning", dataset_name, "dataset")
-                print("--------------------------")
-
-            # Iterate over configurations
-            for label, model in self.models.items():
-                if self.verbose:
-                    print("Running", label, "...")
-
-                experiment = Experiment(
-                    model,
-                    eval_metrics=self.eval_metrics,
-                    tuning_metric=self.tuning_metric,
-                    cv=self.cv,
-                    n_jobs=self.n_jobs,
-                    input_preprocessing=self.input_preprocessing,
-                    random_state=self.random_state,
-                )
-
-                # Iterate over resamples via the dataset-loading layer
-                for b in load_partitions(
-                    dataset_name,
-                    data_home=self.data_home,
-                    resamples=self.resamples,
-                    test_size=self.test_size,
-                    random_state=self.random_state,
-                ):
-                    if not self.overwrite and self._results.exists(
-                        label, dataset_name, b.resample_id
-                    ):
-                        if self.verbose:
-                            print("  Skipping resample", b.resample_id)
-                        continue
-
-                    if self.verbose:
-                        print("  Running resample", b.resample_id)
-
-                    result = experiment.run(
-                        b.data_train,
-                        b.target_train,
-                        b.data_test,
-                        b.target_test,
-                        dataset_name=dataset_name,
-                        classifier_name=label,
-                        resample_id=b.resample_id,
-                        train_index=b.train_index,
-                        test_index=b.test_index,
+                for label, model in self.models.items():
+                    experiment = Experiment(
+                        model,
+                        eval_metrics=self.eval_metrics,
+                        tuning_metric=self.tuning_metric,
+                        cv=self.cv,
+                        n_jobs=self.n_jobs,
+                        input_preprocessing=self.input_preprocessing,
+                        random_state=self.random_state,
                     )
-                    self._results.save(result)
+
+                    partitions = load_partitions(
+                        dataset_name,
+                        data_home=self.data_home,
+                        resamples=self.resamples,
+                        test_size=self.test_size,
+                        random_state=self.random_state,
+                    )
+                    bar = None
+                    if self.verbose and tqdm is not None:
+                        total = (
+                            len(self.resamples)
+                            if isinstance(self.resamples, list)
+                            else int(self.resamples)
+                        )
+                        partitions = bar = tqdm(
+                            partitions,
+                            desc=f"  {label}",
+                            unit="resample",
+                            total=total,
+                            leave=False,
+                            disable=None,
+                        )
+
+                    # A live bar names the model and counts resamples itself
+                    progress_level = (
+                        logging.DEBUG
+                        if bar is not None and not getattr(bar, "disable", False)
+                        else logging.INFO
+                    )
+                    _logger.log(progress_level, "  Running %s", label)
+                    metric = self.eval_metrics[0]
+                    ran, skipped, scores = 0, 0, []
+                    for b in partitions:
+                        if not self.overwrite and self._results.exists(
+                            label, dataset_name, b.resample_id
+                        ):
+                            _logger.log(
+                                progress_level,
+                                "    Skipping resample %s",
+                                b.resample_id,
+                            )
+                            skipped += 1
+                            continue
+
+                        _logger.log(
+                            progress_level, "    Running resample %s", b.resample_id
+                        )
+                        result = experiment.run(
+                            b.data_train,
+                            b.target_train,
+                            b.data_test,
+                            b.target_test,
+                            dataset_name=dataset_name,
+                            classifier_name=label,
+                            resample_id=b.resample_id,
+                            train_index=b.train_index,
+                            test_index=b.test_index,
+                        )
+                        self._results.save(result)
+                        ran += 1
+                        # NaN means a train-only run, which the mean leaves out
+                        score = result.test_metrics[f"{metric}_test"]
+                        if not math.isnan(score):
+                            scores.append(score)
+                            if bar is not None:
+                                # Refreshing now would redraw a stale counter
+                                bar.set_postfix(
+                                    {f"{metric}_test": f"{score:.4f}"}, refresh=False
+                                )
+
+                    summary = f"  {label}: {ran} resample(s) run, {skipped} skipped"
+                    if scores and not skipped:
+                        summary += (
+                            f", mean {metric}_test={sum(scores) / len(scores):.4f}"
+                        )
+                    _logger.info(summary)
 
     def summarize(self) -> None:
         """Write the train and test summaries to the results folder."""
-        if self.verbose:
-            print("\nSaving summary...")
+        with self._stdout_logging():
+            _logger.info("Saving summary")
+            for split in ("train", "test"):
+                try:
+                    save_summary(self.results_path, split=split)
+                except (pd.errors.EmptyDataError, pd.errors.ParserError):
+                    # A corrupt report.csv is data loss, never "nothing to do"
+                    raise
+                except (FileNotFoundError, ValueError):
+                    # Nothing run yet (the folder may not exist), or no pair reported
+                    _logger.info("No metrics to summarise for the %s split", split)
 
-        for split in ("train", "test"):
-            try:
-                save_summary(self.results_path, split=split)
-            except (pd.errors.EmptyDataError, pd.errors.ParserError):
-                # A corrupt report.csv is data loss, never "nothing to do"
-                raise
-            except (FileNotFoundError, ValueError):
-                # Nothing run yet (the folder may not exist), or no pair reported
-                if self.verbose:
-                    print("  No metrics to summarise for the", split, "split")
+    @contextmanager
+    def _stdout_logging(self) -> Iterator[None]:
+        """Show INFO progress while verbose, unless the app configured logging."""
+        if not self.verbose:
+            yield
+            return
+        previous_level = _logger.level
+        if _logger.getEffectiveLevel() > logging.INFO:
+            _logger.setLevel(logging.INFO)
+        handler = None
+        if not self._has_real_handler(_logger):
+            handler = logging.StreamHandler(sys.stdout)
+            handler.setFormatter(logging.Formatter("%(message)s"))
+            _logger.addHandler(handler)
+        try:
+            yield
+        finally:
+            if handler is not None:
+                _logger.removeHandler(handler)
+            _logger.setLevel(previous_level)
+
+    @staticmethod
+    def _has_real_handler(logger: logging.Logger) -> bool:
+        """Report whether a non-NullHandler is reachable from logger."""
+        current: logging.Logger | None = logger
+        while current is not None:
+            if any(not isinstance(h, logging.NullHandler) for h in current.handlers):
+                return True
+            if not current.propagate:
+                return False
+            current = current.parent  # type: ignore[assignment]
+        return False

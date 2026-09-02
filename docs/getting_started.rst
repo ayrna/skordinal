@@ -12,6 +12,10 @@ Binary wheels are published for Linux x86-64. On every other platform pip
 builds the four C extensions (``REDSVM``, ``SVOREX``, ``SVORIM``, ``ORBoost``)
 from source, which requires a C/C++ compiler.
 
+Progress bars during a benchmark run need one optional extra::
+
+   pip install "skordinal[progress]"
+
 For a development install, in editable mode and with every optional
 dependency::
 
