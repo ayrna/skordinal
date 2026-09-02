@@ -547,3 +547,19 @@ def test_summarize_round_trip_precision(tmp_path):
     _make_pair_csv(tmp_path, "clf", "ds", [{"mae_test": value}])
     df = summarize(tmp_path, split="test")
     assert df.loc[("clf", "ds"), ("mae_test", "mean")] == value
+
+
+def test_evaluate_recovers_the_scale_from_the_confusion_matrix(tmp_path):
+    """K comes from the stored K x K matrix, so a missing class keeps its gap."""
+    _write_report(tmp_path, "A", "d1", {0: {"accuracy_off1_score_test": 2 / 3}})
+    seed = _write_seed(
+        tmp_path, "A", "d1", 0, "test", [0, 0, 2, 2, 0, 2], [0, 2, 0, 2, 0, 2]
+    )
+    (seed / "test_confusion_matrix.txt").write_text(
+        "Seed 0\n=====\n[[3, 0, 0],\n [0, 0, 0],\n [0, 0, 3]]\n"
+    )
+
+    scored = evaluate(tmp_path, "A", "d1", metrics=["accuracy_off1_score"])
+
+    # Ranks 0 and 2 are two apart on the recovered scale, not adjacent
+    assert scored.loc[0, "accuracy_off1_score"] == pytest.approx(2 / 3)

@@ -2,12 +2,11 @@
 
 import math
 
+import numpy as np
 import pandas as pd
 
-from skordinal.metrics._metrics import _resolve_label_metric
-
-from ._base import _check_metric_names, _check_split
-from ._io import _atomic_write
+from ._base import _check_metric_names, _check_split, _compute_metric
+from ._io import _atomic_write, _read_confusion_matrix_size
 from ._results import Results
 
 
@@ -101,7 +100,8 @@ def evaluate(
     ``best_model.classes_``, so metrics are recomputed in rank space, where
     adjacent categories are always distance 1. ``report.csv``'s own values are
     computed on the raw labels, so the two agree only while the label set is
-    contiguous.
+    contiguous. The scale spans the pair's saved confusion matrix, so a tree
+    written without one is scored on the ranks its predictions contain.
 
     Examples
     --------
@@ -129,8 +129,13 @@ def evaluate(
             )
         y_true = df["Target"].to_numpy()
         y_pred = df["Prediction"].to_numpy()
+        # The saved confusion matrix is the only artefact that still carries K
+        size = _read_confusion_matrix_size(
+            path.parent / f"{split}_confusion_matrix.txt"
+        )
+        labels = np.arange(size) if size else None
         rows[resample_id] = {
-            name: float(_resolve_label_metric(name)(y_true, y_pred))
+            name: _compute_metric(name, y_true, y_pred, labels=labels)
             for name in metric_names
         }
 
@@ -202,7 +207,6 @@ def summarize(results_path, *, classifiers=None, split="test"):
         if classifier_set is not None and clf not in classifier_set:
             continue
 
-        # Select columns for the requested split
         if split == "test":
             metric_cols = [c for c in df.columns if c.endswith("_test")]
         elif split == "train":
@@ -210,7 +214,6 @@ def summarize(results_path, *, classifiers=None, split="test"):
         else:
             metric_cols = [c for c in df.columns if c.endswith(("_test", "_train"))]
 
-        # Compute mean and std for each metric column
         row = {"classifier": clf, "dataset": ds}
         for col in metric_cols:
             series = df[col].dropna()
@@ -227,7 +230,6 @@ def summarize(results_path, *, classifiers=None, split="test"):
     if not rows:
         return pd.DataFrame()
 
-    # Build MultiIndex DataFrame from accumulated rows
     summary = pd.DataFrame(rows).set_index(["classifier", "dataset"])
     summary.columns = pd.MultiIndex.from_tuples(list(summary.columns))
     return summary
@@ -297,7 +299,6 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     if not rows:
         return pd.DataFrame()
 
-    # Pivot into a classifiers x datasets table
     return (
         pd.DataFrame(rows)
         .pivot(index="classifier", columns="dataset", values="value")

@@ -346,3 +346,29 @@ def test_transformer_instance_is_cloned_and_seeded(split_with_test):
     assert transformer.random_state is None
     # The estimator saw the reduced features, so both splits were transformed
     assert result.best_model.n_features_in_ == 2
+
+
+def test_run_scores_on_the_fitted_scale_not_the_split(split_with_test):
+    """A split missing an intermediate class keeps the gaps the model was fitted on."""
+    from sklearn.dummy import DummyClassifier
+
+    class Extremes(DummyClassifier):
+        """Predicts only the two extreme classes, never the middle one."""
+
+        def predict(self, X):
+            return np.resize(np.array([0, 20]), len(X))
+
+    X_train = np.zeros((30, 2))
+    y_train = np.repeat([0, 10, 20], 10)
+    X_test = np.zeros((6, 2))
+    y_test = np.array([0, 0, 20, 20, 0, 20])
+    exp = _make_experiment(
+        ModelConfig(Extremes(strategy="most_frequent")),
+        eval_metrics=["accuracy_off1_score"],
+    )
+
+    result = _call_run(exp, X_train, y_train, X_test, y_test)
+
+    # Without the fitted scale the two extremes look adjacent, scoring 1.0
+    npt.assert_array_equal(result.best_model.classes_, [0, 10, 20])
+    assert result.test_metrics["accuracy_off1_score_test"] == pytest.approx(2 / 3)

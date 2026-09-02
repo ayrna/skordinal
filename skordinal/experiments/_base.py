@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
+from inspect import signature
 from typing import Any
 
 import numpy as np
@@ -68,6 +70,27 @@ def _check_metric_names(metrics: Any, *, param: str) -> list[str]:
     for name in metrics:
         _resolve_label_metric(name)
     return metrics
+
+
+@lru_cache(maxsize=None)
+def _metric_takes_labels(name: str) -> bool:
+    """Report whether a registered label metric accepts a labels argument."""
+    return "labels" in signature(_resolve_label_metric(name)).parameters
+
+
+def _compute_metric(
+    name: str, y_true: Any, y_pred: Any, *, labels: Any = None
+) -> float:
+    """Score one metric, naming the full ordinal scale when it accepts one.
+
+    Without ``labels`` a split that holds neither the true nor the predicted
+    form of an intermediate class collapses the gap it spans, which reports a
+    perfect ``accuracy_off1_score`` for a model confusing the extremes.
+    """
+    metric = _resolve_label_metric(name)
+    if labels is not None and _metric_takes_labels(name):
+        return float(metric(y_true, y_pred, labels=labels))
+    return float(metric(y_true, y_pred))
 
 
 def _check_input_preprocessing(input_preprocessing: Any) -> None:

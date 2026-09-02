@@ -13,21 +13,16 @@ from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import get_ordinal_scorer
-from skordinal.metrics._metrics import _resolve_label_metric
 
 from ._base import (
     _check_input_preprocessing,
     _check_metric_names,
     _check_tuning_metric,
+    _compute_metric,
     _set_nested_random_state,
 )
 from ._model_config import ModelConfig
 from ._results import ExperimentResult
-
-
-def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Compute a single ordinal metric by name."""
-    return _resolve_label_metric(metric_name.strip())(y_true, y_pred)
 
 
 class Experiment:
@@ -230,7 +225,7 @@ class Experiment:
         if y_test is not None and X_test is None:
             raise ValueError("'y_test' was given without 'X_test'.")
 
-        # Apply preprocessing on local copies so the caller's arrays are not mutated.
+        # Preprocess into locals so the caller's arrays are never mutated
         train_inputs: np.ndarray = X_train
         test_inputs: np.ndarray | None = X_test
         scaler = self._build_scaler()
@@ -241,8 +236,7 @@ class Experiment:
             if X_test is not None:
                 test_inputs = scaler.transform(X_test)
 
-        # Select and fit the best estimator, keeping the refit metadata in
-        # locals so nothing is ever injected onto the estimator itself
+        # Keep the refit metadata in locals, never on the estimator itself
         base = self.model.build(self.random_state)
         if self.model.needs_search:
             scorer = get_ordinal_scorer(self.tuning_metric)
@@ -274,10 +268,8 @@ class Experiment:
             cv_time_train = np.nan
             cv_time_test = np.nan
 
-        # Predict on the training split.
         train_predicted_y = best_estimator.predict(train_inputs)
 
-        # Predict on the test split when it is present.
         test_predicted_y = None
         elapsed = np.nan
         if y_test is not None:
@@ -286,21 +278,22 @@ class Experiment:
             test_predicted_y = np.asarray(best_estimator.predict(test_inputs))
             elapsed = perf_counter() - start
 
-        # Compute evaluation metrics for both splits.
+        # The fitted scale, so a split missing a class keeps its real gaps
+        classes = getattr(best_estimator, "classes_", None)
         train_metrics: OrderedDict[str, Any] = OrderedDict()
         test_metrics: OrderedDict[str, Any] = OrderedDict()
         for metric_name in self.eval_metrics:
             train_score = _compute_metric(
-                metric_name,
-                y_train,
-                train_predicted_y,
+                metric_name, y_train, train_predicted_y, labels=classes
             )
             train_metrics[metric_name + "_train"] = train_score
 
             test_metrics[metric_name + "_test"] = np.nan
             if y_test is not None:
                 assert test_predicted_y is not None
-                test_score = _compute_metric(metric_name, y_test, test_predicted_y)
+                test_score = _compute_metric(
+                    metric_name, y_test, test_predicted_y, labels=classes
+                )
                 test_metrics[metric_name + "_test"] = test_score
 
         # Assemble timing keys, the cv_* pair stays NaN unless a search ran
@@ -309,14 +302,12 @@ class Experiment:
         train_metrics["time_train"] = refit_time
         test_metrics["time_test"] = elapsed
 
-        # Compute class probabilities on each split when supported
         train_y_proba = self._predict_proba_or_none(best_estimator, train_inputs)
         y_proba = None
         if y_test is not None:
             assert test_inputs is not None
             y_proba = self._predict_proba_or_none(best_estimator, test_inputs)
 
-        # Build and return the ExperimentResult; no persistence here.
         return ExperimentResult(
             dataset_name=dataset_name,
             classifier_name=classifier_name,

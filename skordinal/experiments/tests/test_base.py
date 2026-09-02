@@ -13,6 +13,7 @@ from skordinal.experiments._base import (
     _check_metric_names,
     _check_path_component,
     _check_resample_id,
+    _compute_metric,
 )
 
 
@@ -108,3 +109,19 @@ def test_check_input_preprocessing_rejects_a_non_transformer(bad):
     """A non-transformer, a removed token or a class (forgotten parens) raises."""
     with pytest.raises(TypeError, match="'input_preprocessing' must be None"):
         _check_input_preprocessing(bad)
+
+
+def test_compute_metric_names_the_scale_only_where_accepted():
+    """labels= reaches the metrics that take it and is dropped for the rest."""
+    y_true = np.array([0, 0, 2, 2])
+    y_pred = np.array([0, 2, 0, 2])
+    scale = np.array([0, 1, 2])
+    # With the middle class named, the extremes stay two apart, not adjacent
+    assert _compute_metric("accuracy_off1_score", y_true, y_pred) == 1.0
+    assert _compute_metric(
+        "accuracy_off1_score", y_true, y_pred, labels=scale
+    ) == pytest.approx(0.5)
+    # accuracy_score takes no labels, so passing them must not raise
+    assert _compute_metric(
+        "accuracy_score", y_true, y_pred, labels=scale
+    ) == pytest.approx(0.5)

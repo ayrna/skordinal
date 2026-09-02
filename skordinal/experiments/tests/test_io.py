@@ -15,6 +15,7 @@ from skordinal.experiments._io import (
     _ensure_parent,
     _format_proba_column,
     _parse_proba_column,
+    _read_confusion_matrix_size,
     _sweep_orphaned_temp_files,
     _write_split_files,
 )
@@ -137,3 +138,15 @@ def test_confusion_matrix_not_elided_for_many_classes(tmp_path):
     assert "..." not in body
     # Check the matrix keeps one physical line per row (no wrapping)
     assert body.count("\n") == 39
+
+
+def test_read_confusion_matrix_size(tmp_path):
+    """K comes from the saved matrix, and an unusable file yields None."""
+    good = tmp_path / "test_confusion_matrix.txt"
+    good.write_text("Seed 0\n=====\n[[1, 0, 0],\n [0, 2, 0],\n [0, 0, 3]]\n")
+    assert _read_confusion_matrix_size(good) == 3
+
+    ragged = tmp_path / "ragged.txt"
+    ragged.write_text("Seed 0\n=====\n[[1, 0], [0]]\n")
+    assert _read_confusion_matrix_size(ragged) is None
+    assert _read_confusion_matrix_size(tmp_path / "absent.txt") is None

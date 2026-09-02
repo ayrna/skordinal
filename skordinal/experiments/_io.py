@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import os
 import sys
 import tempfile
@@ -126,3 +127,15 @@ def _write_split_files(
         seed_dir / f"{split}_confusion_matrix.txt",
         f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
     )
+
+
+def _read_confusion_matrix_size(path: Path) -> int | None:
+    """Return K from a saved K x K confusion matrix, or None if unreadable."""
+    try:
+        body = path.read_text(encoding="utf-8").split("\n", 2)[2]
+        matrix = ast.literal_eval(body.strip())
+    except (OSError, IndexError, ValueError, SyntaxError):
+        return None
+    if not matrix or any(len(row) != len(matrix) for row in matrix):
+        return None
+    return len(matrix)
