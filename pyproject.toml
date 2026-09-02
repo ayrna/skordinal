@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "skordinal"
-version = "0.1.0rc1"
+version = "0.1.0"
 description = "Ordinal classification for Python, scikit-learn compatible"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -222,6 +222,8 @@ git-only = [
     ".codecov.yml",
     ".coveragerc",
     ".gitignore",
+    ".readthedocs.yaml",
+    "docs/**",
     "examples/**",
     "skordinal/**/tests/**",
     "skordinal/classifiers/src/libsvmrank/grid.py",
