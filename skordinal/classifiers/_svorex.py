@@ -12,7 +12,7 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.utils.validation import check_ordinal_targets
 
-from . import _libsvorex as svorex  # type: ignore[attr-defined]
+from . import _libsvor as svorex  # type: ignore[attr-defined]
 
 
 class SVOREX(ClassifierMixin, BaseEstimator):
@@ -144,7 +144,8 @@ class SVOREX(ClassifierMixin, BaseEstimator):
         else:
             gamma_value = float(self.gamma)
 
-        options = "svorex {} -T {} -K {} -C {}".format(
+        # -M 0 SVOREX
+        options = "svor -M 0 {} -T {} -K {} -C {}".format(
             arg, str(self.tol), str(gamma_value), str(self.C)
         )
         self.model_ = svorex.fit((y_encoded + 1).tolist(), X.tolist(), options)
