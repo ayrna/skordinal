@@ -204,10 +204,12 @@ These keys control how the benchmark is executed.
 `param_grid`.
 
 - **`ModelConfig(estimator, param_grid=None)`**: wraps any estimator that
-  implements the scikit-learn estimator interface. `param_grid` is a dict of
-  hyperparameter name → list of values for `GridSearchCV`. For meta-estimators
-  (e.g. `OrdinalDecomposition`) use the double-underscore syntax
-  (`"estimator__C"`) to target nested parameters.
+  implements the scikit-learn estimator interface. `param_grid` maps a
+  hyperparameter name to either a sequence of candidate values (list, tuple
+  or array, e.g. `np.logspace(-3, 3, 7)`) searched by `GridSearchCV`, or a
+  single value held fixed. For meta-estimators (e.g. `OrdinalDecomposition`)
+  use the double-underscore syntax (`"estimator__C"`) to target nested
+  parameters.
 
 ## Running Experiments
 

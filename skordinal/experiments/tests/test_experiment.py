@@ -189,6 +189,21 @@ def test_run_preprocessing_train_only_does_not_raise(split_train_only):
     assert math.isnan(result.test_metrics["mean_absolute_error_test"])
 
 
+def test_run_search_accepts_array_grid_and_scalar_entry(split_with_test):
+    """np.array candidates trigger a search; a scalar entry rides along."""
+    X_train, y_train, X_test, y_test = split_with_test
+    # "linear" is not SVC's default, so dropping the scalar would show up
+    conf = ModelConfig(
+        SVC(), param_grid={"C": np.array([0.1, 1.0]), "kernel": "linear"}
+    )
+    assert conf.needs_search
+
+    result = _call_run(_make_experiment(conf), X_train, y_train, X_test, y_test)
+
+    assert result.best_params["C"] in (0.1, 1.0)
+    assert result.best_model.kernel == "linear"
+
+
 def test_run_rejects_y_test_without_x_test(split_train_only):
     """y_test without X_test raises ValueError, not a bare assert."""
     X_train, y_train, _, _ = split_train_only

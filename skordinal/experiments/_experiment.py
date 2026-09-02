@@ -251,7 +251,7 @@ class Experiment:
             )
             search = GridSearchCV(
                 base,
-                param_grid=self.model.param_grid,
+                param_grid=self.model.search_grid(),
                 scoring=scorer,
                 n_jobs=self.n_jobs,
                 cv=splitter,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 from sklearn.ensemble import BaggingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -67,13 +68,44 @@ def test_modelconfig_param_grid_is_keyword_only():
         ({"C": [0.5]}, False),
         ({"C": [0.1, 1.0]}, True),
         ({"C": [0.1, 1.0], "max_iter": 200}, True),
+        ({"C": np.logspace(-2, 0, 3)}, True),
+        ({"solver": "lbfgs"}, False),
     ],
-    ids=["none", "empty", "singleton", "multi_value", "mixed_multi"],
+    ids=[
+        "none",
+        "empty",
+        "singleton",
+        "multi_value",
+        "mixed_multi",
+        "numpy_grid",
+        "string_scalar",
+    ],
 )
 def test_needs_search(param_grid, expected):
-    """Return True iff a grid value is a multi-element list or tuple."""
+    """Return True iff a grid value is a multi-element non-string sequence."""
     cfg = ModelConfig(LogisticRegression(), param_grid=param_grid)
     assert cfg.needs_search is expected
+
+
+@pytest.mark.parametrize(
+    "param_grid, expected",
+    [
+        ({"C": [0.1, 1.0], "solver": "lbfgs"}, {"C": [0.1, 1.0], "solver": ["lbfgs"]}),
+        (None, {}),
+    ],
+    ids=["wraps_scalars", "none"],
+)
+def test_search_grid(param_grid, expected):
+    """Scalar entries are wrapped for GridSearchCV; sequences pass through."""
+    cfg = ModelConfig(LogisticRegression(), param_grid=param_grid)
+    assert cfg.search_grid() == expected
+
+
+def test_zero_d_array_counts_as_a_fixed_value():
+    """A 0-d array holds one value and has no len() to enumerate."""
+    cfg = ModelConfig(LogisticRegression(), param_grid={"C": np.asarray(0.5)})
+    assert cfg.needs_search is False
+    assert cfg.fixed_params()["C"] == 0.5
 
 
 @pytest.mark.parametrize(

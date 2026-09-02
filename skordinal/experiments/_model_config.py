@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 from sklearn.base import BaseEstimator, clone
 
 from ._base import _set_nested_random_state
@@ -24,8 +26,9 @@ class ModelConfig:
         Untrained sklearn-compatible estimator instance.
 
     param_grid : dict[str, Any] or None, keyword-only, default=None
-        Hyper-parameter grid mapping parameter names to a value or list
-        of values.  ``None`` means the estimator is fitted as-is.
+        Hyper-parameter grid mapping parameter names to a value or a
+        sequence of candidate values (list, tuple or array).  ``None``
+        means the estimator is fitted as-is.
 
     Raises
     ------
@@ -58,51 +61,68 @@ class ModelConfig:
         if self.param_grid is not None and not isinstance(self.param_grid, dict):
             raise TypeError("param_grid must be a dict or None.")
 
+    @staticmethod
+    def _is_search_sequence(value: Any) -> bool:
+        """Report whether a grid value enumerates candidates, as ParameterGrid does."""
+        if isinstance(value, np.ndarray):
+            # A 0-d array holds one value, and has no len() to enumerate
+            return value.ndim > 0
+        return isinstance(value, Sequence) and not isinstance(value, str)
+
     @property
     def needs_search(self) -> bool:
         """Return ``True`` iff the grid has at least one multi-value entry.
 
-        A multi-value entry is a list or tuple with more than one element.
-        When ``param_grid`` is ``None`` or empty, or every value is a scalar
-        or singleton list/tuple, returns ``False``.
-
         Returns
         -------
         needs_search : bool
-            ``True`` when at least one grid value is a list or tuple
-            with more than one element; ``False`` otherwise.
+            ``True`` when a grid value is a non-string sequence (list, tuple
+            or array) holding more than one element; ``False`` otherwise,
+            which includes a ``None`` or empty grid.
         """
         if not self.param_grid:
             return False
         return any(
-            isinstance(v, (list, tuple)) and len(v) > 1
-            for v in self.param_grid.values()
+            self._is_search_sequence(v) and len(v) > 1 for v in self.param_grid.values()
         )
 
     def fixed_params(self) -> dict[str, Any]:
-        """Return a flat parameter dict, unwrapping singleton lists/tuples.
-
-        Singleton list or tuple values (``len == 1``) are unwrapped to their
-        scalar element.  Empty list/tuple values are skipped.  Scalar values
-        are passed through unchanged.  When ``param_grid`` is ``None``,
-        an empty dict is returned.
+        """Return a flat parameter dict, unwrapping singleton sequences.
 
         Returns
         -------
         params : dict[str, Any]
-            Flat parameter dict ready to pass to ``set_params``.
+            Flat parameter dict ready to pass to ``set_params``: a singleton
+            sequence unwrapped to its element, an empty one skipped, a scalar
+            unchanged.  Empty when ``param_grid`` is ``None``.
         """
         if self.param_grid is None:
             return {}
         out: dict[str, Any] = {}
         for key, value in self.param_grid.items():
-            if isinstance(value, (list, tuple)):
+            if self._is_search_sequence(value):
                 if len(value) == 0:
                     continue
                 out[key] = value[0]
             else:
                 out[key] = value
         return out
+
+    def search_grid(self) -> dict[str, Any]:
+        """Return the grid with scalar values wrapped for ``GridSearchCV``.
+
+        Returns
+        -------
+        grid : dict[str, Any]
+            Parameter grid ready to pass to ``GridSearchCV``: sequences pass
+            through, and a fixed scalar becomes the singleton list it requires.
+        """
+        if self.param_grid is None:
+            return {}
+        return {
+            key: value if self._is_search_sequence(value) else [value]
+            for key, value in self.param_grid.items()
+        }
 
     def build(self, random_state: int | None = None) -> BaseEstimator:
         """Return a fresh clone of the estimator, optionally seeded.
