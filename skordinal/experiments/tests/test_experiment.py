@@ -5,7 +5,9 @@ import math
 import numpy as np
 import numpy.testing as npt
 import pytest
-from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.dummy import DummyClassifier
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.experiments import Experiment, ExperimentResult, ModelConfig
@@ -55,39 +57,50 @@ def _call_run(experiment, X_train, y_train, X_test, y_test):
     )
 
 
-def test_empty_eval_metrics_raises():
-    """An empty eval_metrics list raises ValueError."""
-    with pytest.raises(ValueError, match="'eval_metrics' must be a non-empty list"):
-        Experiment(ModelConfig(SVC()), eval_metrics=[])
-
-
 @pytest.mark.parametrize(
-    "raw, expected",
+    "overrides, exc_type, match",
     [
-        (None, None),
-        ("std", "std"),
-        ("norm", "norm"),
-        (" STD ", "std"),
-        ("NORM", "norm"),
+        pytest.param(
+            {"model": SVC()},
+            TypeError,
+            "'model' must be a ModelConfig instance",
+            id="bare-estimator",
+        ),
+        pytest.param(
+            {"eval_metrics": []},
+            ValueError,
+            "'eval_metrics' must be a non-empty list",
+            id="empty-eval-metrics",
+        ),
+        pytest.param(
+            {"eval_metrics": ["ranked_probability_score"]},
+            ValueError,
+            "ranked_probability_score",
+            id="proba-only-eval-metric",
+        ),
+        pytest.param(
+            {"tuning_metric": "mean_absolute_error"},
+            ValueError,
+            "only registered as 'neg_",
+            id="bare-loss-tuning-metric",
+        ),
+        pytest.param(
+            {"input_preprocessing": "std"},
+            TypeError,
+            "'input_preprocessing' must be None",
+            id="string-input-preprocessing",
+        ),
     ],
 )
-def test_input_preprocessing_accepted_and_normalized(raw, expected):
-    """Valid input_preprocessing values are accepted and lower-stripped."""
-    exp = Experiment(
-        _MINIMAL_CONF, eval_metrics=["mean_absolute_error"], input_preprocessing=raw
-    )
-    assert exp.input_preprocessing == expected
-
-
-@pytest.mark.parametrize("bad_value", ["minmax", ""])
-def test_input_preprocessing_invalid_raises(bad_value):
-    """Unrecognised input_preprocessing values raise ValueError."""
-    with pytest.raises(ValueError, match="'input_preprocessing' must be one of"):
-        Experiment(
-            _MINIMAL_CONF,
-            eval_metrics=["mean_absolute_error"],
-            input_preprocessing=bad_value,
-        )
+def test_constructor_rejects_invalid_arguments(overrides, exc_type, match):
+    """Each invalid argument raises at construction, before anything is fitted."""
+    kwargs = {
+        "model": _MINIMAL_CONF,
+        "eval_metrics": ["mean_absolute_error"],
+        **overrides,
+    }
+    with pytest.raises(exc_type, match=match):
+        Experiment(kwargs.pop("model"), **kwargs)
 
 
 @pytest.mark.parametrize("kwargs, expected", [({}, None), ({"random_state": 42}, 42)])
@@ -97,18 +110,13 @@ def test_random_state_stored(kwargs, expected):
     assert exp.random_state == expected
 
 
-def test_run_returns_experiment_result(split_with_test):
-    """run returns a populated ExperimentResult."""
+@pytest.mark.parametrize("with_indices", [True, False], ids=["indices", "defaults"])
+def test_run_forwards_identity_and_indices(split_with_test, with_indices):
+    """The result echoes the identity kwargs; indices verbatim or None."""
     X_train, y_train, X_test, y_test = split_with_test
-    result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
+    train_index = np.arange(X_train.shape[0]) if with_indices else None
+    test_index = np.arange(X_test.shape[0]) if with_indices else None
 
-    assert isinstance(result, ExperimentResult)
-    assert result.train_predicted_y.shape == (30,)
-
-
-def test_run_identity_passthrough(split_with_test):
-    """dataset_name, classifier_name, and resample_id are forwarded verbatim."""
-    X_train, y_train, X_test, y_test = split_with_test
     result = _make_experiment().run(
         X_train,
         y_train,
@@ -117,36 +125,21 @@ def test_run_identity_passthrough(split_with_test):
         dataset_name="my_dataset",
         classifier_name="my_conf",
         resample_id=42,
-    )
-
-    assert result.dataset_name == "my_dataset"
-    assert result.classifier_name == "my_conf"
-    assert result.resample_id == 42
-
-
-def test_run_forwards_partition_indices(split_with_test):
-    """train_index/test_index round-trip onto the result; default None."""
-    X_train, y_train, X_test, y_test = split_with_test
-    train_index = np.arange(X_train.shape[0])
-    test_index = np.arange(X_test.shape[0])
-
-    result = _make_experiment().run(
-        X_train,
-        y_train,
-        X_test,
-        y_test,
-        dataset_name="ds",
-        classifier_name="cfg",
-        resample_id=0,
         train_index=train_index,
         test_index=test_index,
     )
-    npt.assert_array_equal(result.train_index, train_index)
-    npt.assert_array_equal(result.test_index, test_index)
 
-    default_result = _call_run(_make_experiment(), X_train, y_train, X_test, y_test)
-    assert default_result.train_index is None
-    assert default_result.test_index is None
+    assert isinstance(result, ExperimentResult)
+    assert result.train_predicted_y.shape == (30,)
+    assert result.dataset_name == "my_dataset"
+    assert result.classifier_name == "my_conf"
+    assert result.resample_id == 42
+    if with_indices:
+        npt.assert_array_equal(result.train_index, train_index)
+        npt.assert_array_equal(result.test_index, test_index)
+    else:
+        assert result.train_index is None
+        assert result.test_index is None
 
 
 @pytest.mark.parametrize("has_test", [True, False])
@@ -191,18 +184,37 @@ def test_run_timing_with_cv(split_with_test):
     assert result.best_params.get("C") in _CONF_CV.param_grid["C"]
 
 
-@pytest.mark.parametrize("input_preprocessing", ["std", "norm"])
-def test_run_preprocessing_train_only_does_not_raise(
-    split_train_only, input_preprocessing
-):
+def test_run_preprocessing_train_only_does_not_raise(split_train_only):
     """input_preprocessing with X_test=None runs without transforming None."""
-    exp = _make_experiment(input_preprocessing=input_preprocessing)
+    exp = _make_experiment(input_preprocessing=StandardScaler())
     X_train, y_train, X_test, y_test = split_train_only
 
     result = _call_run(exp, X_train, y_train, X_test, y_test)
 
     assert result.test_predicted_y is None
     assert math.isnan(result.test_metrics["mean_absolute_error_test"])
+
+
+def test_run_search_accepts_array_grid_and_scalar_entry(split_with_test):
+    """np.array candidates trigger a search; a scalar entry rides along."""
+    X_train, y_train, X_test, y_test = split_with_test
+    # "linear" is not SVC's default, so dropping the scalar would show up
+    conf = ModelConfig(
+        SVC(), param_grid={"C": np.array([0.1, 1.0]), "kernel": "linear"}
+    )
+    assert conf.needs_search
+
+    result = _call_run(_make_experiment(conf), X_train, y_train, X_test, y_test)
+
+    assert result.best_params["C"] in (0.1, 1.0)
+    assert result.best_model.kernel == "linear"
+
+
+def test_run_rejects_y_test_without_x_test(split_train_only):
+    """y_test without X_test raises ValueError, not a bare assert."""
+    X_train, y_train, _, _ = split_train_only
+    with pytest.raises(ValueError, match="'y_test' was given without 'X_test'"):
+        _call_run(_make_experiment(), X_train, y_train, None, y_train)
 
 
 def test_run_best_model_carries_no_refit_metadata(split_with_test):
@@ -216,8 +228,8 @@ def test_run_best_model_carries_no_refit_metadata(split_with_test):
 
 
 def test_run_preprocessing_does_not_mutate_inputs(split_with_test):
-    """input_preprocessing='std' operates on copies; caller's arrays are unchanged."""
-    exp = _make_experiment(input_preprocessing="std")
+    """Preprocessing operates on copies; the caller's arrays are unchanged."""
+    exp = _make_experiment(input_preprocessing=StandardScaler())
     X_train, y_train, X_test, y_test = split_with_test
     train_before = X_train.copy()
     test_before = X_test.copy()
@@ -238,14 +250,6 @@ def test_run_metric_keys_for_each_eval_metric(split_with_test):
         # mean_absolute_error is a loss, but reporting must not negate it
         assert result.train_metrics[name + "_train"] >= 0
         assert result.test_metrics[name + "_test"] >= 0
-
-
-def test_run_rejects_unknown_eval_metric(split_with_test):
-    """An unknown eval_metric name raises ValueError naming the metric."""
-    X_train, y_train, X_test, y_test = split_with_test
-    exp = _make_experiment(eval_metrics=["ranked_probability_score"])
-    with pytest.raises(ValueError, match="ranked_probability_score"):
-        _call_run(exp, X_train, y_train, X_test, y_test)
 
 
 def test_run_proba_absent_without_predict_proba(split_with_test):
@@ -298,7 +302,8 @@ def test_run_proba_none_when_predict_proba_raises(split_with_test, monkeypatch):
 
 @pytest.mark.parametrize(
     "input_preprocessing,expected_type",
-    [("std", StandardScaler), ("norm", MinMaxScaler), (None, type(None))],
+    [(StandardScaler(), StandardScaler), (None, type(None))],
+    ids=["scaler", "none"],
 )
 def test_run_records_the_fitted_scaler(
     split_with_test, input_preprocessing, expected_type
@@ -318,3 +323,43 @@ def test_run_records_the_fitted_scaler(
             result.scaler.transform(X_train)[0],
             expected_type().fit(X_train).transform(X_train)[0],
         )
+
+
+def test_transformer_instance_is_cloned_and_seeded(split_with_test):
+    """The caller's transformer is never fitted; its clone gets the run seed."""
+    X_train, y_train, X_test, y_test = split_with_test
+    transformer = PCA(n_components=2)
+    exp = _make_experiment(input_preprocessing=transformer, random_state=7)
+    result = _call_run(exp, X_train, y_train, X_test, y_test)
+
+    assert result.scaler is not transformer
+    assert not hasattr(transformer, "components_")
+    assert result.scaler.random_state == 7
+    assert transformer.random_state is None
+    # The estimator saw the reduced features, so both splits were transformed
+    assert result.best_model.n_features_in_ == 2
+
+
+def test_run_scores_on_the_fitted_scale(split_with_test):
+    """A split missing an intermediate class keeps the gaps the model was fitted on."""
+
+    class Extremes(DummyClassifier):
+        """Predicts only the two extreme classes, never the middle one."""
+
+        def predict(self, X):
+            return np.resize(np.array([0, 20]), len(X))
+
+    X_train = np.zeros((30, 2))
+    y_train = np.repeat([0, 10, 20], 10)
+    X_test = np.zeros((6, 2))
+    y_test = np.array([0, 0, 20, 20, 0, 20])
+    exp = _make_experiment(
+        ModelConfig(Extremes(strategy="most_frequent")),
+        eval_metrics=["accuracy_off1_score"],
+    )
+
+    result = _call_run(exp, X_train, y_train, X_test, y_test)
+
+    # Without the fitted scale the two extremes look adjacent, scoring 1.0
+    npt.assert_array_equal(result.best_model.classes_, [0, 10, 20])
+    assert result.test_metrics["accuracy_off1_score_test"] == pytest.approx(2 / 3)

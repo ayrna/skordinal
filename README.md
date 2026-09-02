@@ -8,7 +8,7 @@
 
 ## What is skordinal?
 
-**skordinal** is an experimental framework built on Python that integrates with scikit-learn to automate machine learning experiments through simple JSON configuration files. Initially designed for ordinal classification, it supports regular classification algorithms as long as they are compatible with scikit-learn, making it easy to run reproducible experiments across multiple datasets and classification methods.
+**skordinal** is an experimental framework built on Python that integrates with scikit-learn to automate machine learning experiments through simple Python recipe files. Initially designed for ordinal classification, it supports regular classification algorithms as long as they are compatible with scikit-learn, making it easy to run reproducible experiments across multiple datasets and classification methods.
 
 ## Table of Contents
 
@@ -60,6 +60,11 @@ All dependencies are managed through `pyproject.toml` and include:
    pip install -e .[dev]
    ```
 
+   Progress bars during a benchmark run need one optional extra:
+   ```bash
+   pip install skordinal[progress]
+   ```
+
 ### Testing Installation
 
 Test your installation with the provided example:
@@ -81,6 +86,7 @@ optional and fall back to the `Benchmark` defaults.
 
 ```python
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.classifiers import OrdinalDecomposition
@@ -90,7 +96,7 @@ RECIPE = {
     "datasets": ["balance_scale", "era", "esl"],
     "cv": 3,
     "n_jobs": 1,
-    "input_preprocessing": "std",
+    "input_preprocessing": StandardScaler(),
     "results_path": "results/",
     "eval_metrics": [
         "accuracy_score",
@@ -180,15 +186,25 @@ These keys control how the benchmark is executed.
   passed to `GridSearchCV` to select the best hyperparameters.
 - **`cv`** (default `3`): number of cross-validation folds.
 - **`n_jobs`** (default `1`): parallel jobs for `GridSearchCV`.
-- **`input_preprocessing`** (default `None`): `"std"` for standardisation,
-  `"norm"` for normalisation, `None` for no scaling.
-- **`resamples`** (default `30`): number of train/test resamples per dataset.
+- **`input_preprocessing`** (default `None`): a transformer instance (e.g.
+  `StandardScaler()` or a `Pipeline`) fitted on each training split, or
+  `None` for no preprocessing.
+- **`resamples`** (default `30`): number of train/test resamples per dataset,
+  or the explicit list of resample ids to run.
 - **`test_size`** (default `0.3`): fraction of samples held out for testing
   when partitions are generated rather than read from a masks file.
 - **`data_home`** (default `None`): base directory for dataset files; `None`
   uses the bundled datasets.
-- **`random_state`** (default `None`): integer seed for reproducibility.
-- **`verbose`** (default `True`): print progress during the run.
+- **`random_state`** (default `0`): integer seed for reproducibility. A
+  non-integer (including `None`) is resolved to one concrete seed at
+  construction, so every resample of a run shares one partitioning scheme.
+- **`overwrite`** (default `False`): recompute resamples that are already
+  saved; `False` makes a run resumable.
+- **`verbose`** (default `True`): report progress during the run — INFO
+  messages on the `skordinal.experiments` logger (printed to stdout when
+  the application has not configured logging) and, with
+  `pip install skordinal[progress]`, a tqdm bar per (model, dataset) pair
+  on a terminal.
 
 ### models
 
@@ -197,10 +213,12 @@ These keys control how the benchmark is executed.
 `param_grid`.
 
 - **`ModelConfig(estimator, param_grid=None)`**: wraps any estimator that
-  implements the scikit-learn estimator interface. `param_grid` is a dict of
-  hyperparameter name → list of values for `GridSearchCV`. For meta-estimators
-  (e.g. `OrdinalDecomposition`) use the double-underscore syntax
-  (`"estimator__C"`) to target nested parameters.
+  implements the scikit-learn estimator interface. `param_grid` maps a
+  hyperparameter name to either a sequence of candidate values (list, tuple
+  or array, e.g. `np.logspace(-3, 3, 7)`) searched by `GridSearchCV`, or a
+  single value held fixed. For meta-estimators (e.g. `OrdinalDecomposition`)
+  use the double-underscore syntax (`"estimator__C"`) to target nested
+  parameters.
 
 ## Running Experiments
 

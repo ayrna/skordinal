@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import os
+import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
@@ -10,32 +12,10 @@ from typing import Any
 
 import joblib
 import numpy as np
+import pandas as pd
+from sklearn.metrics import confusion_matrix
 
 _TEMP_PREFIX = ".skordinal-tmp-"
-
-
-def _check_path_component(name: Any, what: str) -> None:
-    """Reject a path component that is empty, dotted or holds a separator."""
-    if not isinstance(name, str):
-        raise TypeError(f"{what} must be a str; got {type(name).__name__}.")
-    if name in ("", ".", ".."):
-        raise ValueError(f"{what} must not be empty or a dot segment; got {name!r}.")
-    if any(sep in name for sep in (os.sep, "/", os.altsep) if sep):
-        raise ValueError(f"{what} must not contain a path separator; got {name!r}.")
-
-
-def _check_resample_id(resample_id: Any) -> None:
-    """Reject a resample id that is neither int-like nor a plain path component."""
-    if isinstance(resample_id, (int, np.integer)):
-        return
-    _check_path_component(str(resample_id), "resample_id")
-
-
-def _check_split(split: str, *, allow_both: bool) -> None:
-    """Raise ValueError when split is not a recognised value."""
-    valid = {"test", "train", "both"} if allow_both else {"test", "train"}
-    if split not in valid:
-        raise ValueError(f"split must be one of {sorted(valid)!r}, got {split!r}.")
 
 
 def _ensure_parent(path: Path) -> None:
@@ -98,3 +78,64 @@ def _format_proba_column(proba: np.ndarray) -> list[str]:
 def _parse_proba_column(series: Iterable[str]) -> np.ndarray:
     """Expand stringified ``"[p0, p1, ...]"`` cells into an (n, q) array."""
     return np.vstack([np.fromstring(x.strip("[]"), sep=",") for x in series])
+
+
+def _write_split_files(
+    seed_dir: Path,
+    split: str,
+    *,
+    index: np.ndarray | None,
+    true_y: np.ndarray,
+    predicted_y: np.ndarray,
+    proba: np.ndarray | None,
+    classes: np.ndarray,
+    resample_id: int,
+) -> None:
+    """Encode one split's labels and write its per-seed output files."""
+    if not np.isin(true_y, classes).all():
+        raise ValueError(
+            f"'{split}' true labels contain classes unknown to the fitted model."
+        )
+    pattern_id = index if index is not None else np.arange(predicted_y.shape[0])
+    target = np.searchsorted(classes, true_y)
+    if not np.isin(predicted_y, classes).all():
+        raise ValueError(
+            f"'{split}' predicted labels contain classes unknown to the fitted model."
+        )
+    # Record the estimator's actual decision, never a proba argmax substitute
+    prediction = np.searchsorted(classes, predicted_y)
+
+    columns: dict[str, object] = {"Pattern ID": pattern_id, "Target": target}
+    if proba is not None:
+        if proba.shape != (true_y.shape[0], classes.size):
+            raise ValueError(
+                f"'{split}' probabilities have shape {proba.shape}; expected "
+                f"({true_y.shape[0]}, {classes.size})."
+            )
+        columns["Prediction probabilities"] = _format_proba_column(proba)
+    columns["Prediction"] = prediction
+    _atomic_write(
+        seed_dir / f"{split}_predictions.csv",
+        pd.DataFrame(columns).to_csv(index=False),
+    )
+
+    cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
+    body = np.array2string(
+        cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
+    )
+    _atomic_write(
+        seed_dir / f"{split}_confusion_matrix.txt",
+        f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
+    )
+
+
+def _read_confusion_matrix_size(path: Path) -> int | None:
+    """Return K from a saved K x K confusion matrix, or None if unreadable."""
+    try:
+        body = path.read_text(encoding="utf-8").split("\n", 2)[2]
+        matrix = ast.literal_eval(body.strip())
+    except (OSError, IndexError, ValueError, SyntaxError):
+        return None
+    if not matrix or any(len(row) != len(matrix) for row in matrix):
+        return None
+    return len(matrix)

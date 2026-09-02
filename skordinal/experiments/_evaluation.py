@@ -2,11 +2,11 @@
 
 import math
 
+import numpy as np
 import pandas as pd
 
-from skordinal.metrics._metrics import _resolve_label_metric
-
-from ._io import _atomic_write, _check_split
+from ._base import _check_metric_names, _check_split, _compute_metric
+from ._io import _atomic_write, _read_confusion_matrix_size
 from ._results import Results
 
 
@@ -76,9 +76,8 @@ def evaluate(
     ValueError
         If ``split`` is not ``"test"`` or ``"train"``, if ``metrics`` is
         empty or holds an unregistered name, if ``classifier_name`` or
-        ``dataset_name`` is empty, a dot segment, or contains a path
-        separator, or if a predictions file lacks the ``Target`` or
-        ``Prediction`` column.
+        ``dataset_name`` is not a usable path component, or if a predictions
+        file lacks the ``Target`` or ``Prediction`` column.
 
     TypeError
         If ``classifier_name`` or ``dataset_name`` is not a string, or if
@@ -101,7 +100,8 @@ def evaluate(
     ``best_model.classes_``, so metrics are recomputed in rank space, where
     adjacent categories are always distance 1. ``report.csv``'s own values are
     computed on the raw labels, so the two agree only while the label set is
-    contiguous.
+    contiguous. The scale spans the pair's saved confusion matrix, so a tree
+    written without one is scored on the ranks its predictions contain.
 
     Examples
     --------
@@ -110,28 +110,10 @@ def evaluate(
     """
     _check_split(split, allow_both=False)
 
-    if isinstance(metrics, str):
-        raise TypeError(
-            "metrics must be an iterable of metric name strings, not a bare string; "
-            f"pass [{metrics!r}] to compute a single metric."
-        )
-    metric_names = (
-        tuple(metrics)
-        if metrics is not None
-        else ("mean_absolute_error", "accuracy_score")
-    )
-    if not metric_names:
-        raise ValueError("'metrics' must be non-empty; got an empty sequence.")
-    for name in metric_names:
-        if not isinstance(name, str):
-            raise TypeError(
-                "metrics must contain only metric name strings; got "
-                f"{type(name).__name__!r}."
-            )
-    # Key the columns by the stripped name, like Experiment's report.csv
-    metric_names = tuple(name.strip() for name in metric_names)
-    # Resolve up front so an unknown name raises before any file is read
-    resolved = {name: _resolve_label_metric(name) for name in metric_names}
+    if metrics is None:
+        metrics = ("mean_absolute_error", "accuracy_score")
+    # Stripped names key the columns, like Experiment's report.csv
+    metric_names = tuple(_check_metric_names(metrics, param="metrics"))
 
     results = _existing_results(results_path)
     rows = {}
@@ -147,8 +129,14 @@ def evaluate(
             )
         y_true = df["Target"].to_numpy()
         y_pred = df["Prediction"].to_numpy()
+        # The saved confusion matrix is the only artefact that still carries K
+        size = _read_confusion_matrix_size(
+            path.parent / f"{split}_confusion_matrix.txt"
+        )
+        labels = np.arange(size) if size else None
         rows[resample_id] = {
-            name: float(metric(y_true, y_pred)) for name, metric in resolved.items()
+            name: _compute_metric(name, y_true, y_pred, labels=labels)
+            for name in metric_names
         }
 
     return pd.DataFrame.from_dict(
@@ -219,7 +207,6 @@ def summarize(results_path, *, classifiers=None, split="test"):
         if classifier_set is not None and clf not in classifier_set:
             continue
 
-        # Select columns for the requested split
         if split == "test":
             metric_cols = [c for c in df.columns if c.endswith("_test")]
         elif split == "train":
@@ -227,7 +214,6 @@ def summarize(results_path, *, classifiers=None, split="test"):
         else:
             metric_cols = [c for c in df.columns if c.endswith(("_test", "_train"))]
 
-        # Compute mean and std for each metric column
         row = {"classifier": clf, "dataset": ds}
         for col in metric_cols:
             series = df[col].dropna()
@@ -244,7 +230,6 @@ def summarize(results_path, *, classifiers=None, split="test"):
     if not rows:
         return pd.DataFrame()
 
-    # Build MultiIndex DataFrame from accumulated rows
     summary = pd.DataFrame(rows).set_index(["classifier", "dataset"])
     summary.columns = pd.MultiIndex.from_tuples(list(summary.columns))
     return summary
@@ -297,7 +282,6 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     rows = []
 
     for clf, ds, df in _iter_reports(results):
-        # Format as "mean +/- std", or "n/a" when metric is absent or all-NaN
         if col not in df.columns or df[col].isna().all():
             cell = "n/a"
         else:
@@ -314,7 +298,6 @@ def tabulate_results(results_path, *, metric="mean_absolute_error", split="test"
     if not rows:
         return pd.DataFrame()
 
-    # Pivot into a classifiers x datasets table
     return (
         pd.DataFrame(rows)
         .pivot(index="classifier", columns="dataset", values="value")

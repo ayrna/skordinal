@@ -49,7 +49,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+progress = [
+    "tqdm>=4.66",
+]
 dev = [
+    "skordinal[progress]",
     "pytest>=7.0",
     "pytest-cov",
     "pytest-xdist[psutil]",

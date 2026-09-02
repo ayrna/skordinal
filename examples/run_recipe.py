@@ -42,6 +42,9 @@ def main(argv: list[str] | None = None) -> None:
     overrides: dict[str, object] = {}
     if args.results_dir is not None:
         overrides["results_path"] = args.results_dir
+    # Only force it on, so the recipe's own value survives without the flag
+    if args.overwrite:
+        overrides["overwrite"] = True
 
     benchmark = Benchmark.from_recipe(args.recipe, **overrides)
     benchmark.run()

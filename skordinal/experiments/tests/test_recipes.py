@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.experiments import Benchmark, ModelConfig, load_recipe, validate_recipe
@@ -48,104 +49,103 @@ def _write(tmp_path: Path, src: str, name: str = "recipe.py") -> Path:
     return p
 
 
-def test_validate_recipe_minimal_valid_does_not_raise():
-    """A minimal recipe with ``models`` and ``datasets`` passes without error."""
-    validate_recipe(_MINIMAL_RECIPE)
-
-
-def test_validate_recipe_all_optional_keys_accepted():
-    """A recipe with every optional key accepted alongside the required keys."""
-    full: dict = {
-        "models": _MINIMAL_MODELS,
-        "datasets": ["balance_scale"],
-        "data_home": "/data",
-        "eval_metrics": ["mean_absolute_error"],
-        "results_path": "/tmp/out",
-        "resamples": 10,
-        "test_size": 0.25,
-        "tuning_metric": "neg_mean_absolute_error",
-        "cv": 3,
-        "n_jobs": 1,
-        "input_preprocessing": "std",
-        "random_state": 0,
-        "overwrite": True,
-        "verbose": False,
-    }
-    validate_recipe(full)
+_FULL_RECIPE: dict = {
+    "models": _MINIMAL_MODELS,
+    "datasets": ["balance_scale"],
+    "data_home": "/data",
+    "eval_metrics": ["mean_absolute_error"],
+    "results_path": "/tmp/out",
+    "resamples": 10,
+    "test_size": 0.25,
+    "tuning_metric": "neg_mean_absolute_error",
+    "cv": 3,
+    "n_jobs": 1,
+    "input_preprocessing": StandardScaler(),
+    "random_state": 0,
+    "overwrite": True,
+    "verbose": False,
+}
 
 
 @pytest.mark.parametrize(
-    "bad_recipe",
+    "recipe", [_MINIMAL_RECIPE, _FULL_RECIPE], ids=["minimal", "every-optional-key"]
+)
+def test_validate_recipe_accepts_valid_recipes(recipe):
+    """The required keys alone and every optional key both pass."""
+    validate_recipe(recipe)
+
+
+@pytest.mark.parametrize(
+    "recipe, exc_type, match",
     [
-        pytest.param(["models", "datasets"], id="list-not-dict"),
-        pytest.param(None, id="none-not-dict"),
+        pytest.param(
+            ["models", "datasets"], TypeError, "recipe must be a dict", id="list"
+        ),
+        pytest.param(None, TypeError, "recipe must be a dict", id="none"),
+        pytest.param(
+            {"datasets": ["balance_scale"]},
+            ValueError,
+            "missing required keys",
+            id="missing-models",
+        ),
+        pytest.param(
+            {"models": _MINIMAL_MODELS},
+            ValueError,
+            "missing required keys",
+            id="missing-datasets",
+        ),
+        pytest.param(
+            {"models": _MINIMAL_MODELS, "datasets": ["era"], "bogus": True},
+            ValueError,
+            "unknown keys",
+            id="unknown-key",
+        ),
+        pytest.param(
+            {"models": {}, "datasets": ["era"]},
+            ValueError,
+            "non-empty dict",
+            id="empty-models",
+        ),
+        pytest.param(
+            {"models": [_MINIMAL_MODELS], "datasets": ["era"]},
+            TypeError,
+            "'models' must be a dict",
+            id="models-not-a-dict",
+        ),
+        pytest.param(
+            {"models": {"svc": SVC()}, "datasets": ["era"]},
+            TypeError,
+            "ModelConfig",
+            id="non-modelconfig-value",
+        ),
+        pytest.param(
+            {"models": _MINIMAL_MODELS, "datasets": "era"},
+            TypeError,
+            r"not a bare string; pass \['era'\]",
+            id="bare-string-datasets",
+        ),
+        pytest.param(
+            {"models": _MINIMAL_MODELS, "datasets": []},
+            ValueError,
+            "non-empty",
+            id="empty-datasets",
+        ),
     ],
 )
-def test_validate_recipe_not_dict_raises_type_error(bad_recipe):
-    """A non-dict recipe raises ``TypeError`` mentioning the type."""
-    with pytest.raises(TypeError, match="recipe must be a dict"):
-        validate_recipe(bad_recipe)
+def test_validate_recipe_rejects_invalid_structures(recipe, exc_type, match):
+    """Each structural defect raises its own error, before Benchmark is built."""
+    with pytest.raises(exc_type, match=match):
+        validate_recipe(recipe)
 
 
-def test_validate_recipe_missing_models_raises_value_error():
-    """A recipe without ``models`` raises ``ValueError`` mentioning the key."""
-    with pytest.raises(ValueError, match="missing required keys"):
-        validate_recipe({"datasets": ["balance_scale"]})
-
-
-def test_validate_recipe_missing_datasets_raises_value_error():
-    """A recipe without ``datasets`` raises ``ValueError`` mentioning the key."""
-    with pytest.raises(ValueError, match="missing required keys"):
-        validate_recipe({"models": _MINIMAL_MODELS})
-
-
-def test_validate_recipe_empty_models_raises_value_error():
-    """An empty ``models`` dict raises ``ValueError``."""
-    with pytest.raises(ValueError, match="non-empty dict"):
-        validate_recipe({"models": {}, "datasets": ["balance_scale"]})
-
-
-def test_validate_recipe_models_value_not_modelconfig_raises_type_error():
-    """A ``models`` value that is not a ``ModelConfig`` raises ``TypeError``."""
-    with pytest.raises(TypeError, match="ModelConfig"):
-        validate_recipe(
-            {
-                "models": {"svc": SVC()},  # raw estimator, not wrapped
-                "datasets": ["balance_scale"],
-            }
-        )
-
-
-def test_validate_recipe_empty_datasets_raises_value_error():
-    """An empty ``datasets`` list raises ``ValueError``."""
-    with pytest.raises(ValueError, match="non-empty"):
-        validate_recipe({"models": _MINIMAL_MODELS, "datasets": []})
-
-
-def test_validate_recipe_unknown_key_raises_value_error():
-    """An unknown top-level key raises ``ValueError`` naming the unknown key."""
-    with pytest.raises(ValueError, match="unknown keys"):
-        validate_recipe(
-            {
-                "models": _MINIMAL_MODELS,
-                "datasets": ["balance_scale"],
-                "this_key_is_not_allowed": True,
-            }
-        )
-
-
-def test_load_recipe_valid_file_returns_dict(tmp_path):
-    """``load_recipe`` on a valid file returns a validated dict with ``ModelConfig`` values."""
-    p = _write(tmp_path, _VALID_RECIPE_SRC)
+def test_load_recipe_returns_the_validated_dict(tmp_path):
+    """The RECIPE dict comes back whole, its ModelConfig values constructed."""
+    p = _write(tmp_path, _RECIPE_WITH_EXTRAS_SRC)
     recipe = load_recipe(p)
 
-    assert isinstance(recipe, dict)
-    assert "models" in recipe
-    assert "datasets" in recipe
-    for name, cfg in recipe["models"].items():
-        assert isinstance(cfg, ModelConfig), (
-            f"models[{name!r}] is {type(cfg)!r}, expected ModelConfig"
-        )
+    assert recipe["datasets"] == ["balance_scale"]
+    assert recipe["resamples"] == 2
+    assert all(isinstance(cfg, ModelConfig) for cfg in recipe["models"].values())
 
 
 def test_load_recipe_missing_attribute_raises_attribute_error(tmp_path):
@@ -155,41 +155,26 @@ def test_load_recipe_missing_attribute_raises_attribute_error(tmp_path):
         load_recipe(p)
 
 
-def test_load_recipe_file_not_found_raises(tmp_path):
-    """A non-existent path raises ``FileNotFoundError``."""
+@pytest.mark.parametrize("exists", [False, True], ids=["missing", "not-python"])
+def test_load_recipe_rejects_an_unloadable_path(tmp_path, exists):
+    """A missing path and a file no import loader accepts both fail loud."""
+    path = tmp_path / "recipe.txt"
+    if exists:
+        path.write_text(_VALID_RECIPE_SRC, encoding="utf-8")
     with pytest.raises(FileNotFoundError):
-        load_recipe(tmp_path / "nonexistent_recipe.py")
+        load_recipe(path)
 
 
-def test_load_recipe_is_repeatable(tmp_path):
-    """Calling ``load_recipe`` twice on the same file returns equal results."""
+def test_load_recipe_is_repeatable_and_leaves_sys_modules_clean(tmp_path):
+    """Repeat loads see fresh state; the synthetic module never lingers."""
+    import sys
+
     p = _write(tmp_path, _VALID_RECIPE_SRC)
     first = load_recipe(p)
     second = load_recipe(p)
 
-    assert set(first.keys()) == set(second.keys())
     assert list(first["datasets"]) == list(second["datasets"])
-
-
-def test_load_recipe_does_not_pollute_sys_modules(tmp_path):
-    """The synthetic module name is removed from ``sys.modules`` after loading."""
-    import sys
-
-    p = _write(tmp_path, _VALID_RECIPE_SRC)
-    module_name = f"_skordinal_recipe_{p.stem}"
-
-    load_recipe(p)
-
-    assert module_name not in sys.modules
-
-
-def test_load_recipe_with_extra_fields_returns_all_keys(tmp_path):
-    """Optional keys declared in the recipe are present in the returned dict."""
-    p = _write(tmp_path, _RECIPE_WITH_EXTRAS_SRC)
-    recipe = load_recipe(p)
-
-    assert "resamples" in recipe
-    assert recipe["resamples"] == 2
+    assert f"_skordinal_recipe_{p.stem}" not in sys.modules
 
 
 _FROM_RECIPE_TMPL = """\

@@ -33,11 +33,11 @@ def validate_recipe(recipe: dict) -> None:
     """Structurally validate a recipe dict.
 
     Checks that ``recipe`` is a dict containing the required keys
-    ``models`` and ``datasets``, that ``models`` is a non-empty dict
-    mapping string labels to ``ModelConfig`` instances, and that
-    ``datasets`` is a non-empty sequence.  All further value validation
-    (scorer names, numeric ranges, estimator types) is deferred to
-    ``Benchmark.__init__``.
+    ``models`` and ``datasets``, that ``models`` is a non-empty dict of
+    ``ModelConfig`` values, and that ``datasets`` is a non-empty,
+    non-string sequence.  This is a structural check only: label and
+    dataset names, metric names and estimator types are all left to
+    ``Benchmark.__init__``, which every recipe passes through.
 
     Parameters
     ----------
@@ -50,8 +50,9 @@ def validate_recipe(recipe: dict) -> None:
     Raises
     ------
     TypeError
-        If ``recipe`` is not a dict, or if any value in ``models`` is
-        not a ``ModelConfig`` instance.
+        If ``recipe`` is not a dict, if ``models`` is not a dict or any of
+        its values is not a ``ModelConfig`` instance, or if ``datasets`` is
+        a bare string.
 
     ValueError
         If required keys are missing, unknown keys are present,
@@ -80,7 +81,13 @@ def validate_recipe(recipe: dict) -> None:
         raise ValueError(f"recipe missing required keys: {sorted(missing)}.")
 
     models = recipe["models"]
-    if not isinstance(models, dict) or not models:
+    # Same messages as Benchmark.__init__, which validates this again
+    if not isinstance(models, dict):
+        raise TypeError(
+            f"'models' must be a dict of label to ModelConfig; got "
+            f"{type(models).__name__}."
+        )
+    if not models:
         raise ValueError(f"'models' must be a non-empty dict; got {type(models)!r}.")
     bad = [k for k, v in models.items() if not isinstance(v, ModelConfig)]
     if bad:
@@ -90,6 +97,11 @@ def validate_recipe(recipe: dict) -> None:
         )
 
     datasets = recipe["datasets"]
+    if isinstance(datasets, str):
+        raise TypeError(
+            f"'datasets' must be an iterable of dataset names, not a bare "
+            f"string; pass [{datasets!r}] to use a single dataset."
+        )
     if not datasets:
         raise ValueError("'datasets' must be a non-empty list; got an empty sequence.")
 

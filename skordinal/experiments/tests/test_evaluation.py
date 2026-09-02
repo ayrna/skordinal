@@ -141,7 +141,7 @@ def test_evaluate_skips_uncommitted_seed(seed_folder):
     assert list(df.index) == [2, 10]
 
 
-def test_evaluate_skips_entries_that_are_not_seed_directories(tmp_path, recwarn):
+def test_evaluate_skips_non_seed_entries(tmp_path, recwarn):
     """Only a directory named ``seed_<id>`` counts, even when the id is committed."""
     _write_report(
         tmp_path,
@@ -165,7 +165,7 @@ def test_evaluate_skips_entries_that_are_not_seed_directories(tmp_path, recwarn)
     assert not [w for w in recwarn if issubclass(w.category, RuntimeWarning)]
 
 
-def test_evaluate_warns_when_a_committed_predictions_file_is_missing(tmp_path):
+def test_evaluate_warns_on_a_missing_committed_file(tmp_path):
     """A committed row with metrics for the split but no file is corruption."""
     _write_report(tmp_path, "A", "d1", {3: {"mean_absolute_error_test": 0.5}})
     _write_seed(tmp_path, "A", "d1", 3, "test")
@@ -245,11 +245,7 @@ def test_summarize_and_tabulate_skip_a_pair_without_a_report(tmp_path):
     ],
 )
 def test_evaluate_rejects_invalid_arguments(tmp_path, args, kwargs, exception, match):
-    """Each guard reports its own error before any results file is read.
-
-    ``tmp_path`` holds no tree, so a guard that fails to fire surfaces
-    ``FileNotFoundError`` instead of the pinned message.
-    """
+    """Each guard fires before any read: tmp_path holds no tree to fall back on."""
     with pytest.raises(exception, match=match):
         evaluate(tmp_path, *args, **kwargs)
 
@@ -261,8 +257,8 @@ def test_evaluate_missing_predictions_directory_raises(tmp_path):
 
 
 def test_evaluate_computes_exactly_the_requested_metrics(seed_folder):
-    """Only the requested metrics become columns, keyed by their stripped name."""
-    df = evaluate(seed_folder, "A", "d1", metrics=[" accuracy_score "])
+    """Requested names become columns once each, stripped and deduplicated."""
+    df = evaluate(seed_folder, "A", "d1", metrics=[" accuracy_score "] * 2)
     assert list(df.columns) == ["accuracy_score"]
     assert list(df["accuracy_score"]) == pytest.approx([0.75, 0.5])
 
@@ -387,21 +383,18 @@ def test_summarize_skips_non_pair_entries(tmp_path):
     assert {(clf, ds) for clf, ds in df.index} == {("clf", "ds")}
 
 
-def test_summarize_empty_folder_returns_empty(tmp_path):
-    """summarize returns an empty frame when no pairs are present."""
-    assert summarize(tmp_path).empty
-
-
-def test_summarize_rejects_string_classifiers(two_pair_folder):
-    """summarize raises TypeError when classifiers is a bare string."""
-    with pytest.raises(TypeError, match="iterable"):
-        summarize(two_pair_folder, classifiers="A")
-
-
-def test_summarize_rejects_unknown_split(two_pair_folder):
-    """summarize raises ValueError on an unrecognised split."""
-    with pytest.raises(ValueError, match="split must be"):
-        summarize(two_pair_folder, split="bad")
+@pytest.mark.parametrize(
+    "kwargs, exc_type, match",
+    [
+        ({"classifiers": "A"}, TypeError, "iterable"),
+        ({"split": "bad"}, ValueError, "split must be"),
+    ],
+    ids=["bare-string-classifiers", "unknown-split"],
+)
+def test_summarize_rejects_invalid_arguments(two_pair_folder, kwargs, exc_type, match):
+    """A bare-string classifiers filter and an unknown split both raise."""
+    with pytest.raises(exc_type, match=match):
+        summarize(two_pair_folder, **kwargs)
 
 
 @pytest.mark.parametrize(
@@ -420,26 +413,20 @@ def test_tabulate_results_pivots_formatted_cells(two_pair_folder, split, expecte
 
 
 @pytest.mark.parametrize(
-    "rows,metric",
+    "rows, metric, expected",
     [
-        ([{"mae_test": 0.3}], "nonexistent"),
-        ([{"mae_test": float("nan")}], "mae"),
-        ([{"mae_test": float("inf")}], "mae"),
+        ([{"mae_test": 0.25}], "mae", "0.2500 +/- 0.0000"),
+        ([{"mae_test": 0.3}], "nonexistent", "n/a"),
+        ([{"mae_test": float("nan")}], "mae", "n/a"),
+        ([{"mae_test": float("inf")}], "mae", "n/a"),
     ],
-    ids=["absent", "all-nan", "non-finite"],
+    ids=["single-resample", "absent", "all-nan", "non-finite"],
 )
-def test_tabulate_results_renders_na(tmp_path, rows, metric):
-    """tabulate_results shows n/a for absent or non-finite metrics."""
+def test_tabulate_results_cell_rule(tmp_path, rows, metric, expected):
+    """A single resample gets zero std; absent or non-finite metrics get n/a."""
     _make_pair_csv(tmp_path, "clf", "ds", rows)
     df = tabulate_results(tmp_path, metric=metric, split="test")
-    assert df.loc["clf", "ds"] == "n/a"
-
-
-def test_tabulate_results_single_resample_zero_std(tmp_path):
-    """tabulate_results reports zero std for a single resample."""
-    _make_pair_csv(tmp_path, "clf", "ds", [{"mae_test": 0.25}])
-    df = tabulate_results(tmp_path, metric="mae", split="test")
-    assert df.loc["clf", "ds"] == "0.2500 +/- 0.0000"
+    assert df.loc["clf", "ds"] == expected
 
 
 def test_tabulate_results_fills_missing_pairs_with_na(tmp_path):
@@ -458,8 +445,9 @@ def test_tabulate_results_rejects_both_split(two_pair_folder):
         tabulate_results(two_pair_folder, split="both")
 
 
-def test_tabulate_results_empty_folder_returns_empty(tmp_path):
-    """tabulate_results returns an empty frame when no pairs are present."""
+def test_aggregators_return_empty_for_an_empty_folder(tmp_path):
+    """An existing root with no pairs yields an empty frame, not an error."""
+    assert summarize(tmp_path).empty
     assert tabulate_results(tmp_path).empty
 
 
@@ -541,3 +529,19 @@ def test_summarize_round_trip_precision(tmp_path):
     _make_pair_csv(tmp_path, "clf", "ds", [{"mae_test": value}])
     df = summarize(tmp_path, split="test")
     assert df.loc[("clf", "ds"), ("mae_test", "mean")] == value
+
+
+def test_evaluate_recovers_the_scale_from_the_confusion_matrix(tmp_path):
+    """K comes from the stored K x K matrix, so a missing class keeps its gap."""
+    _write_report(tmp_path, "A", "d1", {0: {"accuracy_off1_score_test": 2 / 3}})
+    seed = _write_seed(
+        tmp_path, "A", "d1", 0, "test", [0, 0, 2, 2, 0, 2], [0, 2, 0, 2, 0, 2]
+    )
+    (seed / "test_confusion_matrix.txt").write_text(
+        "Seed 0\n=====\n[[3, 0, 0],\n [0, 0, 0],\n [0, 0, 3]]\n"
+    )
+
+    scored = evaluate(tmp_path, "A", "d1", metrics=["accuracy_off1_score"])
+
+    # Ranks 0 and 2 are two apart on the recovered scale, not adjacent
+    assert scored.loc[0, "accuracy_off1_score"] == pytest.approx(2 / 3)
