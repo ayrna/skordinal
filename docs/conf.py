@@ -59,8 +59,7 @@ autosummary_generate = True
 # import the pure-Python wrappers without a compiled extension present.
 autodoc_mock_imports = [
     "skordinal.classifiers._libsvmrank",
-    "skordinal.classifiers._libsvorex",
-    "skordinal.classifiers._libsvorim",
+    "skordinal.classifiers._libsvor",
     "skordinal.classifiers._orensemble",
 ]
 

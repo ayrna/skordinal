@@ -23,18 +23,6 @@
 #include "smo.h"
 
 
-/*******************************************************************************\
-
-    double Calculate_Kernel( double * pi, double * pj, smo_Settings * settings )
-    
-    purpose: calculate the kernel function (Polynomial, Gaussian, or Linear) 
-             between two data points using their feature arrays and ARD weights.
-    input:   pi and pj (pointers to arrays of doubles representing data points), 
-             settings (pointer to smo_Settings containing dimension info).
-    output:  the computed kernel value (double).
-
-\*******************************************************************************/
-
 double Calculate_Kernel( double * pi, double * pj, smo_Settings * settings )
 {
 	long unsigned int dimen = 0 ;
@@ -74,7 +62,10 @@ double Calculate_Kernel( double * pi, double * pj, smo_Settings * settings )
 			}
 		}
 		if ((double) P > 1.0) {
-			kernel = pow( (kernel + 1.0), (double) P ) ;
+			double base = kernel + 1.0 ;
+			unsigned int k ;
+			kernel = 1.0 ;
+			for (k = 0 ; k < P ; k++) kernel *= base ;
 		}
 	}
 	else if ( GAUSSIAN == KERNEL )
@@ -91,7 +82,10 @@ double Calculate_Kernel( double * pi, double * pj, smo_Settings * settings )
 				if ( pi[dimen]!=pj[dimen] )
 					kernel = kernel + KAPPA * settings->ard[dimen] ;
 			}
+				//printf("%f( %f - %f)^2\n", kernel, pi[dimen], pj[dimen]);
 		}
+		//printf("%f %d \n", kernel, dimension);
+		//kernel = exp ( -  kernel / 2.0 * dimension ) ; 
 		kernel = exp ( -  kernel * dimension ) ; 
 	}
 	else 
@@ -113,24 +107,13 @@ double Calculate_Kernel( double * pi, double * pj, smo_Settings * settings )
 		}
 	}       
 	if (pi==pj){
+	//printf("%f\n", kernel+ 0.001);
 		return kernel + 0.001 ;
 	}else{
+	//printf("%f\n", kernel);
         return kernel ; 
 	}
-} /* end of Calculate_Kernel */
-
-
-/*******************************************************************************\
-
-    double Calc_Kernel( struct _Alphas * ai, struct _Alphas * aj, smo_Settings * settings )
-    
-    purpose: retrieve the kernel value for two Alphas structures, fetching it 
-             from the global cache if enabled, or calculating it on the fly.
-    input:   ai and aj (pointers to Alphas structures), settings (pointer to 
-             smo_Settings containing cache flags and parameters).
-    output:  the cached or computed kernel value (double).
-
-\*******************************************************************************/
+}
 
 double Calc_Kernel( struct _Alphas * ai, struct _Alphas * aj, smo_Settings * settings )
 {
@@ -167,7 +150,5 @@ double Calc_Kernel( struct _Alphas * ai, struct _Alphas * aj, smo_Settings * set
 	pi = ai->pair->point ;
 	pj = aj->pair->point ;
 	return Calculate_Kernel(pi, pj, settings) ;
-} /* end of Calc_Kernel */
-
-
+}
 /* the end of smo_kernel.c */

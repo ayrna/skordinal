@@ -1,12 +1,12 @@
-"""SVORIM kernel and regularisation grid search on balance_scale."""
+"""SVOR kernel and regularisation grid search on balance_scale."""
 
 from sklearn.preprocessing import StandardScaler
 
-from skordinal.classifiers import SVORIM
+from skordinal.classifiers import SVOR
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
-    "datasets": ["tocuco_oc03_newthyroid"],
+    "datasets": ["balance_scale"],
     "cv": 3,
     "n_jobs": 1,
     "input_preprocessing": StandardScaler(),
@@ -18,11 +18,12 @@ RECIPE = {
     ],
     "tuning_metric": "neg_mean_absolute_error",
     "models": {
-        "SVORIM": ModelConfig(
-            SVORIM(kernel="rbf"),
+        "SVOR": ModelConfig(
+            SVOR(kernel="rbf"),
             param_grid={
                 "C": [0.001, 0.01, 0.1, 1, 10, 100, 1000],
                 "gamma": [0.001, 0.01, 0.1, 1, 10, 100, 1000],
+                "constraints": ["explicit", "implicit"],
             },
         ),
     },

@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import REDSVM, SVOREX, SVORIM, OrdinalDecomposition
+from skordinal.classifiers import REDSVM, SVOR, OrdinalDecomposition
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
@@ -61,18 +61,12 @@ RECIPE = {
                 shrinking=True,
             ),
         ),
-        "SVOREX": ModelConfig(
-            SVOREX(kernel="rbf", tol=0.001),
+        "SVOR": ModelConfig(
+            SVOR(kernel="rbf", tol=0.001),
             param_grid={
                 "C": [0.1, 1, 10],
                 "gamma": [0.1, 1, 10],
-            },
-        ),
-        "SVORIM": ModelConfig(
-            SVORIM(kernel="rbf", tol=0.001),
-            param_grid={
-                "C": [0.1, 1, 10],
-                "gamma": [0.1, 1, 10],
+                "constraints": ["explicit", "implicit"],
             },
         ),
     },

@@ -1,6 +1,15 @@
 /*******************************************************************************\
-	smo.h in Sequential Minimal Optimization ver2.0
-	UNIFIED SVOREX & SVORIM
+
+	smo.h in Sequential Minimal Optimization ver2.0 
+
+	defines all MACROs and data structures for SMO algorithm.
+
+	Chu Wei Copyright(C) National Univeristy of Singapore
+	Created on Jan. 16 2000 at Control Lab of Mechanical Engineering 
+	Updated on Aug. 23 2001 
+	Updated on Jan. 22 2003 
+	Updated on Oct. 06 2003 for imbalanced data 
+
 \*******************************************************************************/
 #ifdef  __cplusplus
 extern "C" {
@@ -9,91 +18,140 @@ extern "C" {
 #ifndef _SMO_H
 #define _SMO_H
 
-#ifdef _WIN_SIMU
+/*#pragma pack(8)*/ 
+
+/*#define _ORDINAL_DEBUG*/
+
+#ifdef _WIN32_SIMU
 #include <windows.h>
 #else
-typedef enum _BOOL { FALSE = 0, TRUE = 1 } BOOL ;
+typedef enum _BOOL 
+{
+	FALSE = 0 ,
+	TRUE = 1 ,
+} BOOL ;
 #define min(a,b)        ((a) < (b) ? (a) : (b))
 #define max(a,b)        ((a) > (b) ? (a) : (b))
 #endif
 
-#define MINNUM          (2)			
-#define LENGTH          (307200)		 
+#define MINNUM          (2)			/* at least two*/
+#define LENGTH          (307200)		/* maximum value of line length in data file */
 
-typedef enum _Set_Name { Io_a=5, Io_b=6, I_One=1, I_Two=2, I_Fou=4, I_Thr=3, I_o=0 } Set_Name ;  
-typedef enum _Data_Type { REGRESSION=2, CLASSIFICATION=1, ORDINAL=3, UNKNOWN=0 } Data_Type ;
-typedef enum _Method_Name { SMO_SKONE, SMO_SKTWO } Method_Name ;
-typedef enum _Kernel_Name { GAUSSIAN=0, POLYNOMIAL=1, LINEAR=2 } Kernel_Name ;
-typedef enum _Training_Method { BAYESIAN=1, SMOMERELY=2, CROSSVALIDATION=3 } Training_Method ;
 
-typedef struct _Data_Node {
-	long unsigned int index;
-	unsigned int count;             
-	int fold;
-	double * point;                
-	unsigned int target;                 
-	double guess;					
-	double fx;
-	struct _Data_Node * next;      
+typedef enum _Set_Name
+{
+	Io_a=5 ,
+	Io_b=6 ,
+	I_One=1 ,
+	I_Two=2 ,
+	I_Fou=4 ,
+	I_Thr=3 ,
+	I_o=0 ,	
+
+} Set_Name ;  
+
+typedef enum _Data_Type
+{
+	REGRESSION = 2 ,
+	CLASSIFICATION = 1 ,
+	ORDINAL = 3 ,
+	UNKNOWN = 0 ,
+
+} Data_Type ;
+
+typedef enum _Kernel_Name
+{
+	GAUSSIAN = 0 ,	
+	POLYNOMIAL = 1 ,
+	LINEAR = 2 ,
+
+} Kernel_Name ;
+
+typedef enum _Constraint_Mode
+{
+	EXPLICIT_CONSTRAINTS = 0 ,	/*/ threshold ordering imposed by mu multipliers*/
+	IMPLICIT_CONSTRAINTS = 1 ,	/*/ threshold ordering falls out of the formulation*/
+
+} Constraint_Mode ;
+
+typedef struct _Data_Node 
+{
+	long unsigned int index ;       /* line number in data file loaded*/	
+	unsigned int count ;            /*/ counter for the sample  */
+	int fold ;
+	double * point ;                /*/ point to one input point*/
+	unsigned int target ;                 /*/ output*/
+	double guess ;					/*/ our guess in training or prediction*/
+	double fx ;
+	struct _Data_Node * next ;      /*/ point to next node in the list*/
+
 } Data_Node ;
 
-typedef struct _Data_List {
-	Data_Type datatype;            
-	BOOL normalized_input;			 
-	BOOL normalized_output;		
-	unsigned long int count;       
-	unsigned long int dimen;            	
-	unsigned int i_ymax;
-	unsigned int i_ymin;
-	unsigned int classes;
-	char * filename;
-	unsigned int * labels;
-	unsigned int * labelnum;
-	double mean;                   
-	double deviation;              	
-	int * featuretype;					
-	double * x_mean;				
-	double * x_devi;				
-	Data_Node * front;          
-	Data_Node * rear;             
+typedef struct _Data_List 
+{
+	Data_Type datatype ;            /*/ regression problem or classification*/
+	BOOL normalized_input ;			/*/ point data_node normalized or not */
+	BOOL normalized_output ;		/*/ target data_node normalized or not */
+	unsigned long int count ;       /*/ total number of samples */
+	unsigned int dimen ;            /*/ dimension of input vector	*/
+	unsigned int i_ymax ;
+	unsigned int i_ymin ;
+	unsigned int classes ;
+	char * filename ;
+	unsigned int * labels ;
+	unsigned int * labelnum ;
+
+	double mean ;                   /*/ mean of output*/
+	double deviation ;              /*/ deviation of output*/	
+	int * featuretype ;				/*/ mean of input	*/
+	double * x_mean ;				/*/ mean of input*/
+	double * x_devi ;				/*/ standard deviation of input*/
+	Data_Node * front ;             /*/ point to first node in the list*/
+	Data_Node * rear ;              /*/ point to last node in the list*/
+
 } Data_List ;
 
-typedef struct _Cache_Node {
-	double new_Fi;
-	struct _Alphas * alpha;
-	struct _Cache_Node * previous;
-	struct _Cache_Node * next;
+typedef struct _Cache_Node
+{
+	double new_Fi ;
+	struct _Alphas * alpha ;
+	struct _Cache_Node * previous ;
+	struct _Cache_Node * next ;
+
 } Cache_Node ;
 
-typedef struct _Cache_List {
-	long unsigned int count;
-	Cache_Node * front;
-	Cache_Node * rear;
+typedef struct _Cache_List 
+{
+	long unsigned int count ;
+	Cache_Node * front ;
+	Cache_Node * rear ;
+	
 } Cache_List ;
 
-typedef struct _Alphas {
-	double alpha;              // Shared scalar output for Prediction
-	double alpha_up;           // SVOREX
-	double alpha_dw;           // SVOREX
-	Set_Name setname_up;       // SVOREX
-	Set_Name setname_dw;       // SVOREX
-    
-	double * alpha_ptr;        // SVORIM
-	Set_Name * setname_ptr;    // SVORIM
+typedef struct _Alphas
+{
+	double alpha ;
+	double alpha_up ;               /*/ ai for input point, EXPLICIT only */
+	double alpha_dw ;               /*/ ai' for input point, EXPLICIT only */
+	double * alpha_j ;              /*/ one ai per threshold, IMPLICIT only, size classes-1 */
+	double f_cache ;                /*/ save Fi here if the pair is in Set Io */
+	double * kernel ;               /*/ diagonal entry */
+	/*/BOOL kernel_cache ;             // in kernel cache or not*/
+	/*/unsigned int cache_offset ;     // the offset in kernel cache matrix*/
+	/*/unsigned long int update_count ;// the count for entering the takestep*/
+	Data_Node * pair ;              /*/ point to the corresponding pair */
+	Cache_Node * cache ;            /*/ point to the Node in Cache List */
+	/*/Set_Name setname ;				// Set Name */
+	Set_Name setname_up ;           /*/ Set Name for ORDINAL, EXPLICIT only*/ 
+	Set_Name setname_dw ;              
+	Set_Name * setname ;            /*/ one Set Name per threshold, IMPLICIT only, size classes-1 */
 
-	double f_cache;					 
-	double * kernel;					
-	Data_Node * pair;					
-	Cache_Node * cache;				
 } Alphas ;
 
-typedef struct _smo_Settings {
-	int model_type; // 0: SVOREX, 1: SVORIM
+
+typedef struct _smo_Settings
+{
 	double vc ;                     /*/ Regularization Parameter*/
-	
-	/*/ introduce for imbalanced datasets*/
-	double vc_p ;                   /*/ C for positive labelled samples*/
-	double vc_n ;                   /*/ C for negative labelled samples*/
 
 	double epsilon ;                /*/ Epsilon insensitive Loss Function*/
 	double beta ;					/*/ Soft Insensitive Loss Function	*/
@@ -102,102 +160,94 @@ typedef struct _smo_Settings {
 	double duration ;               /*/ clock time passed*/
 	double * ard ;
 
-	Kernel_Name kernel;            
-	unsigned int p;               
-	double kappa;					
+	Kernel_Name kernel ;            /*/ Kernel Type*/
+	Constraint_Mode constraints ;   /*/ explicit or implicit threshold ordering*/
+	unsigned int p ;                /*/ Polynomial Power*/
+	double kappa ;					/*/ Sigma square is Gaussian kernel	*/
 
-	struct _Alphas * alpha;		
-	struct _Cache_List io_cache;	
-	struct _Data_List * pairs;		
-	Method_Name method;        
+	struct _Alphas * alpha ;		/*/ Pointers to Alphas matrix */
+	struct _Cache_List io_cache ;	/*/ Head of Cache List*/
+	struct _Data_List * pairs ;		/*/ this is a reference from def_Settings*/
 
-	long unsigned int * ij_low;      
-	long unsigned int * ij_up;      
-	double * bj_low;               
-	double * bj_up;                 
-	double * biasj;
-	double * mu;                    // SVOREX
-	double * bmu_low;               // SVOREX
-	double * bmu_up;                // SVOREX
-	long unsigned int * imu_low;    // SVOREX
-	long unsigned int * imu_up;     // SVOREX
-	double bias;
+	long unsigned int * ij_low ;       /*/ index of Bias_low*/
+	long unsigned int * ij_up ;        /*/ index of Bias_up*/
+	double * bj_low ;                  /*/ inf of bias*/
+	double * bj_up ;                   /*/ sup of bias 	*/
+	double * biasj ;
+	double * mu ;
+	double * bmu_low ;                  /*/ inf of bias*/
+	double * bmu_up ;                   /*/ sup of bias 	*/
+	long unsigned int * imu_low ;                  /*/ inf of bias*/
+	long unsigned int * imu_up ;                   /*/ sup of bias 	*/
+
+	double bias ;
 	
-	BOOL smo_display;			
-	BOOL smo_working;			
-	double smo_timing;			
-	char * inputfile;			
-	char * dumpingfile;		
-	unsigned long int cache_size;  
-	BOOL cacheall;
-	BOOL ardon;
-	
-	double testerror;
-	double testrate;
-	double c1p, c2p, c1n, c2n, svs;
-	int index;			
-	BOOL abort;		
-	BOOL smo_balance;	
+	BOOL smo_display ;				/*/ display message on screen if TRUE*/
+	BOOL smo_working ;				/*/ flag of active*/
+	double smo_timing ;				/*/ CPU time consumed by the routine*/
+	char * inputfile ;				/*/ the name of input data file */
+
+	unsigned long int cache_size ;  /*/ the size of kernel cache*/ 
+	BOOL cacheall ;
+	BOOL ardon ;
+	double testerror ;
+	double testrate ;
+	double c1p ;
+	double c2p ;
+	double c1n ;
+	double c2n ;
+	double svs ;
+
+	BOOL abort ;		/*/ flag of exit*/
+
 } smo_Settings ;
 
-typedef struct _def_Settings {
-	int model_type; // 0: SVOREX, 1: SVORIM
-	double vc;
-	double vc_p ;                   /*/ Regularization Parameter*/
-	double vc_n ;                   /*/ Regularization Parameter*/                  
-	double tol;                    
-	double eps;                   
-	double beta;
-	double epsilon;
-	Kernel_Name kernel;            
-	double kappa;                  
-	unsigned int p;                
-	Method_Name method;            
-	BOOL smo_display;
-	BOOL smo_balance;
-	BOOL ardon;
 
-	unsigned int index, loops, seeds, kfold, repeat;
-	unsigned long int cache_size;  
+typedef struct _def_Settings
+{
+	double vc ;                     /*/ Regularization Parameter */
+	double epsilon ;                /*/ Epsilon insensitive Loss Function*/
+	double beta ;					/*/ Soft Insensitive Loss Function*/		
+	double tol ;                    /*/ Tolerance Parameter in Loose KKT */
+	double eps ;                    /*/ Error Precision Setting*/
+	
+	Kernel_Name kernel ;            /*/ Kernel Type*/
+	Constraint_Mode constraints ;   /*/ explicit or implicit threshold ordering*/
+	double kappa ;                  /*/ 1/Variance in Gaussian kernel*/ 
+	unsigned int p ;                /*/ Polynomial Power	*/
 
-	double lnC_start, lnC_end, lnC_step;
-	double lnK_start, lnK_end, lnK_step;	
-	double best_rate;
-	double def_lnC_start, def_lnC_end, def_lnC_step;
-	double def_lnK_start, def_lnK_end, def_lnK_step;
-	double zoomin, time;
+	BOOL smo_display ;
+	BOOL ardon ;
 	
-	char * inputfile;              
-	char * testfile;               
-	struct _Data_List pairs;		
-	struct _Data_List training;
-	struct _Data_List validation;
-	struct _Data_List testdata;		
+	char * inputfile ;              /*/ the name of input data file*/
+	char * testfile ;               /*/ the name of test data file*/
+	struct _Data_List pairs ;		/*/ data_list saving all training data*/
+	struct _Data_List training ;
+	struct _Data_List testdata ;		/*/ data_list saving test data*/
 	
-	BOOL normalized_input;			
-	BOOL normalized_output;		
-	Training_Method trainmethod;	
+	BOOL normalized_input ;			/*/ normalize the input of training data if TRUE*/
+	BOOL normalized_output ;		/*/ normalize the output of training data if TRUE*/
+
 } def_Settings ;
 
 #define SMO_WORKING    (settings->smo_working) 
 #define SMO_DISPLAY    (settings->smo_display) 
 #define EPS            (settings->eps) 
 #define TOL            (settings->tol) 
-#define VC             (settings->vc) 
+#define EPSILON        (settings->epsilon) 
+#define BETA           (settings->beta) 
+#define VC             (settings->vc)
 #define KAPPA          (settings->kappa) 
-#define P              (settings->p)
-#define METHOD         (settings->method) 
-#define KERNEL         (settings->kernel) 
+#define P              (settings->p) 
+#define KERNEL         (settings->kernel)
 #define BIAS		   (settings->bias)
-#define INDEX          (settings->index)
 #define DURATION       (settings->duration) 
 #define Io_CACHE       (settings->io_cache) 
 #define ALPHA          (settings->alpha)
 #define INPUTFILE      (settings->inputfile) 
 #define TESTFILE       (settings->testfile) 
-#define EPSILON        (settings->epsilon)
-#define KFOLD          (settings->kfold) 
-#define BETA           (settings->beta) 
+#define ARDON          (settings->ardon) 
+#define CONSTRAINTS    (settings->constraints)
 
 /*/ default settings*/
 #define DEF_EPS          (0.000001)
@@ -208,27 +258,19 @@ typedef struct _def_Settings {
 #define DEF_KAPPA        (1.0) 
 #define DEF_P            (1) 
 #define DEF_KERNEL       (GAUSSIAN)
-#define DEF_METHOD       (SMO_SKTWO) 
+#define DEF_CONSTRAINTS  (EXPLICIT_CONSTRAINTS)
 #define DEF_DISPLAY      (FALSE)
 #define DEF_ARDON		 (FALSE)
 #define DEF_NORMALIZEINPUT    (FALSE)
 #define DEF_NORMALIZETARGET   (FALSE)
-#define DEF_SUPERLNC		  (2)	
-#define DEF_INFERLNC		  (-1) 
-#define DEF_SUPERLNK     (1)
-#define DEF_INFERLNK     (-2)
-#define DEF_TRAINING	 (CROSSVALIDATION)
-#define DEF_KFOLD	     (5)
-#define DEF_COARSESTEP   (0.5)
-#define DEF_REFINESTEP   (0.1)
-#define DEF_CACHE        (5000)
-#define DEF_ZOOMIN       (5)
-#define DEF_REPEAT       (1) 
-#define DEF_LOOP         (2)
-#define DEF_BALANCE      (FALSE)
 
+
+def_Settings * Create_def_Settings ( char * filename ); 
 def_Settings * Create_def_Settings_Python ( void );
+
 void Clear_def_Settings( def_Settings * settings ) ;
+
+BOOL Update_def_Settings( def_Settings * defsetting );
 
 BOOL Create_Data_List ( Data_List * list ) ;
 BOOL Is_Data_Empty ( Data_List * list ) ;
@@ -236,13 +278,17 @@ BOOL Clear_Data_List ( Data_List * list ) ;
 BOOL Add_Data_List ( Data_List * list, Data_Node * node ) ;
 Data_Node * Create_Data_Node ( long unsigned int index, double * point, unsigned int y ) ;
 BOOL Clear_Label_Data_List ( Data_List * list ) ;
-int Add_Label_Data_List ( Data_List * list, Data_Node * node ) ;
 
+/*	load data file settings->inputfile, and create the data list Pairs */
 BOOL smo_Loadfile ( Data_List * pairs, char * inputfilename, int inputdim );
+BOOL smo_LoadMatrix ( Data_List * pairs, char * inputfilename, int inputdim, int nFil, int nCol, double ** matrix);
 
+
+/*create and initialize the smo_Settings structure from def_Settings*/
 smo_Settings * Create_smo_Settings_Python ( def_Settings * settings ) ;
 void Clear_smo_Settings( smo_Settings * settings ) ;
 
+/*/ cache, a doubly linked list*/
 BOOL Create_Cache_List( Cache_List * ) ;
 BOOL Clear_Cache_List( Cache_List * ) ;
 BOOL Is_Cache_Empty( Cache_List * ) ;
@@ -250,38 +296,49 @@ BOOL Add_Cache_Node( Cache_List *, Alphas * ) ;
 BOOL Sort_Cache_Node( Cache_List *, Alphas * ) ;
 BOOL Del_Cache_Node( Cache_List *, Alphas * ) ; 
 
+/*/ create Alpha Matrix*/
 Alphas * Create_Alphas( smo_Settings * ) ;
 BOOL Clean_Alphas ( Alphas *, smo_Settings * ) ;
 BOOL Check_Alphas ( Alphas *, smo_Settings * ) ;
+BOOL Finalize_Alphas ( Alphas *, smo_Settings * ) ;
 BOOL Clear_Alphas ( smo_Settings * ) ;
 
+/*/ calculate kerenl*/
 double Calc_Kernel( Alphas * , Alphas * , smo_Settings * ) ;
 double Calculate_Kernel( double * , double * , smo_Settings * ) ;
+double Calculate_Ordinal_Fi ( long unsigned int i, smo_Settings * settings ) ;/*/ i is index here*/
 
-double Calculate_Ordinal_Fi( long unsigned int i, smo_Settings * settings ) ;
-Set_Name Get_Ordinal_Label( Alphas * , unsigned int, smo_Settings * settings) ;
+/*/ get label*/
 Set_Name Get_UP_Label ( Alphas * alpha, smo_Settings * settings) ;
 Set_Name Get_DW_Label ( Alphas * alpha, smo_Settings * settings) ;
-BOOL Is_Io( Alphas * alpha, smo_Settings * settings ) ;
+Set_Name Get_Ordinal_Label ( Alphas * alpha, unsigned int j, smo_Settings * settings) ;
+BOOL Is_Io ( Alphas * alpha, smo_Settings * settings ) ;
+int Add_Label_Data_List ( Data_List * list, Data_Node * node ) ;
 
-BOOL smo_routine_Python ( smo_Settings * settings ) ;
+/*/ compute Fi*/
+double Calculate_Fi( long unsigned int, smo_Settings * ) ;
+
 BOOL ordinal_examine_example ( Alphas * alpha, smo_Settings * settings ) ;
-unsigned int active_cross_threshold (smo_Settings * settings) ;
+BOOL ordinal_examine_example_implicit ( Alphas * alpha, smo_Settings * settings ) ;
 unsigned int active_threshold (smo_Settings * settings) ;
+unsigned int active_cross_threshold (smo_Settings * settings) ;
+BOOL smo_routine_Python ( smo_Settings * settings ) ;
+BOOL svm_predict_Python ( Data_List * test, smo_Settings * settings ) ;
+
 
 BOOL ordinal_takestep ( Alphas * alpha1, Alphas * alpha2, unsigned int threshold, smo_Settings * settings ) ;
+BOOL ordinal_takestep_implicit ( Alphas * alpha1, Alphas * alpha2, unsigned int threshold, smo_Settings * settings ) ;
 BOOL ordinal_cross_takestep ( Alphas * alpha4, unsigned int, Alphas * alpha5, unsigned int, smo_Settings * settings ) ;
 BOOL ordinal_cross_identical ( Alphas * alpha1, Alphas * alpha2, unsigned int threshold, smo_Settings * settings ) ;
-BOOL Decide_Boundary (double gamma, int s1, int s2, smo_Settings * settings, double * H, double * L);
 
-BOOL svm_predict(Data_List * test, smo_Settings * settings);
-BOOL svm_predict_Python(Data_List * test, smo_Settings * settings);
-
+/*/timing routines*/
 void tstart(void) ;
 void tend(void) ;
 double tval() ;
 
 #endif
+
 #ifdef  __cplusplus
 }
 #endif
+/*/ the end of smo.h*/

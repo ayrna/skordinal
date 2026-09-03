@@ -10,11 +10,11 @@ full multi-classifier × multi-dataset benchmark.
   with an optional hyperparameter grid.  It is immutable and carries no
   evaluation protocol::
 
-      from skordinal.classifiers import POM, SVOREX
+      from skordinal.classifiers import POM, SVOR
       from skordinal.experiments import ModelConfig
 
       pom = ModelConfig(POM())
-      svorex = ModelConfig(SVOREX(), param_grid={"C": [0.1, 1, 10]})
+      svor = ModelConfig(SVOR(), param_grid={"C": [0.1, 1, 10]})
 
 **Experiment — single execution**
   :class:`~skordinal.experiments.Experiment` runs one
@@ -59,7 +59,7 @@ full multi-classifier × multi-dataset benchmark.
       from skordinal.experiments import Benchmark
 
       bench = Benchmark(
-          models={"POM": pom, "SVOREX": svorex},
+          models={"POM": pom, "SVOR": svor},
           datasets=["era", "esl"],
           eval_metrics=["mean_absolute_error", "weighted_kappa"],
           results_path="./results/",
