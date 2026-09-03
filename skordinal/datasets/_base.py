@@ -659,14 +659,11 @@ def load_partitions(
         from ._tocuco import load_tocuco_partitions
 
         return load_tocuco_partitions(name.replace("tocuco_", ""), resamples=resamples)
-        # return load_tocuco_partitions(name.replace("tocuco_", ""), data_home=str(Path(data_home)), resamples=resamples)
 
     csv_path, _ = _resolve_csv_path(name, data_home)
     if not csv_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {csv_path}")
 
-    # Resolve ids before reading any data, so a bad request costs no IO;
-    # Interval accepts bools as Integral, hence the explicit rejection
     if isinstance(resamples, bool):
         raise TypeError(
             f"'resamples' must be an integer count or a list of ids; got {resamples!r}."
