@@ -1,4 +1,4 @@
-exclude: ^skordinal/classifiers/src/(libsvmrank|orensemble|svorex|svorim)/
+exclude: ^skordinal/classifiers/src/(libsvmrank|orensemble|svor)/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
