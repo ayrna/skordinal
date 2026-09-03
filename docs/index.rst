@@ -20,7 +20,7 @@ See :doc:`getting_started` to install it and fit the first model, then
 At a glance
 -----------
 
-**Fourteen ordinal classifiers**: threshold models
+**Thirteen ordinal classifiers**: threshold models
 (:class:`~skordinal.classifiers.POM`,
 :class:`~skordinal.classifiers.LogisticAT`,
 :class:`~skordinal.classifiers.LogisticIT`), neural networks
