@@ -211,7 +211,21 @@ def _load_keyed_masks(csv_dir):
     ):
         if candidate.exists():
             with candidate.open("r", encoding="utf-8") as fh:
-                return json.load(fh)
+                try:
+                    keyed = json.load(fh)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(
+                        f"Mask file {candidate} is not valid JSON: {exc}"
+                    ) from exc
+            # A payload like null or a bare list must not be mistaken for
+            # "no mask file", which would silently fall back to freshly
+            # generated holdout splits
+            if not isinstance(keyed, dict):
+                raise ValueError(
+                    f"Mask file {candidate} must hold a JSON object keyed "
+                    f"by '<stem>_seed_<k>'; got {type(keyed).__name__}."
+                )
+            return keyed
     return None
 
 
@@ -270,7 +284,17 @@ def _resolve_train_masks(csv_path, X, y, ids, test_size, random_state):
     per_dataset_path = csv_path.parent / f"{csv_path.stem}.masks.json"
     if per_dataset_path.exists():
         with per_dataset_path.open("r", encoding="utf-8") as fh:
-            masks_list = json.load(fh)
+            try:
+                masks_list = json.load(fh)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Mask file {per_dataset_path} is not valid JSON: {exc}"
+                ) from exc
+        if not isinstance(masks_list, list):
+            raise ValueError(
+                f"Mask file {per_dataset_path} must hold a JSON list of "
+                f"masks; got {type(masks_list).__name__}."
+            )
         masks = []
         for rid in ids:
             if not (0 <= rid < len(masks_list)):
