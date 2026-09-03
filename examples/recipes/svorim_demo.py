@@ -6,7 +6,7 @@ from skordinal.classifiers import SVORIM
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
-    "datasets": ["balance_scale"],
+    "datasets": ["tocuco_oc03_newthyroid"],
     "cv": 3,
     "n_jobs": 1,
     "input_preprocessing": StandardScaler(),
