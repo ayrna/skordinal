@@ -16,17 +16,6 @@
 #include <string.h>
 #include "smo.h"
 
-
-/*******************************************************************************\
-
-    BOOL Create_Cache_List ( Cache_List * list )
-    
-    purpose: initializes an empty Cache_List structure by setting pointers to NULL and count to 0.
-    input:  the pointer to the Cache_List structure to be initialized
-    output: TRUE if successful, FALSE if the input pointer is NULL
-
-\*******************************************************************************/
-
 BOOL Create_Cache_List ( Cache_List * list ) 
 {  
 	if (NULL == list)
@@ -35,18 +24,8 @@ BOOL Create_Cache_List ( Cache_List * list )
 	list -> front = NULL ;
 	list -> rear = NULL ;
 	return TRUE ;
-} /* end of Create_Cache_List */
+}
 
-
-/*******************************************************************************\
-
-    BOOL Is_Cache_Empty ( Cache_List * list )
-    
-    purpose: checks whether the given Cache_List is empty.
-    input:  the pointer to the Cache_List structure
-    output: TRUE if the list is empty, FALSE if it contains elements or is NULL
-
-\*******************************************************************************/
 
 BOOL Is_Cache_Empty ( Cache_List * list )
 {
@@ -59,18 +38,8 @@ BOOL Is_Cache_Empty ( Cache_List * list )
 		return  TRUE ;
 	else 
 		return  FALSE ;
-} /* end of Is_Cache_Empty */
+}
 
-
-/*******************************************************************************\
-
-    BOOL Add_Cache_Node ( Cache_List * list, Alphas * alpha )
-    
-    purpose: allocates a new Cache_Node for the given Alpha and inserts it at the front of the Cache_List.
-    input:  the pointer to the Cache_List and the pointer to the Alpha structure
-    output: TRUE if successfully added, FALSE if memory allocation fails or alpha is already cached
-
-\*******************************************************************************/
 
 BOOL Add_Cache_Node ( Cache_List * list, Alphas * alpha )
 {
@@ -115,15 +84,15 @@ BOOL Add_Cache_Node ( Cache_List * list, Alphas * alpha )
 #endif
 
 	return TRUE ;
-} /* end of Add_Cache_Node */
+}
 
 
 /*******************************************************************************\
 
 	BOOL Sort_Cache_Node ( Cache_List * list, Alphas * alpha )
 	
-	purpose: add alpha into cache list, the position is determined by alpha->Fi
-			 we guarantee the node is sorted by deceasing Fi.
+	add alpha into cache list, the position is determined by alpha->Fi
+	we guarantee the node is sorted by deceasing Fi.
 	input:  the pointer to the head of Data_List 
 	output: TRUE or FALSE
 
@@ -220,18 +189,9 @@ BOOL Sort_Cache_Node ( Cache_List * list, Alphas * alpha )
 #endif
 
 	return TRUE ;
-} /* end of Sort_Cache_Node */
+}
 
 
-/*******************************************************************************\
-
-    BOOL Del_Cache_Node ( Cache_List * list, Alphas * alpha )
-    
-    purpose: removes the Cache_Node associated with the given Alpha from the Cache_List and frees its memory.
-    input:  the pointer to the Cache_List and the pointer to the Alpha structure to be removed
-    output: TRUE if successfully deleted, FALSE if the node is not in the list or the list is empty
-
-\*******************************************************************************/
 
 BOOL Del_Cache_Node ( Cache_List * list, Alphas * alpha )
 {
@@ -282,18 +242,8 @@ BOOL Del_Cache_Node ( Cache_List * list, Alphas * alpha )
 #endif
 
 	return TRUE ;	
-} /* end of Del_Cache_Node */
+}
 
-
-/*******************************************************************************\
-
-    BOOL Clear_Cache_List ( Cache_List * list )
-    
-    purpose: empties the entire Cache_List, freeing all nodes and resetting their associated alpha cache pointers.
-    input:  the pointer to the Cache_List to be cleared
-    output: TRUE if successfully cleared, FALSE if an error occurs
-
-\*******************************************************************************/
 
 BOOL Clear_Cache_List ( Cache_List * list ) 
 {
@@ -335,6 +285,6 @@ BOOL Clear_Cache_List ( Cache_List * list )
 	}
 
 	return TRUE ;
-} /* end of Clear_Cache_List */
+}
 
 /*/ the end of cachelist.c*/

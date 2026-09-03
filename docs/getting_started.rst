@@ -9,7 +9,7 @@ Install the latest release from PyPI::
    pip install skordinal
 
 Binary wheels are published for Linux x86-64. On every other platform pip
-builds the four C extensions (``REDSVM``, ``SVOREX``, ``SVORIM``, ``ORBoost``)
+builds the three C extensions (``REDSVM``, ``SVOR``, ``ORBoost``)
 from source, which requires a C/C++ compiler.
 
 Progress bars during a benchmark run need one optional extra::

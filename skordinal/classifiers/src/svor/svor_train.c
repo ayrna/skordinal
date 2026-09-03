@@ -5,10 +5,13 @@
 	entry function for the python program fit function.
 
 \*******************************************************************************/
-
 #include "Python.h"
+
 #include <stdio.h>
 #include <stdlib.h>
+#ifndef __MACH__
+    #include <malloc.h>
+#endif
 #include <string.h>
 
 #include "svor_module_functions.h"
@@ -18,93 +21,203 @@
 
 #define CMD_LEN 2048
 
-
-/*******************************************************************************\
-
-    PyObject* fit(PyObject* self, PyObject* args)
-    
-    purpose: serve as the Python C-API entry function for model training (fitting). 
-             It parses dataset features, labels, and hyperparameter options from 
-             Python, initializes the C SMO configurations, executes the training 
-             routine, and converts the resulting model into a Python dictionary.
-    input:   self (module reference), args (Python tuple containing the 'labels' 
-             list, 'features' list of lists, 'options' string, and 'model_type').
-    output:  returns a PyObject pointer representing the trained model as a Python 
-             dictionary, or NULL if an error (parsing, memory, or runtime) occurs.
-
-\*******************************************************************************/
-
-PyObject* fit(PyObject* self, PyObject* args) {
+PyObject* fit(PyObject* self, PyObject* args)
+{
+   	//Python parameters
    	PyObject* labels = NULL;
    	PyObject* features = NULL;
    	char* options = NULL;
-	int model_type = 0; // Default to SVOREX
 
-   	/* "OOs|i" allows options model_type to be passed seamlessly */
-   	if (!PyArg_ParseTuple(args, "OOs|i", &labels, &features, &options, &model_type)){
+   	/*Options is NULL terminated*/
+   	if (!PyArg_ParseTuple(args, "OOs", &labels, &features, &options)){
 		PyErr_SetString(PyExc_RuntimeError, "Unable to parse arguments");
    		return NULL;
    	}
 
-	int argc = 0; char *argv[CMD_LEN/2]; char options_copy[CMD_LEN];
-	strncpy(options_copy, options, CMD_LEN - 1); options_copy[CMD_LEN - 1] = '\0';
-	if((argv[argc] = strtok(options_copy, " ")) != NULL) while((argv[++argc] = strtok(NULL, " ")) != NULL);
+	/* Put options in argv[]*/
+	int argc = 0;
+	char *argv[CMD_LEN/2];
+	char options_copy[CMD_LEN];
+	strncpy(options_copy, options, CMD_LEN - 1);
+	options_copy[CMD_LEN - 1] = '\0';
 
+	if((argv[argc] = strtok(options_copy, " ")) != NULL)
+		while((argv[++argc] = strtok(NULL, " ")) != NULL)
+			;
+
+	/*Svor code*/
 	def_Settings * defsetting = NULL ;
 	smo_Settings * smosetting = NULL ;
 	PyObject * py_model = NULL;
-	char buf[LENGTH], errorBuf[1024]; 
-	unsigned int sz = 0, index = 0 ; double parameter = 0 ;
+	char buf[LENGTH] ;
+	char errorBuf[1024]; //For error messages
+	unsigned int sz = 0;
+	unsigned int index = 0 ;
+	double parameter = 0 ;
 
-	if ( NULL == (defsetting = Create_def_Settings_Python()) ) {
+	if ( NULL == (defsetting = Create_def_Settings_Python()) )
+	{
+		// display help	
+		printf("\nUsage:  model = svor.fit(training_label_vector, training_instance_matrix, 'svor_options')\n") ;
+		printf("svor_options:\n") ;
+		printf("  -v     activates the verbose mode to display message.\n") ;		
+		printf("  -L     use imbalanced Linear kernel (default Gaussian kernel).\n") ;
+		printf("  -I     use the implicit threshold constraints (default explicit).\n") ;
+		printf("  -P  p  use Polynomial kernel with order p (default Gaussian kernel).\n") ;
+		printf("  -E  e  set Epsilon at e for regression only (default 0.1). (Not used in orca-python)\n") ;
+		printf("  -T  t  set Tolerance at t (default 0.001).\n") ;
+		printf("  -K o set kappa value at o (default 1).\n") ;	
+		printf("  -C o set C value at o (default  1).\n") ;
+		
+		if (NULL !=defsetting)
+			Clear_def_Settings( defsetting ) ;
+
 		PyErr_SetString(PyExc_MemoryError, "Unable to create the settings structure");
 		return NULL;
 	}
-	
-	defsetting->model_type = model_type;
+	else
+	{
+		//if (argc>1)
+		//	printf("Options:\n") ;
+		do
+		{
+			strcpy(buf, argv[--argc]) ;
+			sz = strlen(buf) ;
 
-	do {
-		strcpy(buf, argv[--argc]) ; sz = strlen(buf) ;
-		if ( '-' == buf[0] ) {				
-			for (index = 1 ; index < sz ; index++) {
-				switch (buf[index]) {
-				case 'v' : defsetting->smo_display = TRUE ; break ;
-				case 'M' : defsetting->model_type = (int)parameter; parameter = 0; break;
-				case 'L' : defsetting->kernel = LINEAR ; break ;
-				case 'E' : 
-					if (parameter>0) defsetting->epsilon = parameter ;
-					else { parameter = 0; PyErr_SetString(PyExc_ValueError, "- E is invalid"); Clear_def_Settings( defsetting ) ; return NULL ; }
-					break ;					
-				case 'T' :
-					if (parameter>0) defsetting->tol = parameter ;
-					else { parameter = 0; PyErr_SetString(PyExc_ValueError, "- T is invalid"); Clear_def_Settings( defsetting ) ; return NULL ; }
-					break ;
-				case 'C' :
-					if (parameter > 0) { defsetting->vc = (parameter) ; parameter = 0 ; }
-					else { parameter = 0; PyErr_SetString(PyExc_ValueError, "- C is invalid"); Clear_def_Settings( defsetting ) ; return NULL ; }
-					break ;						
-				case 'K' :
-					if (parameter > 0) { defsetting->kappa = (parameter) ; parameter = 0 ; }
-					else { parameter = 0; PyErr_SetString(PyExc_ValueError, "- K is invalid"); Clear_def_Settings( defsetting ) ; return NULL ; }
-					break ;
-				case 'P' :						
-					if (parameter >= 1) { defsetting->kernel = POLYNOMIAL ; defsetting->p = (unsigned int) parameter ; parameter = 0 ; }
-					else { parameter = 0; PyErr_SetString(PyExc_ValueError, "- P is invalid"); Clear_def_Settings( defsetting ) ; return NULL ; }	
-					break ;	
-				default :
-					if ('-' != buf[index]) { snprintf(errorBuf, sizeof(errorBuf), "-%c is invalid", buf[index]); PyErr_SetString(PyExc_ValueError, errorBuf); Clear_def_Settings( defsetting ) ; return NULL ; }
+			if ( '-' == buf[0] )
+			{				
+				for (index = 1 ; index < sz ; index++)
+				{
+					switch (buf[index])
+					{
+					case 'v' :
+						printf("  - Verbose mode in display.\n") ;
+						defsetting->smo_display = TRUE ;
+						break ;
+					case 'L' :
+						//printf("  - choose Linear kernel.\n") ;
+						defsetting->kernel = LINEAR ;						
+						break ;
+					case 'I' :
+						//printf("  - choose implicit constraints.\n") ;
+						defsetting->constraints = IMPLICIT_CONSTRAINTS ;
+						break ;
+					case 'E' :
+						if (parameter>0)
+						{
+							//printf("  - set Epsilon as %.3f.\n", parameter) ;
+							defsetting->epsilon = parameter ;
+						}
+						else	
+						{
+							parameter = 0;
+							PyErr_SetString(PyExc_ValueError, "- E is invalid");
+							Clear_def_Settings( defsetting ) ;
+							return NULL ;
+						}
+
+						break ;					
+					case 'T' :
+						if (parameter>0)
+						{
+							//printf("  - set Tol as %.6f.\n", parameter) ;
+							defsetting->tol = parameter ;
+						}
+						else	
+						{
+							parameter = 0;
+							PyErr_SetString(PyExc_ValueError, "- T is invalid");
+							Clear_def_Settings( defsetting ) ;
+							return NULL ;
+						}
+						
+						break ;
+					case 'C' :
+						if (parameter > 0)
+						{ 
+							defsetting->vc = (parameter) ;
+							//printf("  - C at %f.\n", parameter) ;
+							parameter = 0 ;					
+						}
+						else
+						{
+							parameter = 0;
+							PyErr_SetString(PyExc_ValueError, "- C is invalid");
+							Clear_def_Settings( defsetting ) ;
+							return NULL ;
+						}
+						
+						break ;						
+					case 'K' :
+						if (parameter > 0)
+						{ 
+							defsetting->kappa = (parameter) ;
+							//printf("  - K at %f.\n", parameter) ;
+							parameter = 0 ;						
+						}
+						else
+						{
+							parameter = 0;
+							PyErr_SetString(PyExc_ValueError, "- K is invalid");
+							Clear_def_Settings( defsetting ) ;
+							return NULL ;
+						}
+						
+						break ;
+					case 'P' :						
+						if (parameter >= 1)
+						{ 
+							defsetting->kernel = POLYNOMIAL ;
+							defsetting->p = (unsigned int) parameter ;
+							//printf("  - choose Polynomial kernel with order %d.\n", defsetting->p) ;
+							parameter = 0 ;
+						}
+						else	
+						{
+							parameter = 0;
+							PyErr_SetString(PyExc_ValueError, "- P is invalid");
+							Clear_def_Settings( defsetting ) ;
+							return NULL ;
+						}	
+
+						break ;	
+					default :
+						if ('-' != buf[index]){
+							snprintf(errorBuf, sizeof(errorBuf), "-%c is invalid", buf[index]);
+							PyErr_SetString(PyExc_ValueError, errorBuf);
+							Clear_def_Settings( defsetting ) ;
+							return NULL ;
+						}
+					}
 				}
 			}
-		} else parameter = atof(buf) ;
-	} while ( argc > 1 ) ;
-
-	if (defsetting->beta > 1.0) defsetting->beta = 1.0;
-
-	if ( FALSE == smo_Loadproblem_Python (&(defsetting->pairs), features, labels) ) {
-		Clear_def_Settings( defsetting ); return NULL;
+			else
+				parameter = atof(buf) ;
+		}
+		while ( argc > 1 ) ;
+		//printf("\n") ;
 	}
-	if ( CLASSIFICATION == defsetting->pairs.datatype ) defsetting->beta = 1.0 ;
 
+	//Update defsetting
+	if (NULL == defsetting){
+		PyErr_SetString(PyExc_MemoryError, "Unable to read the settings structure");
+		return NULL;
+	}
+		
+	if (defsetting->beta > 1.0)
+		defsetting->beta = 1.0;
+
+	if ( FALSE == smo_Loadproblem_Python (&(defsetting->pairs), features, labels) ){
+		Clear_def_Settings( defsetting );
+		return NULL;
+	}
+
+	if ( CLASSIFICATION == defsetting->pairs.datatype )
+	{	
+		defsetting->beta = 1.0 ;
+	}
+
+	//Save validation output		
 	defsetting->training.count = defsetting->pairs.count ;		
 	defsetting->training.front = defsetting->pairs.front ;		
 	defsetting->training.rear = defsetting->pairs.rear ;
@@ -113,40 +226,38 @@ PyObject* fit(PyObject* self, PyObject* args) {
 	defsetting->training.featuretype = defsetting->pairs.featuretype ;
 	defsetting->training.datatype = defsetting->pairs.datatype ;
 
+	//Create smosettings
 	smosetting = Create_smo_Settings_Python(defsetting) ; 
-	if(smosetting == NULL) {
-		Clear_def_Settings( defsetting );
-		PyErr_SetString(PyExc_MemoryError, "Unable to create the model"); return NULL;
+	if(smosetting == NULL){
+		if(defsetting != NULL)
+			Clear_def_Settings( defsetting );
+		
+		PyErr_SetString(PyExc_MemoryError, "Unable to create the model");
+		return NULL;
 	}
 
-	// Pointer mapping
-	smosetting->pairs = (Data_List*)malloc(sizeof(Data_List));
-	*(smosetting->pairs) = defsetting->pairs;  		
-	
+	smosetting->pairs = &defsetting->pairs ;  		
 	defsetting->training.count = 0 ;		
 	defsetting->training.front = NULL ;		
 	defsetting->training.rear = NULL ;
 	defsetting->training.featuretype = NULL ;
 
-	// Train process
+	//Train process
 	if(smo_routine_Python (smosetting) == FALSE){
 		Clear_smo_Settings( smosetting ) ;
 		Clear_def_Settings( defsetting ) ;
 
-		if (!PyErr_Occurred()) {
-			PyErr_SetString(PyExc_RuntimeError, "The train process failed internally.");
-		}
+		PyErr_SetString(PyExc_MemoryError, "The train process failed");
 		return NULL;
 	}
+
+	//Translate the model to python
 	py_model = modelToPython(smosetting);
 	
-	// Secure memory cleanup
+	// free memory then exit
 	Clear_smo_Settings( smosetting ) ;
-	defsetting->pairs.front = NULL; defsetting->pairs.rear = NULL; defsetting->pairs.count = 0;
 	Clear_def_Settings( defsetting ) ;	
 
 	return py_model;
-} /* end of fit() */
-
-
-// end of svor_train.c
+}
+//end of svor_train.c 

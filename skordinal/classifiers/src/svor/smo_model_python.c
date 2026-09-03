@@ -3,20 +3,6 @@
 #include "smo.h"
 #include "smo_model_python.h"
 
-
-/*******************************************************************************\
-
-    PyObject* modelToPython(smo_Settings* model)
-    
-    purpose: convert a trained C smo_Settings model structure into a Python 
-             dictionary object, transforming internal C arrays, lists, and 
-             Data_Nodes into their corresponding Python lists and dicts.
-    input:   model (pointer to the smo_Settings structure to be converted).
-    output:  returns a PyObject pointer representing the constructed Python 
-             dictionary containing all the model data.
-
-\*******************************************************************************/
-
 PyObject* modelToPython(smo_Settings* model){
 	int i, j;
 	Data_List* trainlist;
@@ -200,21 +186,7 @@ PyObject* modelToPython(smo_Settings* model){
 	Py_DECREF(biasj_list);
 
 	return model_out;
-} /* end of modelToPython */
-
-
-/*******************************************************************************\
-
-    smo_Settings* pythonToModel(PyObject* model)
-    
-    purpose: parse a Python dictionary representing an SMO model and allocate/
-             populate a new C smo_Settings structure and its internal Data_List 
-             with the extracted contents.
-    input:   model (PyObject pointer representing the Python dictionary).
-    output:  returns a pointer to the newly allocated smo_Settings structure, 
-             or NULL if any memory allocation fails during the process.
-
-\*******************************************************************************/
+}
 
 smo_Settings* pythonToModel(PyObject* model){
 	PyObject *ard_list = NULL, *pairs_dict = NULL, *x_mean_list = NULL, *x_devi_list = NULL, 
@@ -397,7 +369,7 @@ smo_Settings* pythonToModel(PyObject* model){
 	//alpha
 	alpha_list = PyDict_GetItemString(model, "alpha");
 	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(alpha_list)));
-	alpha = (Alphas*) malloc(n * sizeof(Alphas));
+	alpha = (Alphas*) calloc(n, sizeof(Alphas));
 	//Not enough memory
 	if(alpha == NULL){
 		free(biasj);
@@ -409,12 +381,14 @@ smo_Settings* pythonToModel(PyObject* model){
 		return NULL;
 	}
 
-	for (i = 0; i < n; i++)
+	for (i = 0; i < n; i++){
 		(alpha + i)->alpha = PyFloat_AsDouble(PyList_GetItem(alpha_list, i));
+		//the predict path reads only ->alpha, but Clear_Alphas frees these
+		(alpha + i)->alpha_j = NULL;
+		(alpha + i)->setname = NULL;
+	}
 
 	model_out->alpha = alpha;
 
 	return model_out;
-} /* end of pythonToModel */
-
-// the end of smo_model_python.c
+}

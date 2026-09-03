@@ -4,21 +4,6 @@
 #include "Python.h"
 #include "smo_loadproblem_python.h"
 
-
-/*******************************************************************************\
-
-    BOOL smo_Loadproblem_Python ( Data_List * pairs, PyObject* features, PyObject* labels )
-    
-    purpose: load a dataset (features and labels) from Python objects into the C 
-             Data_List structure, calculate statistical metrics (mean, deviation) 
-             for optional normalization, and validate the classes for ordinal regression.
-    input:   pairs (pointer to Data_List to store the problem), features (Python List 
-             of Lists containing data points), labels (Python List containing targets).
-    output:  returns TRUE if the dataset is successfully loaded and validated, 
-             FALSE otherwise (also sets the corresponding Python exception error).
-
-\*******************************************************************************/
-
 BOOL smo_Loadproblem_Python ( Data_List * pairs, PyObject* features, PyObject* labels ){
 	char buffer[1024];//For error messages
 	int instance_number, label_number, dim = -2 ;
@@ -260,6 +245,4 @@ BOOL smo_Loadproblem_Python ( Data_List * pairs, PyObject* features, PyObject* l
 		free( xmean ) ;
 
 	return TRUE ;
-} /* end of smo_Loadproblem_Python */
-
-// the end of smo_loadproblem_python.c
+}

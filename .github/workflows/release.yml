@@ -68,8 +68,7 @@ jobs:
             python -c "import skordinal;
             print(f'skordinal {skordinal.__version__} imported');
             import skordinal.classifiers._libsvmrank;
-            import skordinal.classifiers._libsvorex;
-            import skordinal.classifiers._libsvorim;
+            import skordinal.classifiers._libsvor;
             import skordinal.classifiers._orensemble;
             print('C extensions loaded')"
       - uses: actions/upload-artifact@v7

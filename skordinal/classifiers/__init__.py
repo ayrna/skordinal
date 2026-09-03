@@ -12,8 +12,7 @@ from ._ordinal_decomposition import OrdinalDecomposition
 from ._pom import POM
 from ._redsvm import REDSVM
 from ._regressor_wrapper import RegressorWrapper
-from ._svorex import SVOREX
-from ._svorim import SVORIM
+from ._svor import SVOR
 
 __all__ = [
     "CostSensitiveWrapper",
@@ -28,6 +27,5 @@ __all__ = [
     "POM",
     "REDSVM",
     "RegressorWrapper",
-    "SVOREX",
-    "SVORIM",
+    "SVOR",
 ]

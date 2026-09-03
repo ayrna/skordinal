@@ -21,8 +21,7 @@ ordinary classifier or regressor.
    ELMOP
    KDLOR
    REDSVM
-   SVOREX
-   SVORIM
+   SVOR
    ORBoost
    OrdinalDecomposition
    RegressorWrapper

@@ -1,4 +1,4 @@
-"""Support Vector for Ordinal Regression (Implicit constraints) (SVORIM)."""
+"""Support Vector for Ordinal Regression (SVOR)."""
 
 from __future__ import annotations
 
@@ -12,15 +12,27 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.utils.validation import check_ordinal_targets
 
-from . import _libsvor as svorim  # type: ignore[attr-defined]
+from . import _libsvor as svor  # type: ignore[attr-defined]
 
 
-class SVORIM(ClassifierMixin, BaseEstimator):
-    """Support Vector for Ordinal Regression (Implicit constraints).
+class SVOR(ClassifierMixin, BaseEstimator):
+    """Support Vector for Ordinal Regression.
 
-    This class derives from the Algorithm Class and implements the SVORIM method.
-    This class uses SVORIM implementation by W. Chu et al
-    (http://www.gatsby.ucl.ac.uk/~chuwei/svor.htm).
+    Fits ``n_classes - 1`` parallel hyperplanes sharing a single direction,
+    separated by ordered thresholds. Both formulations of Chu and Keerthi
+    (2007) are available through ``constraints``:
+
+    - ``"implicit"`` gives each training point one Lagrange multiplier per
+      threshold, so every point takes part in every threshold. Threshold
+      ordering is guaranteed by the formulation itself.
+    - ``"explicit"`` gives each training point two multipliers, so each point
+      takes part only in the two thresholds adjacent to its class. Threshold
+      ordering is imposed by additional constraints and their own multipliers.
+
+    With exactly two classes there is a single threshold and no ordering
+    constraint applies, so both formulations solve the same problem.
+
+    Wraps the C implementation by W. Chu et al.
 
     Parameters
     ----------
@@ -49,6 +61,9 @@ class SVORIM(ClassifierMixin, BaseEstimator):
         - ``'auto'``: ``1 / n_features``.
         - float: used as-is. Must be strictly positive.
 
+    constraints : {'implicit', 'explicit'}, default='implicit'
+        Which formulation of the threshold-ordering constraints to solve.
+
     Attributes
     ----------
     classes_ : ndarray of shape (n_classes,)
@@ -59,8 +74,8 @@ class SVORIM(ClassifierMixin, BaseEstimator):
         class regions.  ``predict`` assigns
         ``classes_[(predict_projection(X)[:, None] > thresholds_).sum(axis=1)]``.
 
-    model_ : object
-        Fitted estimator.
+    model_ : dict
+        Model state returned by the C backend after fitting.
 
     References
     ----------
@@ -71,8 +86,7 @@ class SVORIM(ClassifierMixin, BaseEstimator):
 
     .. [2] W. Chu and S. S. Keerthi, "Support Vector Ordinal Regression", Neural
            Computation, vol. 19, no. 3, pp. 792-815, 2007,
-           http://10.1162/neco.2007.19.3.792
-
+           https://doi.org/10.1162/neco.2007.19.3.792
     """
 
     _parameter_constraints: dict = {
@@ -84,6 +98,7 @@ class SVORIM(ClassifierMixin, BaseEstimator):
             StrOptions({"scale", "auto"}),
             Interval(Real, 0.0, None, closed="neither"),
         ],
+        "constraints": [StrOptions({"implicit", "explicit"})],
     }
 
     def __init__(
@@ -93,15 +108,17 @@ class SVORIM(ClassifierMixin, BaseEstimator):
         degree: int = 2,
         tol: float = 0.001,
         gamma: float | str = "scale",
+        constraints: str = "implicit",
     ) -> None:
         self.C = C
         self.kernel = kernel
         self.degree = degree
         self.tol = tol
         self.gamma = gamma
+        self.constraints = constraints
 
     @_fit_context(prefer_skip_nested_validation=True)
-    def fit(self, X: ArrayLike, y: ArrayLike) -> SVORIM:
+    def fit(self, X: ArrayLike, y: ArrayLike) -> SVOR:
         """Fit the model with the training data.
 
         Parameters
@@ -122,7 +139,6 @@ class SVORIM(ClassifierMixin, BaseEstimator):
         ------
         ValueError
             If parameters are invalid or data has wrong format.
-
         """
         X, y = validate_data(self, X, y)
         self.classes_, y_encoded = check_ordinal_targets(y)
@@ -132,7 +148,10 @@ class SVORIM(ClassifierMixin, BaseEstimator):
             arg = "-L"
         elif self.kernel == "poly":
             arg = "-P {}".format(self.degree)
-        # kernel == "rbf" maps to the C core's default (gaussian); no flag emitted.
+        # kernel == "rbf" maps to the C core's default Gaussian kernel, no flag emitted
+
+        # constraints == "explicit" maps to the C core's default, no flag emitted
+        mode = "-I" if self.constraints == "implicit" else ""
 
         # Resolve gamma to a scalar before passing it to the C backend
         n_features = X.shape[1]
@@ -144,11 +163,10 @@ class SVORIM(ClassifierMixin, BaseEstimator):
         else:
             gamma_value = float(self.gamma)
 
-        # -M 1 SVORIM
-        options = "svor -M 1 {} -T {} -K {} -C {}".format(
-            arg, str(self.tol), str(gamma_value), str(self.C)
+        options = "svor {} {} -T {} -K {} -C {}".format(
+            arg, mode, str(self.tol), str(gamma_value), str(self.C)
         )
-        self.model_ = svorim.fit((y_encoded + 1).tolist(), X.tolist(), options)
+        self.model_ = svor.fit((y_encoded + 1).tolist(), X.tolist(), options)
         # biasj are the backend's ordered cutpoints
         self.thresholds_ = np.asarray(self.model_["biasj"], dtype=np.float64)
         return self
@@ -174,11 +192,10 @@ class SVORIM(ClassifierMixin, BaseEstimator):
 
         ValueError
             If the input is invalid.
-
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False)
-        y_pred, _ = svorim.predict(X.tolist(), self.model_)
+        y_pred, _ = svor.predict(X.tolist(), self.model_)
         return self.classes_[np.asarray(y_pred).astype(int) - 1]
 
     def predict_projection(self, X: ArrayLike) -> np.ndarray:
@@ -206,9 +223,8 @@ class SVORIM(ClassifierMixin, BaseEstimator):
 
         ValueError
             If the input is invalid.
-
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False)
-        _, projection = svorim.predict(X.tolist(), self.model_)
+        _, projection = svor.predict(X.tolist(), self.model_)
         return np.asarray(projection, dtype=np.float64)

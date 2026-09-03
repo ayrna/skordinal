@@ -28,8 +28,7 @@ At a glance
 :class:`~skordinal.classifiers.ELMOP`), kernel discriminants
 (:class:`~skordinal.classifiers.KDLOR`), support vector machines
 (:class:`~skordinal.classifiers.REDSVM`,
-:class:`~skordinal.classifiers.SVOREX`,
-:class:`~skordinal.classifiers.SVORIM`), boosting
+:class:`~skordinal.classifiers.SVOR`), boosting
 (:class:`~skordinal.classifiers.ORBoost`) and three meta-estimators
 (:class:`~skordinal.classifiers.OrdinalDecomposition`,
 :class:`~skordinal.classifiers.RegressorWrapper`,
