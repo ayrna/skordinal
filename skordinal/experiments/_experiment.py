@@ -4,50 +4,33 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
+from collections.abc import Callable
 from time import perf_counter
 from typing import Any
 
 import numpy as np
-from sklearn import preprocessing
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 
 from skordinal.metrics import get_ordinal_scorer
-from skordinal.metrics._metrics import _resolve_label_metric
 
+from ._base import (
+    _check_input_preprocessing,
+    _check_metric_names,
+    _check_tuning_metric,
+    _compute_metric,
+    _set_nested_random_state,
+)
 from ._model_config import ModelConfig
 from ._results import ExperimentResult
-
-
-def _compute_metric(metric_name: str, y_true: np.ndarray, y_pred: np.ndarray) -> float:
-    """Compute a single ordinal metric by name."""
-    return _resolve_label_metric(metric_name.strip())(y_true, y_pred)
-
-
-def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
-    """Return class probabilities, or ``None`` when the estimator cannot."""
-    if not hasattr(estimator, "predict_proba"):
-        return None
-    try:
-        return estimator.predict_proba(inputs)
-    except AttributeError as exc:
-        warnings.warn(
-            f"predict_proba raised AttributeError; probabilities are omitted: {exc}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
-        return None
 
 
 class Experiment:
     """Run a single classifier configuration on one train/test partition.
 
     Wraps one ``ModelConfig`` together with the cross-validation and
-    preprocessing settings shared across partitions. Calling ``run`` applies
-    optional preprocessing, selects and fits the best estimator, predicts on
-    the train and (when present) test splits, computes all evaluation metrics
-    and timing keys, and returns an ``ExperimentResult``. Nothing is written
-    to disk.
+    preprocessing settings shared across partitions. ``run`` does the work
+    for one partition and writes nothing to disk.
 
     Parameters
     ----------
@@ -61,13 +44,16 @@ class Experiment:
         Metric names to compute for every partition (e.g.
         ``["mean_absolute_error", "average_mean_absolute_error"]``). Names
         must match a ``skordinal.metrics`` metric that scores predicted
-        labels, which excludes ``ranked_probability_score``.
+        labels, which excludes ``ranked_probability_score``. Each name is
+        stripped and resolved at construction, so a typo fails before any
+        fitting starts.
 
-    tuning_metric : str, default="neg_mean_absolute_error"
-        Metric used as the cross-validation scoring criterion when selecting
-        the best hyper-parameter combination. Must be recognised by
-        ``skordinal.metrics.get_ordinal_scorer``; validation is deferred to
-        runtime.
+    tuning_metric : str, callable or None, default="neg_mean_absolute_error"
+        Cross-validation scoring criterion used to select the best
+        hyper-parameter combination. A string is resolved at construction
+        with ``skordinal.metrics.get_ordinal_scorer``; a callable is passed
+        to ``GridSearchCV`` verbatim, and ``None`` falls back to the
+        estimator's own ``score``.
 
     cv : int, default=3
         Number of folds used in hyper-parameter cross-validation.
@@ -75,18 +61,30 @@ class Experiment:
     n_jobs : int, default=1
         Number of parallel jobs forwarded to ``GridSearchCV``.
 
-    input_preprocessing : {"std", "norm"} or None, default=None
-        Optional feature preprocessing applied to every partition before
-        fitting: ``"norm"`` applies min-max normalisation and ``"std"`` applies
-        z-score standardisation. Both scalers are fitted on the training split
+    input_preprocessing : transformer or None, default=None
+        Optional preprocessing applied before fitting: a transformer
+        instance, e.g. a scaler or a ``Pipeline``, cloned and seeded with
+        ``random_state`` for each partition. Fitted on the training split
         only, then applied to the train split and, when present, the test
         split. ``None`` means no preprocessing.
 
     random_state : int or None, default=None
-        Seed used for two sources of randomness: the base estimator and the
-        cross-validation splitter (``StratifiedKFold``) used during
-        hyper-parameter search. When ``None``, both use their own default
-        random behaviour.
+        Seed forwarded to the base estimator, to the ``StratifiedKFold``
+        splitter of a hyper-parameter search, and to the
+        ``input_preprocessing`` clone. When ``None``, each keeps its own
+        default random behaviour.
+
+    Raises
+    ------
+    TypeError
+        If ``model`` is not a ``ModelConfig``, if ``eval_metrics`` is a
+        bare string, not iterable, or holds a non-string name, or if
+        ``input_preprocessing`` is neither ``None`` nor a transformer
+        instance.
+
+    ValueError
+        If ``eval_metrics`` is empty or holds an unregistered label-metric
+        name, or if a string ``tuning_metric`` is not a registered scorer name.
 
     Examples
     --------
@@ -109,38 +107,51 @@ class Experiment:
         model: ModelConfig,
         *,
         eval_metrics: list[str],
-        tuning_metric: str = "neg_mean_absolute_error",
+        tuning_metric: str | Callable[..., float] | None = "neg_mean_absolute_error",
         cv: int = 3,
         n_jobs: int = 1,
-        input_preprocessing: str | None = None,
+        input_preprocessing: BaseEstimator | None = None,
         random_state: int | None = None,
     ) -> None:
         if not isinstance(model, ModelConfig):
             raise TypeError(
                 f"'model' must be a ModelConfig instance; got {type(model).__name__!r}."
             )
-        if not eval_metrics:
-            raise ValueError(
-                "'eval_metrics' must be a non-empty list; got an empty sequence."
-            )
-
-        _allowed_preproc = {"std", "norm"}
-        if input_preprocessing is not None:
-            _normalized = str(input_preprocessing).strip().lower()
-            if _normalized not in _allowed_preproc:
-                raise ValueError(
-                    f"'input_preprocessing' must be one of {None, 'std', 'norm'}; "
-                    f"got '{input_preprocessing}'."
-                )
-            input_preprocessing = _normalized
+        eval_metrics = _check_metric_names(eval_metrics, param="eval_metrics")
+        _check_tuning_metric(tuning_metric)
+        _check_input_preprocessing(input_preprocessing)
 
         self.model = model
-        self.eval_metrics: list[str] = list(eval_metrics)
+        self.eval_metrics: list[str] = eval_metrics
         self.tuning_metric = tuning_metric
         self.cv = cv
         self.n_jobs = n_jobs
         self.input_preprocessing = input_preprocessing
         self.random_state = random_state
+
+    def _build_scaler(self) -> BaseEstimator | None:
+        """Return a fresh, seeded scaler for one partition, or None."""
+        if self.input_preprocessing is None:
+            return None
+        # Never fit the caller's instance, and seed it like the estimator
+        scaler = clone(self.input_preprocessing)
+        _set_nested_random_state(scaler, self.random_state)
+        return scaler
+
+    @staticmethod
+    def _predict_proba_or_none(estimator: Any, inputs: np.ndarray) -> np.ndarray | None:
+        """Return class probabilities, or ``None`` when the estimator cannot."""
+        if not hasattr(estimator, "predict_proba"):
+            return None
+        try:
+            return estimator.predict_proba(inputs)
+        except AttributeError as exc:
+            warnings.warn(
+                f"predict_proba raised AttributeError; probabilities are omitted: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            return None
 
     def run(
         self,
@@ -178,50 +189,47 @@ class Experiment:
             Test labels. When ``None`` no test metrics are computed.
 
         dataset_name : str
-            Name of the dataset, forwarded to the returned
-            ``ExperimentResult``.
+            Name of the dataset, recorded on the result.
 
         classifier_name : str
-            Configuration label, used as ``classifier_name`` in the returned
-            ``ExperimentResult``.
+            Configuration label, recorded on the result.
 
         resample_id : int
-            Partition index, forwarded to the returned ``ExperimentResult``.
+            Partition index, recorded on the result.
 
         train_index : ndarray of shape (n_train_samples,) or None, default=None
             Zero-based positions of the training samples in the original
-            dataset array; forwarded to the returned ``ExperimentResult`` and
-            used as the ``Pattern ID`` column.
+            dataset array, recorded on the result as its ``Pattern ID``
+            column.
 
         test_index : ndarray of shape (n_test_samples,) or None, default=None
             Zero-based positions of the test samples in the original dataset
-            array; forwarded to the returned ``ExperimentResult`` and used as
-            the ``Pattern ID`` column.
+            array, recorded on the result as its ``Pattern ID`` column.
 
         Returns
         -------
         ExperimentResult
-            Fully populated result for this partition. No side effects.
+            Fully populated result for this partition.
+
+        Raises
+        ------
+        ValueError
+            If ``y_test`` is given without ``X_test``.
         """
-        # Apply preprocessing on local copies so the caller's arrays are not mutated.
+        if y_test is not None and X_test is None:
+            raise ValueError("'y_test' was given without 'X_test'.")
+
+        # Preprocess into locals so the caller's arrays are never mutated
         train_inputs: np.ndarray = X_train
         test_inputs: np.ndarray | None = X_test
-        scaler: BaseEstimator | None = None
+        scaler = self._build_scaler()
 
-        if self.input_preprocessing in {"norm", "std"}:
-            scaler_cls = (
-                preprocessing.MinMaxScaler
-                if self.input_preprocessing == "norm"
-                else preprocessing.StandardScaler
-            )
-            scaler = scaler_cls().fit(train_inputs)
-            train_inputs = scaler.transform(train_inputs)
-            # A train-only run has no test split to transform
+        if scaler is not None:
+            train_inputs = scaler.fit(train_inputs).transform(train_inputs)
             if X_test is not None:
                 test_inputs = scaler.transform(X_test)
 
-        # Select and fit the best estimator, keeping the refit metadata in
-        # locals so nothing is ever injected onto the estimator itself
+        # Keep the refit metadata in locals, never on the estimator itself
         base = self.model.build(self.random_state)
         if self.model.needs_search:
             scorer = get_ordinal_scorer(self.tuning_metric)
@@ -230,7 +238,7 @@ class Experiment:
             )
             search = GridSearchCV(
                 base,
-                param_grid=self.model.param_grid,
+                param_grid=self.model.search_grid(),
                 scoring=scorer,
                 n_jobs=self.n_jobs,
                 cv=splitter,
@@ -253,10 +261,8 @@ class Experiment:
             cv_time_train = np.nan
             cv_time_test = np.nan
 
-        # Predict on the training split.
         train_predicted_y = best_estimator.predict(train_inputs)
 
-        # Predict on the test split when it is present.
         test_predicted_y = None
         elapsed = np.nan
         if y_test is not None:
@@ -265,37 +271,36 @@ class Experiment:
             test_predicted_y = np.asarray(best_estimator.predict(test_inputs))
             elapsed = perf_counter() - start
 
-        # Compute evaluation metrics for both splits.
+        # The fitted scale, so a split missing a class keeps its real gaps
+        classes = getattr(best_estimator, "classes_", None)
         train_metrics: OrderedDict[str, Any] = OrderedDict()
         test_metrics: OrderedDict[str, Any] = OrderedDict()
         for metric_name in self.eval_metrics:
             train_score = _compute_metric(
-                metric_name,
-                y_train,
-                train_predicted_y,
+                metric_name, y_train, train_predicted_y, labels=classes
             )
-            train_metrics[metric_name.strip() + "_train"] = train_score
+            train_metrics[metric_name + "_train"] = train_score
 
-            test_metrics[metric_name.strip() + "_test"] = np.nan
+            test_metrics[metric_name + "_test"] = np.nan
             if y_test is not None:
                 assert test_predicted_y is not None
-                test_score = _compute_metric(metric_name, y_test, test_predicted_y)
-                test_metrics[metric_name.strip() + "_test"] = test_score
+                test_score = _compute_metric(
+                    metric_name, y_test, test_predicted_y, labels=classes
+                )
+                test_metrics[metric_name + "_test"] = test_score
 
-        # Assemble timing keys, the cv_* pair stays NaN unless a search ran
+        # The cv_* pair stays NaN unless a search ran
         train_metrics["cv_time_train"] = cv_time_train
         test_metrics["cv_time_test"] = cv_time_test
         train_metrics["time_train"] = refit_time
         test_metrics["time_test"] = elapsed
 
-        # Compute class probabilities on each split when supported
-        train_y_proba = _predict_proba_or_none(best_estimator, train_inputs)
+        train_y_proba = self._predict_proba_or_none(best_estimator, train_inputs)
         y_proba = None
         if y_test is not None:
             assert test_inputs is not None
-            y_proba = _predict_proba_or_none(best_estimator, test_inputs)
+            y_proba = self._predict_proba_or_none(best_estimator, test_inputs)
 
-        # Build and return the ExperimentResult; no persistence here.
         return ExperimentResult(
             dataset_name=dataset_name,
             classifier_name=classifier_name,

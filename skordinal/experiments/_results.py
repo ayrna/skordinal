@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shutil
-import sys
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -14,18 +13,15 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
-from sklearn.metrics import confusion_matrix
 from sklearn.pipeline import Pipeline
 
+from ._base import _check_path_component, _check_resample_id, _check_split
 from ._io import (
     _atomic_dump,
     _atomic_write,
-    _check_path_component,
-    _check_resample_id,
-    _check_split,
-    _format_proba_column,
     _parse_proba_column,
     _sweep_orphaned_temp_files,
+    _write_split_files,
 )
 
 
@@ -118,55 +114,6 @@ class ExperimentResult:
     scaler: BaseEstimator | None = None
 
 
-def _write_split_files(
-    seed_dir: Path,
-    split: str,
-    *,
-    index: np.ndarray | None,
-    true_y: np.ndarray,
-    predicted_y: np.ndarray,
-    proba: np.ndarray | None,
-    classes: np.ndarray,
-    resample_id: int,
-) -> None:
-    """Encode one split's labels and write its per-seed output files."""
-    if not np.isin(true_y, classes).all():
-        raise ValueError(
-            f"'{split}' true labels contain classes unknown to the fitted model."
-        )
-    pattern_id = index if index is not None else np.arange(predicted_y.shape[0])
-    target = np.searchsorted(classes, true_y)
-    if not np.isin(predicted_y, classes).all():
-        raise ValueError(
-            f"'{split}' predicted labels contain classes unknown to the fitted model."
-        )
-    # Record the estimator's actual decision, never a proba argmax substitute
-    prediction = np.searchsorted(classes, predicted_y)
-
-    columns: dict[str, object] = {"Pattern ID": pattern_id, "Target": target}
-    if proba is not None:
-        if proba.shape != (true_y.shape[0], classes.size):
-            raise ValueError(
-                f"'{split}' probabilities have shape {proba.shape}; expected "
-                f"({true_y.shape[0]}, {classes.size})."
-            )
-        columns["Prediction probabilities"] = _format_proba_column(proba)
-    columns["Prediction"] = prediction
-    _atomic_write(
-        seed_dir / f"{split}_predictions.csv",
-        pd.DataFrame(columns).to_csv(index=False),
-    )
-
-    cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
-    body = np.array2string(
-        cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
-    )
-    _atomic_write(
-        seed_dir / f"{split}_confusion_matrix.txt",
-        f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
-    )
-
-
 class Results:
     """Persist experiment results under ``path`` and read them back.
 
@@ -217,9 +164,9 @@ class Results:
     ``hyperparameter_configuration.csv`` records the best parameters per
     seed with the ``clf__`` pipeline prefix stripped; its ``Seed`` column
     always holds the resample identifier. ``report.csv`` is indexed by
-    ``resample_id``, in numeric order. The root-level ``train_summary.csv``
-    and ``test_summary.csv`` files are written by ``save_summary`` and are
-    absent until it is called.
+    ``resample_id``, in numeric order when the ids are integers. The
+    root-level ``train_summary.csv`` and ``test_summary.csv`` files are
+    written by ``save_summary`` and are absent until it is called.
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -255,14 +202,14 @@ class Results:
 
         ValueError
             If ``result.classifier_name``, ``result.dataset_name`` or a
-            non-int ``result.resample_id`` is empty, a dot segment, or
-            contains a path separator, if ``result`` lacks the true labels
-            required for the ``Target`` column (``train_true_y``, or
-            ``test_true_y`` when test predictions are present), if a true
-            or predicted label is not one of ``best_model.classes_``, or if
-            a probability matrix does not hold one row per sample and one
-            column per class. Files already written for a preceding split
-            are left in place; nothing else is recorded for the partition.
+            non-int ``result.resample_id`` is not a usable path component,
+            if ``result`` lacks the true labels required for the ``Target``
+            column (``train_true_y``, or ``test_true_y`` when test
+            predictions are present), if a true or predicted label is not one
+            of ``best_model.classes_``, or if a probability matrix does not
+            hold one row per sample and one column per class. Files already
+            written for a preceding split are left in place; nothing else is
+            recorded for the partition.
 
         OSError
             If a stale artefact cannot be removed or the folder cannot be
@@ -290,8 +237,7 @@ class Results:
         seed_dir, model_path = self._resample_paths(base_dir, result.resample_id)
         # Clear any temp file left by a prior crash before writing new ones
         _sweep_orphaned_temp_files(base_dir)
-        # Drop this resample's committed row so a crash mid-write cannot
-        # leave a report row describing predictions no longer on disk
+        # Uncommit first, so a crash cannot leave a row without its files
         self._uncommit_report_row(base_dir, result.resample_id)
         # Must run before the writes below recreate what it deletes
         self._remove_stale_artefacts(base_dir, result.resample_id)
@@ -399,15 +345,24 @@ class Results:
 
         csv_path = base_dir / "hyperparameter_configuration.csv"
         df = pd.DataFrame([row])
+        # Note which columns hold integers before the union can upcast them
+        integral = {c for c in df.columns if pd.api.types.is_integer_dtype(df[c])}
         if csv_path.is_file():
             existing = pd.read_csv(csv_path, float_precision="round_trip")
+            integral |= {
+                c
+                for c in existing.columns
+                if pd.api.types.is_integer_dtype(existing[c])
+            }
             existing = existing[existing["Seed"] != result.resample_id]
             df = pd.concat([existing, df], ignore_index=True)
 
         columns = ["Seed"] + sorted(c for c in df.columns if c != "Seed")
         df = df[columns].sort_values("Seed").reset_index(drop=True)
-        # Restore integer dtypes upcast to float by the NaN column union
-        _atomic_write(csv_path, df.convert_dtypes().to_csv(index=False))
+        # Restore only those, so a searched float like 10.0 is not written as 10
+        for col in integral & set(df.columns):
+            df[col] = df[col].convert_dtypes()
+        _atomic_write(csv_path, df.to_csv(index=False))
 
     @classmethod
     def load(cls, path: str | Path) -> Results:
@@ -438,17 +393,13 @@ class Results:
     ) -> list[tuple[int | str, Path]]:
         """Return sorted ``(resample_id, path)`` pairs of one split's readable seeds.
 
-        Where a ``report.csv`` exists it is the commit marker, so a seed
-        directory with no row in it was left behind by a crashed save and is
-        skipped, and a row that does carry ``{split}`` metrics but has no
-        predictions file is corruption, not a train-only run, and warns.
-
-        Where the pair has none there is no marker to consult, so every seed
-        holding the split's predictions file is read on the strength of that
-        file, which ``_atomic_write`` leaves either complete or absent. A save
-        that crashed before writing any report row falls here too.
-
-        Ids sort like ``report.csv``'s index.
+        With a ``report.csv`` it is the commit marker: a seed missing from it
+        was left behind by a crashed save and is skipped, while a committed row
+        carrying ``{split}`` metrics but no predictions file is corruption, not
+        a train-only run, and warns. Without one there is no marker, so every
+        seed holding the file is read on the strength of that file, which
+        ``_atomic_write`` leaves either complete or absent. Ids sort like
+        ``report.csv``'s index.
         """
         seeds_dir = (
             self._pair_dir(classifier_name, dataset_name) / "predictions_by_seed"
@@ -525,8 +476,8 @@ class Results:
             If ``classifier_name`` or ``dataset_name`` is not a string.
 
         ValueError
-            If ``classifier_name`` or ``dataset_name`` is empty, a dot
-            segment, or contains a path separator.
+            If ``classifier_name`` or ``dataset_name`` is not a usable
+            path component.
 
         FileNotFoundError
             If the pair has no ``report.csv``.
@@ -565,8 +516,8 @@ class Results:
             If ``classifier_name`` or ``dataset_name`` is not a string.
 
         ValueError
-            If ``classifier_name`` or ``dataset_name`` is empty, a dot
-            segment, or contains a path separator.
+            If ``classifier_name`` or ``dataset_name`` is not a usable
+            path component.
 
         FileNotFoundError
             If the pair has no ``hyperparameter_configuration.csv``.
@@ -627,8 +578,8 @@ class Results:
 
         ValueError
             If ``classifier_name``, ``dataset_name`` or a non-int
-            ``resample_id`` is empty, a dot segment, or contains a path
-            separator, or if ``split`` is not ``"test"`` or ``"train"``.
+            ``resample_id`` is not a usable path component, or if ``split``
+            is not ``"test"`` or ``"train"``.
 
         FileNotFoundError
             If the resample has no predictions file for ``split``.
@@ -687,8 +638,7 @@ class Results:
 
         ValueError
             If ``classifier_name``, ``dataset_name`` or a non-int
-            ``resample_id`` is empty, a dot segment, or contains a path
-            separator.
+            ``resample_id`` is not a usable path component.
 
         FileNotFoundError
             If the resample was saved with ``save_model=False`` or its
@@ -740,8 +690,7 @@ class Results:
 
         ValueError
             If ``classifier_name``, ``dataset_name`` or a non-int
-            ``resample_id`` is empty, a dot segment, or contains a path
-            separator.
+            ``resample_id`` is not a usable path component.
 
         Examples
         --------
@@ -754,19 +703,18 @@ class Results:
         csv_path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not csv_path.is_file():
             return False
-        df = pd.read_csv(csv_path, index_col=0)
-        return str(resample_id) in df.index.astype(str)
+        # Only the index decides, and a resumed run reads it once per resample
+        index = pd.read_csv(csv_path, index_col=0, usecols=[0]).index
+        return str(resample_id) in index.astype(str)
 
     def iter_experiments(self) -> Iterator[tuple[str, str]]:
         """Yield every readable pair as ``(classifier_name, dataset_name)``.
 
         A pair qualifies on a ``report.csv``, the commit marker, or failing
         that on a ``predictions_by_seed`` directory, which is how a tree
-        written by another tool is discovered. Read a yielded pair with
-        ``report``, ``hyperparameters``, ``predictions`` or ``model``; each
-        raises ``FileNotFoundError`` when its own file is absent, so only
-        ``report`` is guaranteed to fail for a pair carrying no
-        ``report.csv``.
+        written by another tool is discovered. A yielded pair need not carry
+        every file: ``report``, ``hyperparameters``, ``predictions`` and
+        ``model`` each raise ``FileNotFoundError`` when their own is absent.
 
         Yields
         ------

@@ -12,7 +12,7 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.utils.validation import check_ordinal_targets
 
-from . import _libsvorim as svorim  # type: ignore[attr-defined]
+from . import _libsvor as svorim  # type: ignore[attr-defined]
 
 
 class SVORIM(ClassifierMixin, BaseEstimator):
@@ -144,7 +144,8 @@ class SVORIM(ClassifierMixin, BaseEstimator):
         else:
             gamma_value = float(self.gamma)
 
-        options = "svorim {} -T {} -K {} -C {}".format(
+        # -M 1 SVORIM
+        options = "svor -M 1 {} -T {} -K {} -C {}".format(
             arg, str(self.tol), str(gamma_value), str(self.C)
         )
         self.model_ = svorim.fit((y_encoded + 1).tolist(), X.tolist(), options)
