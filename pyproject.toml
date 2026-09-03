@@ -137,6 +137,26 @@ ext-modules = [
             "skordinal/classifiers/src/svorim/smo_loadproblem_python.c",
             "skordinal/classifiers/src/svorim/smo_routine_python.c",
         ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off", "-fvisibility=hidden"], libraries = ["m"]},
+    {name = "skordinal.classifiers._libsvor", language = "c", sources = [
+            "skordinal/classifiers/src/svor/svor_module.c",
+            "skordinal/classifiers/src/svor/svor_train.c",
+            "skordinal/classifiers/src/svor/svor_predict.c",
+            "skordinal/classifiers/src/svor/alphas.c",
+            "skordinal/classifiers/src/svor/cachelist.c",
+            "skordinal/classifiers/src/svor/datalist.c",
+            "skordinal/classifiers/src/svor/def_settings.c",
+            "skordinal/classifiers/src/svor/loadfile.c",
+            "skordinal/classifiers/src/svor/ordinal_takestep.c",
+            "skordinal/classifiers/src/svor/setandfi.c",
+            "skordinal/classifiers/src/svor/smo_kernel.c",
+            "skordinal/classifiers/src/svor/smo_routine.c",
+            "skordinal/classifiers/src/svor/smo_routine_python.c",
+            "skordinal/classifiers/src/svor/smo_settings.c",
+            "skordinal/classifiers/src/svor/smo_timer.c",
+            "skordinal/classifiers/src/svor/svc_predict.c",
+            "skordinal/classifiers/src/svor/smo_model_python.c",
+            "skordinal/classifiers/src/svor/smo_loadproblem_python.c",
+        ], extra-compile-args = ["-Wno-unused-result", "-ffp-contract=off", "-fvisibility=hidden"], libraries = ["m"]},
     {name = "skordinal.classifiers._orensemble", language = "c++", sources = [
             "skordinal/classifiers/src/orensemble/python/orensemble-module.cpp",
             "skordinal/classifiers/src/orensemble/python/orensemble-model-python.cpp",
@@ -199,7 +219,7 @@ ignore = ["E501"]
 python_version = "3.10"
 ignore_missing_imports = true
 allow_redefinition = true
-exclude = ["skordinal/classifiers/src/libsvmrank/", "skordinal/classifiers/src/svorex/", "skordinal/classifiers/src/svorim/"]
+exclude = ["skordinal/classifiers/src/libsvmrank/", "skordinal/classifiers/src/svorex/", "skordinal/classifiers/src/svorim/", "skordinal/classifiers/src/svor/"]
 
 [tool.check-sdist]
 git-only = [
