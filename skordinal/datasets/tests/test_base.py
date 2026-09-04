@@ -583,6 +583,35 @@ def test_partition_index_matches_source_rows():
         np.testing.assert_array_equal(raw.data[bunch.test_index], bunch.data_test)
 
 
+def test_load_dataset_nested_data_home(tmp_path):
+    """A dataset nested as <data_home>/<name>/<name>.csv resolves via data_home."""
+    nested_dir = tmp_path / "ds_nested"
+    nested_dir.mkdir()
+    _write_csv(nested_dir, "ds_nested")
+    bunch = load_dataset("ds_nested", data_home=tmp_path)
+    assert bunch.data.shape == (_N_SAMPLES, _N_FEATURES)
+
+
+def test_load_dataset_direct_csv_wins_over_nested(tmp_path):
+    """<data_home>/<name>.csv takes precedence over the nested layout."""
+    _write_csv(tmp_path, "ds_dup")
+    nested_dir = tmp_path / "ds_dup"
+    nested_dir.mkdir()
+    _write_csv(nested_dir, "ds_dup", n_samples=10)
+    bunch = load_dataset("ds_dup", data_home=tmp_path)
+    assert bunch.data.shape == (_N_SAMPLES, _N_FEATURES)
+
+
+def test_load_partitions_nested_data_home_uses_masks(tmp_path):
+    """The nested layout's masks file is honoured, not a generated holdout."""
+    nested_dir = tmp_path / "ds_part"
+    nested_dir.mkdir()
+    _write_csv(nested_dir, "ds_part")
+    _write_masks(nested_dir, "ds_part", [[True] * 13 + [False] * 7])
+    bunch = next(load_partitions("ds_part", data_home=tmp_path, resamples=[0]))
+    assert bunch.train_index.tolist() == list(range(13))
+
+
 def _setup_missing_csv(tmp_path):
     """Return args for missing-CSV error case; no files written."""
     return "nonexistent_calltime", {}
