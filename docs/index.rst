@@ -14,12 +14,13 @@ prediction against it.
 Every estimator follows the scikit-learn API, so it drops unchanged into
 :class:`~sklearn.pipeline.Pipeline`,
 :class:`~sklearn.model_selection.GridSearchCV` and the rest of the ecosystem.
-See :doc:`getting_started` to install it and fit the first model.
+See :doc:`getting_started` to install it and fit the first model, then
+:doc:`auto_examples/index` for worked examples.
 
 At a glance
 -----------
 
-**Fourteen ordinal classifiers**: threshold models
+**Thirteen ordinal classifiers**: threshold models
 (:class:`~skordinal.classifiers.POM`,
 :class:`~skordinal.classifiers.LogisticAT`,
 :class:`~skordinal.classifiers.LogisticIT`), neural networks
@@ -53,4 +54,5 @@ model, dataset and resample and writes the aggregated results to disk.
    :caption: Contents
 
    getting_started
+   auto_examples/index
    api/index

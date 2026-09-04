@@ -14,6 +14,8 @@ import re
 import sys
 from pathlib import Path
 
+from sphinx_gallery.sorting import ExplicitOrder
+
 # --- Project metadata -------------------------------------------------------
 import skordinal  # noqa: E402
 
@@ -30,6 +32,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "numpydoc",
+    "sphinx_gallery.gen_gallery",
 ]
 
 # --- Theme ------------------------------------------------------------------
@@ -54,14 +57,6 @@ intersphinx_mapping = {
 # Each api/*.rst lists its public names in an ``autosummary`` toctree, so the
 # stub pages under api/generated/ are built from scratch on every run.
 autosummary_generate = True
-
-# The C extension modules are compiled separately; mock them so autodoc can
-# import the pure-Python wrappers without a compiled extension present.
-autodoc_mock_imports = [
-    "skordinal.classifiers._libsvmrank",
-    "skordinal.classifiers._libsvor",
-    "skordinal.classifiers._orensemble",
-]
 
 # --- Source links -----------------------------------------------------------
 
@@ -110,9 +105,36 @@ def linkcode_resolve(domain, info):
 
 numpydoc_show_class_members = False
 
+# --- Sphinx-Gallery ---------------------------------------------------------
+
+# ``examples/`` holds two kinds of file. The gallery scripts live in one
+# subdirectory per topic, each with the ``README.txt`` header that makes
+# sphinx-gallery render it as a section. ``run_recipe.py`` is a CLI driver
+# for ``examples/recipes/`` and not an example, so ``ignore_pattern`` drops
+# it, and ``examples/recipes/`` needs no entry of its own because sphinx-
+# gallery only descends into a subdirectory that carries a header
+
+sphinx_gallery_conf = {
+    "examples_dirs": "../examples",
+    "gallery_dirs": "auto_examples",
+    "subsection_order": ExplicitOrder(
+        [
+            "../examples/getting_started",
+            "../examples/classifiers",
+            "../examples/metrics",
+            "../examples/experiments",
+        ]
+    ),
+    "within_subsection_order": "FileNameSortKey",
+    "ignore_pattern": r"run_recipe\.py",
+}
+
 # --- Build targets ----------------------------------------------------------
 
-exclude_patterns = ["_build"]
+# sphinx-gallery writes a per-gallery ``sg_execution_times.rst`` beside the
+# generated pages and a project-wide one into this directory. Both are
+# ``:orphan:`` build artefacts that do not belong on the site
+exclude_patterns = ["_build", "**/sg_execution_times.rst"]
 
 # --- Docstring post-processing ----------------------------------------------
 
