@@ -19,7 +19,6 @@ from ._tocuco import (
     fetch_tocuco,
     fetch_tocuco_partition,
     list_tocuco_datasets,
-    load_tocuco_partitions,
 )
 
 __all__ = [
@@ -37,5 +36,4 @@ __all__ = [
     "load_partitions",
     "load_swd",
     "make_ordinal_classification",
-    "load_tocuco_partitions",
 ]
