@@ -17,8 +17,6 @@ from sklearn.utils import Bunch, check_random_state
 from sklearn.utils._param_validation import Interval, validate_params
 from sklearn.utils.multiclass import check_classification_targets
 
-from ._tocuco import load_tocuco_dataset, load_tocuco_partitions
-
 DATA_MODULE = "skordinal.datasets.data"
 DESCR_MODULE = "skordinal.datasets.descr"
 
@@ -542,6 +540,8 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     (1000, 4)
     """
     if str(name).startswith("tocuco"):
+        from ._tocuco import load_tocuco_dataset
+
         return load_tocuco_dataset(
             name=name.replace("tocuco_", ""), return_X_y=return_X_y, as_frame=as_frame
         )
@@ -687,6 +687,8 @@ def load_partitions(
     ...     print(bunch.resample_id, bunch.data_train.shape[0])
     """
     if str(name).startswith("tocuco"):
+        from ._tocuco import load_tocuco_partitions
+
         return load_tocuco_partitions(name.replace("tocuco_", ""), resamples=resamples)
 
     csv_path, _ = _resolve_csv_path(name, data_home)

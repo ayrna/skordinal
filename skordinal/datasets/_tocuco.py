@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from _base import (
+from ._base import (
     _convert_data_dataframe,
     _read_csv_any,
     _resolve_target_names,
