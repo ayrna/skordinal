@@ -7,14 +7,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
-from sklearn.utils import Bunch
-
-from skordinal.datasets._base import (
+from _base import (
     _convert_data_dataframe,
     _read_csv_any,
     _resolve_target_names,
 )
+from sklearn.preprocessing import StandardScaler
+from sklearn.utils import Bunch
 
 
 def _download_tocuco_dataset(dataset_name, filename, dest_dir):
