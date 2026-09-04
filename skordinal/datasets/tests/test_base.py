@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 
@@ -613,6 +614,14 @@ def _setup_single_member_class(tmp_path):
     return name, {"resamples": 1}
 
 
+def _setup_malformed_mask_file(tmp_path, filename, content):
+    """Return args for a mask file written verbatim with ``content``."""
+    name = "ds_malformed_mask"
+    _write_csv(tmp_path, name)
+    (tmp_path / filename.format(name=name)).write_text(content, encoding="utf-8")
+    return name, {"resamples": 1}
+
+
 def _setup_short_per_dataset_masks(tmp_path):
     """Return args for short per-dataset-masks IndexError case."""
     name = "ds_short_masks"
@@ -629,6 +638,40 @@ def _setup_short_per_dataset_masks(tmp_path):
         (_setup_bad_mask, ValueError, "Mask for resample 0"),
         (_setup_missing_keyed_entry, KeyError, r"_seed_1"),
         (_setup_short_per_dataset_masks, IndexError, r"\.masks\.json"),
+        (
+            functools.partial(
+                _setup_malformed_mask_file,
+                filename="train_masks.json",
+                content=str({"seed_0": [True] * 14 + [False] * 6}),
+            ),
+            ValueError,
+            "is not valid JSON",
+        ),
+        (
+            functools.partial(
+                _setup_malformed_mask_file, filename="train_masks.json", content="null"
+            ),
+            ValueError,
+            "JSON object",
+        ),
+        (
+            functools.partial(
+                _setup_malformed_mask_file,
+                filename="{name}.masks.json",
+                content="{truncated",
+            ),
+            ValueError,
+            "is not valid JSON",
+        ),
+        (
+            functools.partial(
+                _setup_malformed_mask_file,
+                filename="{name}.masks.json",
+                content=json.dumps({"0": [True] * 14 + [False] * 6}),
+            ),
+            ValueError,
+            "JSON list",
+        ),
         (_setup_single_member_class, ValueError, "least populated"),
     ],
     ids=[
@@ -636,6 +679,10 @@ def _setup_short_per_dataset_masks(tmp_path):
         "mask-length-mismatch",
         "missing-keyed-entry",
         "short-per-dataset-masks",
+        "non-json-keyed-masks",
+        "null-keyed-masks",
+        "non-json-per-dataset-masks",
+        "dict-per-dataset-masks",
         "single-member-class",
     ],
 )
