@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 import warnings
+import zipfile
 from collections import namedtuple
 from numbers import Integral, Real
 from pathlib import Path
@@ -33,10 +34,24 @@ RemoteFileMetadata = namedtuple("RemoteFileMetadata", ["filename", "url"])
 # The only 4xx worth retrying, the rest are permanent
 _TRANSIENT_HTTP_CODES = frozenset({408, 429})
 
+# Not /grupos/ayrna/datasets/TOC-UCO.zip, which still serves the
+# superseded v1 layout whose masks are unrecoverable
+_ARCHIVE = RemoteFileMetadata(
+    filename="TOC-UCO_v2.zip",
+    url="https://ayrna-nc.ext.uco.es/index.php/s/tocuco/download",
+)
+
+# A different host from the archive above
 _DATASET_BASE_URL = "https://www.uco.es/ayrna/tocuco/files"
 
 # Remote because the cache renames the masks (see _CachedDataset.files)
 _REMOTE_SIDECARS = ("metadata.csv", "train_masks.json")
+
+# A well-formed release is a few tens of MiB, so this caps a zip bomb
+_MAX_UNCOMPRESSED_BYTES = 2 * 1024**3
+
+# Written only by a finished extraction, never by a per-dataset fetch
+_COMPLETE_MARKER = ".complete"
 
 
 def _fetch_remote(remote, dest_dir, n_retries=3, delay=1.0, validate_headers=None):
@@ -82,6 +97,17 @@ def _fetch_remote(remote, dest_dir, n_retries=3, delay=1.0, validate_headers=Non
 def _tocuco_root(data_home):
     """Return the TOC-UCO cache root under the resolved data home."""
     return Path(get_data_home(data_home)) / "tocuco"
+
+
+def _cached_dataset_names(tocuco_root):
+    """Return the names of the datasets published under the cache root."""
+    if not tocuco_root.is_dir():
+        return []
+    return [
+        entry.name
+        for entry in sorted(tocuco_root.iterdir())
+        if entry.is_dir() and (entry / f"{entry.name}.csv").is_file()
+    ]
 
 
 def _check_dataset_name(name):
@@ -243,14 +269,22 @@ class _CachedDataset:
                 f"has a malformed metadata.csv for {self.name!r} ({err})"
             ) from err
 
-    def publish(self, staged):
+    def is_oc(self):
+        """Return whether metadata flags this dataset as ordinal, False when unreadable."""
+        try:
+            return _is_oc(self.metadata_row())
+        except OSError:
+            return False
+
+    def publish(self, staged, replace_existing=False):
         """Publish a staged directory atomically under this dataset's name."""
         try:
             os.rename(staged, self.dir)
             return
         except OSError:
-            # A complete rival tree came from the same source, so it serves
-            if self.is_complete():
+            # A single-dataset download yields to a complete rival tree, but
+            # a fresh archive outranks whatever is cached
+            if not replace_existing and self.is_complete():
                 return
         # Whatever squats there may be a file, which rmtree would skip
         if self.dir.is_dir():
@@ -270,6 +304,92 @@ class _CachedDataset:
         bunch.dataset_name = self.name
         bunch.DESCR = _make_descr(self.name, self.metadata_row())
         return bunch
+
+
+def _extract(zip_path, dest):
+    """Extract ``zip_path`` into ``dest`` atomically and remove the archive."""
+    staging = Path(tempfile.mkdtemp(dir=dest))
+    try:
+        try:
+            zf = zipfile.ZipFile(zip_path)
+        except FileNotFoundError:
+            # A rival fetch may have extracted and unlinked this zip, and
+            # the marker proves it
+            if not (dest / _COMPLETE_MARKER).is_file():
+                raise
+            return
+        with zf:
+            total_uncompressed = sum(info.file_size for info in zf.infolist())
+            if total_uncompressed > _MAX_UNCOMPRESSED_BYTES:
+                raise OSError(
+                    "TOC-UCO archive would extract to "
+                    f"{total_uncompressed / 1024**3:.2f} GiB, exceeding "
+                    f"the {_MAX_UNCOMPRESSED_BYTES / 1024**3:.0f} GiB "
+                    "safety cap; refusing to extract it."
+                )
+            staging_resolved = staging.resolve()
+            # Never unpickled, since a downloaded pickle executes its payload
+            members = [m for m in zf.namelist() if not m.endswith("train_masks.pkl")]
+            for member in members:
+                target = (staging / member).resolve()
+                if (
+                    os.path.isabs(member)
+                    or ".." in Path(member).parts
+                    or not target.is_relative_to(staging_resolved)
+                ):
+                    raise ValueError(
+                        f"Unsafe path in archive: {member!r}. The cached "
+                        f"archive at {zip_path} was not deleted (re-downloading "
+                        "would only fetch the same file again); delete it "
+                        "manually to force a fresh download."
+                    )
+            zf.extractall(staging, members=members)
+
+        # Validate and normalise every dataset before publishing any, so
+        # a corrupt archive cannot leave a partially populated cache
+        staged_names = _cached_dataset_names(staging)
+        staged_datasets = [staging / name for name in staged_names]
+        # Sidecars but no <name>.csv means a broken dataset, which must fail
+        # rather than vanish. Neither means an auxiliary directory
+        broken = [
+            entry.name
+            for entry in sorted(staging.iterdir())
+            if entry.is_dir()
+            and entry.name not in staged_names
+            and any((entry / fname).is_file() for fname in _REMOTE_SIDECARS)
+        ]
+        if broken:
+            raise OSError(
+                "TOC-UCO archive is incomplete or corrupt (missing "
+                f"{broken[0]}/{broken[0]}.csv); the cache was not populated."
+            )
+        if not staged_datasets:
+            raise OSError(
+                "TOC-UCO archive is incomplete or corrupt (no "
+                "<name>/<name>.csv directory); the cache was not populated."
+            )
+        for staged in staged_datasets:
+            name = staged.name
+            for required in _REMOTE_SIDECARS:
+                if not (staged / required).is_file():
+                    raise OSError(
+                        "TOC-UCO archive is incomplete or corrupt (missing "
+                        f"{name}/{required}); the cache was not populated."
+                    )
+            _normalise_dataset_masks(
+                staged / "train_masks.json", staged / f"{name}.masks.json", name
+            )
+        for staged in staged_datasets:
+            _CachedDataset(dest / staged.name).publish(staged, replace_existing=True)
+        (dest / _COMPLETE_MARKER).touch()
+    except (zipfile.BadZipFile, OSError):
+        # Evict the bad archive so the next call re-downloads it
+        zip_path.unlink(missing_ok=True)
+        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+    zip_path.unlink(missing_ok=True)
 
 
 def _download_tocuco_dataset(name, data_home, n_retries, delay):
@@ -448,6 +568,11 @@ def fetch_tocuco(
         retry attempts for a transient failure (a timeout, a 5xx status,
         or HTTP 408/429).
 
+    Notes
+    -----
+    Call ``download_tocuco`` first to prefetch the whole collection in
+    a single archive.
+
     Examples
     --------
     >>> from skordinal.datasets import fetch_tocuco     # doctest: +SKIP
@@ -597,6 +722,142 @@ def fetch_tocuco_partition(
         "fetch_tocuco_partition",
     )
     return dataset.load_partition(resample_id)
+
+
+@validate_params(
+    {
+        "data_home": [str, os.PathLike, None],
+        "oc_only": ["boolean"],
+    },
+    prefer_skip_nested_validation=True,
+)
+def list_tocuco_datasets(*, data_home=None, oc_only=False) -> list[str]:
+    """List dataset names available in the TOC-UCO cache.
+
+    Parameters
+    ----------
+    data_home : str, os.PathLike, or None, default=None
+        Cache root; see ``fetch_tocuco`` for resolution rules.
+
+    oc_only : bool, default=False
+        When ``True``, return only datasets flagged as ordinal classification.
+
+    Returns
+    -------
+    names : list of str
+        Sorted names of the datasets present in the cache. Returns an
+        empty list when nothing has been downloaded yet.
+
+    Examples
+    --------
+    >>> from skordinal.datasets import list_tocuco_datasets  # doctest: +SKIP
+    >>> names = list_tocuco_datasets()                       # doctest: +SKIP
+    >>> "oc09_era" in names                                  # doctest: +SKIP
+    True
+    """
+    tocuco_root = _tocuco_root(data_home)
+    names = _cached_dataset_names(tocuco_root)
+    if oc_only:
+        names = [name for name in names if _CachedDataset(tocuco_root / name).is_oc()]
+    return names
+
+
+@validate_params(
+    {
+        "data_home": [str, os.PathLike, None],
+        "download_if_missing": ["boolean"],
+        "n_retries": [Interval(Integral, 0, None, closed="left")],
+        "delay": [Interval(Real, 0, None, closed="left")],
+    },
+    prefer_skip_nested_validation=True,
+)
+def download_tocuco(
+    *, data_home=None, download_if_missing=True, n_retries=3, delay=1.0
+) -> Path:
+    """Download and cache the whole TOC-UCO dataset collection.
+
+    Fetches every dataset in one archive, populating the same cache the
+    per-dataset fetchers use, so a later ``fetch_tocuco`` or
+    ``fetch_tocuco_partition`` call needs no network access.
+
+    Parameters
+    ----------
+    data_home : str, os.PathLike, or None, default=None
+        Root directory for the local cache. When ``None``, the value of the
+        ``SKORDINAL_DATA`` environment variable is used if set; otherwise
+        ``~/skordinal_data``.
+
+    download_if_missing : bool, default=True
+        If ``False`` and the whole collection has not been downloaded,
+        raise ``OSError`` instead of downloading.
+
+    n_retries : int, default=3
+        Number of retry attempts after the initial download fails. Must
+        be non-negative; ``0`` performs a single attempt with no retries.
+
+    delay : float, default=1.0
+        Seconds to wait between retry attempts. Must be non-negative.
+
+    Returns
+    -------
+    tocuco_root : Path
+        Path to the cache root holding one directory per dataset.
+
+    Raises
+    ------
+    OSError
+        When ``download_if_missing=False`` and the data are absent, when
+        a freshly downloaded archive would decompress past the internal
+        safety cap, when the extracted tree does not hold one
+        ``<name>/<name>.csv`` directory per dataset with its
+        ``metadata.csv`` and ``train_masks.json``, or when a dataset's
+        ``train_masks.json`` is malformed.
+
+    ValueError
+        When a downloaded archive contains a member path that would
+        extract outside the destination directory.
+
+    zipfile.BadZipFile
+        When the downloaded archive is not a valid zip file. The
+        cached copy is removed so a subsequent call re-downloads it.
+
+    urllib.error.URLError
+        When the download fails: immediately for a permanent HTTP client
+        error (any 4xx status other than 408 and 429), or after all
+        retry attempts for a transient failure (a timeout, a 5xx status,
+        or HTTP 408/429).
+
+    Notes
+    -----
+    The returned root works directly as the ``data_home`` of
+    ``load_dataset``, ``load_partitions``, or ``Benchmark``: each dataset
+    resolves to its own subdirectory. The ``data_home`` argument of the
+    TOC-UCO fetchers is instead the directory above this root.
+
+    Only a completed extraction marks the collection as present, so
+    datasets cached one at a time never stop a later prefetch.
+
+    Examples
+    --------
+    >>> from skordinal.datasets import download_tocuco   # doctest: +SKIP
+    >>> tocuco_root = download_tocuco()                  # doctest: +SKIP
+    >>> tocuco_root.is_dir()                             # doctest: +SKIP
+    True
+    """
+    tocuco_root = _tocuco_root(data_home)
+    if (tocuco_root / _COMPLETE_MARKER).is_file():
+        return tocuco_root
+    if not download_if_missing:
+        raise OSError(
+            f"TOC-UCO data not found at {tocuco_root}. "
+            "Call download_tocuco() with download_if_missing=True."
+        )
+    tocuco_root.mkdir(parents=True, exist_ok=True)
+    # Staged in the cache root, not the shared data home, where a
+    # same-named file of the user's would be adopted and then evicted
+    zip_path = _fetch_remote(_ARCHIVE, tocuco_root, n_retries, delay)
+    _extract(zip_path, tocuco_root)
+    return tocuco_root
 
 
 def load_tocuco_partitions(

@@ -1,10 +1,11 @@
-"""Tests for the TOC-UCO dataset API (fetch, partition access)."""
+"""Tests for the TOC-UCO dataset API (fetch, list, partition access)."""
 
 from __future__ import annotations
 
 import contextlib
 import json
 import urllib
+import zipfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 
@@ -15,8 +16,10 @@ from sklearn.utils import Bunch
 
 from skordinal.datasets import (
     _tocuco,
+    download_tocuco,
     fetch_tocuco,
     fetch_tocuco_partition,
+    list_tocuco_datasets,
     load_partitions,
     load_tocuco_partitions,
 )
@@ -129,6 +132,19 @@ def _assert_nothing_published(tmp_path):
     assert not root.exists() or list(root.iterdir()) == []
 
 
+def _make_valid_zip(path: Path, names=("oc03_fake",)) -> None:
+    """Write a minimal valid TOC-UCO archive to *path*."""
+    with zipfile.ZipFile(path, "w") as zf:
+        for name in names:
+            zf.writestr(f"{name}/{name}.csv", _CSV_CONTENT)
+            zf.writestr(
+                f"{name}/metadata.csv", _METADATA_CSV.replace("oc03_fake", name)
+            )
+            zf.writestr(f"{name}/train_masks.json", json.dumps(_SITE_TRAIN_MASKS))
+            # The real archive ships this pickle, and extraction must drop it
+            zf.writestr(f"{name}/train_masks.pkl", b"\x80\x04N.")
+
+
 class _FakeHeaders:
     """Minimal stand-in for urlretrieve's returned HTTP headers."""
 
@@ -216,6 +232,33 @@ def tocuco_root(tmp_path):
 
 
 @pytest.fixture
+def staged_archive(tmp_path, monkeypatch):
+    """Serve an archive to download_tocuco without touching the network.
+
+    Returns a callable taking an optional prebuilt zip path, defaulting to
+    the standard valid archive, and returning the list of requested URLs.
+    """
+    state = {"path": None, "calls": []}
+
+    def stage(zip_path=None):
+        """Point the patched _fetch_remote at zip_path, or the default archive."""
+        state["path"] = zip_path
+        return state["calls"]
+
+    def fake_fetch_remote(remote, dest_dir, n_retries, delay):
+        """Record the request and hand back the staged archive."""
+        state["calls"].append(remote.url)
+        if state["path"] is not None:
+            return state["path"]
+        zip_path = dest_dir / remote.filename
+        _make_valid_zip(zip_path)
+        return zip_path
+
+    monkeypatch.setattr("skordinal.datasets._tocuco._fetch_remote", fake_fetch_remote)
+    return stage
+
+
+@pytest.fixture
 def fake_urlretrieve(monkeypatch):
     """Monkeypatch urlretrieve with a call-recording per-dataset site fake."""
     fake = _FakeUrlretrieve()
@@ -283,6 +326,342 @@ def test_fetch_remote_retries_then_succeeds(tmp_path, monkeypatch):
 
     assert call_count["n"] == 2
     assert result.is_file()
+
+
+def test_extract_corrupt_zip_unlinks_archive(tmp_path):
+    """A garbage (non-zip) archive is removed so the next fetch re-downloads."""
+    zip_path = tmp_path / "TOC-UCO_v2.zip"
+    zip_path.write_bytes(b"this is not a zip file at all")
+    with pytest.raises(zipfile.BadZipFile):
+        _tocuco._extract(zip_path, tmp_path)
+    assert not zip_path.exists()
+
+
+def test_extract_rejects_archive_exceeding_uncompressed_cap(tmp_path, monkeypatch):
+    """A declared uncompressed size past the safety cap is refused, zip evicted."""
+    monkeypatch.setattr(_tocuco, "_MAX_UNCOMPRESSED_BYTES", 100)
+    zip_path = tmp_path / "TOC-UCO_v2.zip"
+    _make_valid_zip(zip_path)
+    with pytest.raises(OSError, match="safety cap"):
+        _tocuco._extract(zip_path, tmp_path)
+    assert not zip_path.exists()
+    assert not (tmp_path / "oc03_fake").exists()
+
+
+def test_download_tocuco_populates_and_normalises_the_cache(tmp_path, staged_archive):
+    """A downloaded archive publishes each dataset with its masks normalised."""
+    staged_archive()
+    root = download_tocuco(data_home=tmp_path)
+
+    assert root == tmp_path / "tocuco"
+    dataset_dir = root / "oc03_fake"
+    assert (dataset_dir / "oc03_fake.csv").read_text() == _CSV_CONTENT
+    assert json.loads((dataset_dir / "oc03_fake.masks.json").read_text()) == (
+        _DATASET_MASKS_LIST
+    )
+    assert not (dataset_dir / "train_masks.json").exists()
+    assert not (dataset_dir / "train_masks.pkl").exists()
+    assert (root / _tocuco._COMPLETE_MARKER).is_file()
+
+
+def test_download_tocuco_completed_cache_is_reused_offline(tmp_path, staged_archive):
+    """A completed download is remembered: a later call needs no network."""
+    staged_archive()
+    root = download_tocuco(data_home=tmp_path)
+    calls = staged_archive()
+    assert download_tocuco(data_home=tmp_path, download_if_missing=False) == root
+    assert len(calls) == 1
+    # The network blocker proves the fetchers now need no network at all
+    assert fetch_tocuco("oc03_fake", data_home=tmp_path).dataset_name == "oc03_fake"
+    bunch = next(
+        load_partitions("oc03_fake", resamples=[0], data_home=root / "oc03_fake")
+    )
+    assert bunch.data_train.shape == (7, 2)
+
+
+@pytest.mark.parametrize(
+    "cached",
+    [None, "oc99_other"],
+    ids=["empty-cache", "one-dataset-cached"],
+)
+def test_download_tocuco_missing_no_download_raises(cached, tmp_path):
+    """Without a completed download the prefetch refuses to short-circuit."""
+    if cached is not None:
+        _build_dataset_tree(tmp_path / "tocuco", cached)
+    with pytest.raises(OSError, match="TOC-UCO data not found"):
+        download_tocuco(data_home=tmp_path, download_if_missing=False)
+
+
+def test_download_tocuco_per_dataset_cache_does_not_satisfy_prefetch(
+    tmp_path, staged_archive
+):
+    """A single fetched dataset must not short-circuit the whole-collection download."""
+    _build_dataset_tree(tmp_path / "tocuco", "oc99_other")
+    calls = staged_archive()
+    root = download_tocuco(data_home=tmp_path)
+    assert calls
+    assert (root / "oc03_fake" / "oc03_fake.csv").is_file()
+    assert (root / "oc99_other" / "oc99_other.csv").is_file()
+
+
+def _squat_stale_complete(root):
+    """Leave a complete but outdated dataset tree at the name."""
+    stale = _build_dataset_tree(root, "oc03_fake")
+    (stale / "oc03_fake.csv").write_text("x_0,y\n99.0,2\n", encoding="utf-8")
+
+
+def _squat_incomplete(root):
+    """Leave a dataset tree that is missing its masks file."""
+    _build_partial_tocuco_dataset_tree(root, "oc03_fake", omit="masks")
+
+
+def _squat_plain_file(root):
+    """Leave a plain file, not a directory, at the dataset's name."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "oc03_fake").write_text("not a directory", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "squat",
+    [_squat_stale_complete, _squat_incomplete, _squat_plain_file],
+    ids=["stale-complete", "incomplete-directory", "plain-file"],
+)
+def test_download_tocuco_replaces_existing_tree(squat, tmp_path, staged_archive):
+    """The archive's copy replaces whatever occupies a dataset's name."""
+    squat(tmp_path / "tocuco")
+    sentinel = tmp_path / "tocuco" / "oc03_fake" / "sentinel.txt"
+    if sentinel.parent.is_dir():
+        sentinel.write_text("loser")
+
+    staged_archive()
+    dataset_dir = download_tocuco(data_home=tmp_path) / "oc03_fake"
+
+    assert dataset_dir.is_dir()
+    assert (dataset_dir / "oc03_fake.csv").read_text() == _CSV_CONTENT
+    assert (dataset_dir / "oc03_fake.masks.json").is_file()
+    # Replaced wholesale, not merged into and not nested beneath
+    assert not sentinel.exists()
+    assert not (dataset_dir / "oc03_fake").exists()
+
+
+def test_download_tocuco_leaves_a_same_named_user_file_alone(tmp_path, monkeypatch):
+    """A user's own TOC-UCO_v2.zip in data_home is never adopted nor deleted."""
+    decoy = tmp_path / "TOC-UCO_v2.zip"
+    decoy.write_text("the user's own file, not an archive", encoding="utf-8")
+
+    def fake_fetch_remote(remote, dest_dir, n_retries, delay):
+        """Stage the real archive wherever the caller asked for it."""
+        zip_path = dest_dir / remote.filename
+        _make_valid_zip(zip_path)
+        return zip_path
+
+    monkeypatch.setattr("skordinal.datasets._tocuco._fetch_remote", fake_fetch_remote)
+    download_tocuco(data_home=tmp_path)
+
+    assert decoy.read_text() == "the user's own file, not an archive"
+
+
+def test_download_tocuco_zip_vanished_with_valid_published_tree_succeeds(
+    tmp_path, monkeypatch
+):
+    """A zip that vanishes before extraction succeeds if a valid tree is published."""
+
+    def fake_fetch_remote(remote, dest_dir, n_retries, delay):
+        """Simulate a concurrent fetch that extracted, published and cleaned up."""
+        zip_path = dest_dir / remote.filename
+        _make_valid_zip(zip_path)
+        _build_dataset_tree(dest_dir, "oc03_fake")
+        (dest_dir / _tocuco._COMPLETE_MARKER).touch()
+        zip_path.unlink()
+        return zip_path
+
+    monkeypatch.setattr("skordinal.datasets._tocuco._fetch_remote", fake_fetch_remote)
+
+    root = download_tocuco(data_home=tmp_path)
+
+    assert root == tmp_path / "tocuco"
+    assert (root / "oc03_fake" / "oc03_fake.csv").is_file()
+
+
+@pytest.mark.parametrize(
+    "bad_member",
+    ["../evil.txt", "/evil.txt"],
+    ids=["parent-traversal", "absolute-path"],
+)
+def test_download_tocuco_rejects_unsafe_archive_member(
+    bad_member, tmp_path, staged_archive
+):
+    """download_tocuco raises ValueError for archive members escaping destination."""
+    zip_path = tmp_path / "TOC-UCO_v2.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        # Valid content alongside, so only the traversal check can fail
+        zf.writestr("oc03_fake/oc03_fake.csv", _CSV_CONTENT)
+        zf.writestr("oc03_fake/metadata.csv", _METADATA_CSV)
+        zf.writestr("oc03_fake/train_masks.json", json.dumps(_SITE_TRAIN_MASKS))
+        zf.writestr(bad_member, "pwned")
+
+    staged_archive(zip_path)
+    with pytest.raises(ValueError, match="Unsafe path in archive"):
+        download_tocuco(data_home=tmp_path)
+
+    _assert_nothing_published(tmp_path)
+    # An unsafe archive is kept, since re-downloading would fetch it again
+    assert zip_path.exists()
+
+
+def test_download_tocuco_empty_archive_raises_oserror(tmp_path, staged_archive):
+    """An archive holding no dataset directory at all is refused."""
+    zip_path = tmp_path / "TOC-UCO_v2.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        # ZipInfo rather than ZipFile.mkdir, which is 3.11+ only
+        zf.writestr(zipfile.ZipInfo("TOC-UCO/"), "")
+
+    staged_archive(zip_path)
+    with pytest.raises(OSError, match="no <name>/<name>.csv"):
+        download_tocuco(data_home=tmp_path)
+
+    _assert_nothing_published(tmp_path)
+
+
+def test_download_tocuco_ignores_auxiliary_directory(tmp_path, staged_archive):
+    """A directory carrying no dataset sidecars is skipped, not treated as broken."""
+    zip_path = tmp_path / "TOC-UCO_v2.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("oc03_fake/oc03_fake.csv", _CSV_CONTENT)
+        zf.writestr("oc03_fake/metadata.csv", _METADATA_CSV)
+        zf.writestr("oc03_fake/train_masks.json", json.dumps(_SITE_TRAIN_MASKS))
+        zf.writestr("docs/README.md", "# TOC-UCO")
+
+    staged_archive(zip_path)
+    root = download_tocuco(data_home=tmp_path)
+    assert (root / "oc03_fake" / "oc03_fake.csv").is_file()
+    assert (root / _tocuco._COMPLETE_MARKER).is_file()
+
+
+@pytest.mark.parametrize(
+    "omit,expected_fragment",
+    [
+        ("csv", r"zz_bad/zz_bad\.csv"),
+        ("metadata", r"zz_bad/metadata\.csv"),
+        ("train_masks", r"zz_bad/train_masks\.json"),
+        ("masks_content", "is malformed"),
+    ],
+    ids=["missing-csv", "missing-metadata", "missing-masks", "corrupt-masks"],
+)
+def test_download_tocuco_broken_dataset_publishes_nothing(
+    omit, expected_fragment, tmp_path, staged_archive
+):
+    """One broken dataset aborts the extraction before anything is published."""
+    zip_path = tmp_path / "TOC-UCO_v2.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        # aa_good is staged before zz_bad fails, yet must not be published
+        zf.writestr("aa_good/aa_good.csv", _CSV_CONTENT)
+        zf.writestr(
+            "aa_good/metadata.csv", _METADATA_CSV.replace("oc03_fake", "aa_good")
+        )
+        zf.writestr("aa_good/train_masks.json", json.dumps(_SITE_TRAIN_MASKS))
+        if omit != "csv":
+            zf.writestr("zz_bad/zz_bad.csv", _CSV_CONTENT)
+        if omit != "metadata":
+            zf.writestr(
+                "zz_bad/metadata.csv", _METADATA_CSV.replace("oc03_fake", "zz_bad")
+            )
+        if omit != "train_masks":
+            masks = (
+                {"7": [True, False]} if omit == "masks_content" else (_SITE_TRAIN_MASKS)
+            )
+            zf.writestr("zz_bad/train_masks.json", json.dumps(masks))
+
+    staged_archive(zip_path)
+    with pytest.raises(OSError, match=expected_fragment):
+        download_tocuco(data_home=tmp_path)
+
+    _assert_nothing_published(tmp_path)
+    # The corrupt archive is evicted so the next fetch re-downloads it
+    assert not zip_path.exists()
+
+
+@pytest.mark.network
+def test_download_tocuco_real_download_validates_tree(tmp_path):
+    """download_tocuco performs a real download into an isolated data home."""
+    root = download_tocuco(data_home=tmp_path)
+    assert isinstance(root, Path)
+    assert root == tmp_path / "tocuco"
+    names = list_tocuco_datasets(data_home=tmp_path)
+    assert names
+    whole = fetch_tocuco(names[0], data_home=tmp_path)
+    assert whole.data.shape[0] == whole.n_patterns_train + whole.n_patterns_test
+    bunch = fetch_tocuco_partition(names[0], 0, data_home=tmp_path)
+    assert bunch.data_train.shape[1] == bunch.data_test.shape[1]
+
+
+def _seed_no_cache(tmp_path):
+    """Leave the cache root absent entirely."""
+
+
+def _seed_stray_file(tmp_path):
+    """Put a stray file, not a directory, directly under the cache root."""
+    root = tmp_path / "tocuco"
+    root.mkdir(parents=True)
+    (root / "README.txt").write_text("not a dataset", encoding="utf-8")
+
+
+def _seed_dir_without_csv(tmp_path):
+    """Create a directory under the cache root that holds no dataset CSV."""
+    (tmp_path / "tocuco" / "half_written").mkdir(parents=True)
+
+
+@pytest.mark.parametrize(
+    "seed",
+    [_seed_no_cache, _seed_stray_file, _seed_dir_without_csv],
+    ids=["no-cache", "stray-file", "directory-without-csv"],
+)
+def test_list_tocuco_datasets_lists_nothing_unpublished(seed, tmp_path):
+    """Only a directory holding its own CSV counts as a published dataset."""
+    seed(tmp_path)
+    assert list_tocuco_datasets(data_home=tmp_path) == []
+
+
+def test_list_tocuco_datasets_returns_sorted_names(tocuco_root, tmp_path):
+    """Cached names are listed sorted, and oc_only keeps the ordinal ones."""
+    _build_dataset_tree(tocuco_root, "aa_other")
+    assert list_tocuco_datasets(data_home=tmp_path) == ["aa_other", "oc03_fake"]
+    assert list_tocuco_datasets(data_home=tmp_path, oc_only=True) == [
+        "aa_other",
+        "oc03_fake",
+    ]
+
+
+def _spoil_remove_metadata(dataset_dir):
+    """Delete the dataset's metadata.csv."""
+    (dataset_dir / "metadata.csv").unlink()
+
+
+def _spoil_undecodable_metadata(dataset_dir):
+    """Rewrite metadata.csv with bytes that are not valid UTF-8."""
+    (dataset_dir / "metadata.csv").write_bytes(
+        "dataset,is_oc\nbad_ds,Tru\u00eb\n".encode("latin-1")
+    )
+
+
+def _spoil_not_ordinal(dataset_dir):
+    """Flag the dataset as non-ordinal in its metadata row."""
+    (dataset_dir / "metadata.csv").write_text(
+        _METADATA_HEADER + "\n" + 'bad_ds,False,7,3,2,3,"[0.4 0.3 0.3]",1.33\n',
+        encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [_spoil_remove_metadata, _spoil_undecodable_metadata, _spoil_not_ordinal],
+    ids=["metadata-absent", "metadata-undecodable", "flagged-not-ordinal"],
+)
+def test_list_tocuco_datasets_oc_only_excludes(spoil, tocuco_root, tmp_path):
+    """oc_only=True drops a dataset it cannot confirm as ordinal, without crashing."""
+    spoil(_build_dataset_tree(tocuco_root, "bad_ds"))
+    assert list_tocuco_datasets(data_home=tmp_path) == ["bad_ds", "oc03_fake"]
+    assert list_tocuco_datasets(data_home=tmp_path, oc_only=True) == ["oc03_fake"]
 
 
 def test_fetch_tocuco_bunch_contract(tocuco_root, tmp_path):
@@ -674,8 +1053,9 @@ def test_fetch_downloaded_tree_missing_masks_raises(fetcher, tmp_path, monkeypat
             "/train_masks.json",
             2,
         ),
+        (lambda **kw: download_tocuco(**kw), "/download", 0),
     ],
-    ids=["fetch", "partition"],
+    ids=["fetch", "partition", "download"],
 )
 def test_n_retries_and_delay_reach_the_retry_loop(
     call, fail_suffix, n_calls_before, tmp_path, fake_urlretrieve, monkeypatch
@@ -732,10 +1112,12 @@ def test_unsafe_or_empty_dataset_name_raises_value_error(call, tmp_path):
 @pytest.mark.parametrize(
     "call",
     [
+        lambda path: download_tocuco(path),
+        lambda path: list_tocuco_datasets(path),
         lambda path: fetch_tocuco("oc03_fake", path),
         lambda path: fetch_tocuco_partition("oc03_fake", 0, path),
     ],
-    ids=["fetch", "partition"],
+    ids=["download", "list", "fetch", "partition"],
 )
 def test_data_home_is_keyword_only(call, tmp_path):
     """Every public entry point rejects a positional data_home."""
@@ -746,8 +1128,10 @@ def test_data_home_is_keyword_only(call, tmp_path):
 @pytest.mark.parametrize(
     "name",
     [
+        "download_tocuco",
         "fetch_tocuco",
         "fetch_tocuco_partition",
+        "list_tocuco_datasets",
     ],
 )
 def test_public_name_is_listed_in_all(name):
@@ -755,6 +1139,14 @@ def test_public_name_is_listed_in_all(name):
     import skordinal.datasets as datasets_pkg
 
     assert name in datasets_pkg.__all__
+
+
+def test_cache_root_env_var_used_for_data_home_resolution(tmp_path, monkeypatch):
+    """SKORDINAL_DATA resolves data_home when it is not passed explicitly."""
+    monkeypatch.setenv("SKORDINAL_DATA", str(tmp_path))
+    _build_dataset_tree(tmp_path / "tocuco", "oc03_fake")
+    names = list_tocuco_datasets(data_home=None)
+    assert names == ["oc03_fake"]
 
 
 def test_load_partitions_on_tocuco_layout(tocuco_root):
