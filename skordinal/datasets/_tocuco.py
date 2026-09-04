@@ -10,12 +10,6 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.utils import Bunch
 
-from ._base import (
-    _convert_data_dataframe,
-    _read_csv_any,
-    _resolve_target_names,
-)
-
 
 def _download_tocuco_dataset(dataset_name, filename, dest_dir):
     """Download and validate a file from a TOC-UCO dataset.
@@ -231,6 +225,8 @@ def load_tocuco_dataset(name, *, return_X_y=False, as_frame=False):
     ValueError
         When the server returns an HTML page (e.g. 404 page or redirect) instead of a CSV.
     """
+    from ._base import _convert_data_dataframe, _read_csv_any, _resolve_target_names
+
     dataset_name = str(name)
     filename = f"{dataset_name}.csv"
 
