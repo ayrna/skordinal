@@ -14,11 +14,12 @@ from ._loaders import (
     load_swd,
 )
 from ._samples_generator import make_ordinal_classification
-from ._tocuco import fetch_tocuco, load_tocuco_partitions
+from ._tocuco import fetch_tocuco, fetch_tocuco_partition, load_tocuco_partitions
 
 __all__ = [
     "clear_data_home",
     "fetch_tocuco",
+    "fetch_tocuco_partition",
     "get_data_home",
     "load_balance_scale",
     "load_dataset",

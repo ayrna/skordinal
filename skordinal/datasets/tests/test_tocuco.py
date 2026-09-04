@@ -1,4 +1,4 @@
-"""Tests for the TOC-UCO dataset API (fetch)."""
+"""Tests for the TOC-UCO dataset API (fetch, partition access)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from sklearn.utils import Bunch
 from skordinal.datasets import (
     _tocuco,
     fetch_tocuco,
+    fetch_tocuco_partition,
     load_partitions,
     load_tocuco_partitions,
 )
@@ -185,6 +186,15 @@ class _FakeUrlretrieve:
         return filename, _FakeHeaders(content_type)
 
 
+def _fetch_partition_by_name(name, **kwargs):
+    """Call fetch_tocuco_partition for resample 0, matching fetch_tocuco's shape."""
+    return fetch_tocuco_partition(name, 0, **kwargs)
+
+
+# The two per-dataset entry points share their whole cache preamble
+_FETCHERS = [fetch_tocuco, _fetch_partition_by_name]
+
+
 @pytest.fixture(autouse=True)
 def _block_network(request, monkeypatch):
     """Autouse: raise on any unmocked urlretrieve call unless marked network."""
@@ -332,6 +342,8 @@ def test_fetch_tocuco_download_publishes_normalised_layout(tmp_path, fake_urlret
     # Element k of the list is the site dict's key str(k), order preserved
     published = json.loads((dest / "oc03_fake.masks.json").read_text(encoding="utf-8"))
     assert published == [_SITE_TRAIN_MASKS["0"], _SITE_TRAIN_MASKS["1"]]
+    bunch = fetch_tocuco_partition("oc03_fake", 0, data_home=tmp_path)
+    assert bunch.data_train.shape[0] == sum(_SITE_TRAIN_MASKS["0"])
 
 
 def test_fetch_tocuco_idempotent_skips_download(tmp_path, fake_urlretrieve):
@@ -556,13 +568,89 @@ def test_fetch_tocuco_rename_failure_without_valid_tree_raises_oserror(
     assert not (tmp_path / "tocuco" / "oc03_fake").exists()
 
 
-def test_fetch_missing_cache_no_download_raises(tmp_path):
-    """fetch_tocuco refuses an absent cache when download_if_missing=False."""
+def test_fetch_tocuco_partition_bunch_contract(tocuco_root, tmp_path):
+    """The partition Bunch carries every documented field with its own type."""
+    bunch = fetch_tocuco_partition("oc03_fake", 1, data_home=tmp_path)
+
+    assert isinstance(bunch, Bunch)
+    assert _REQUIRED_KEYS <= set(bunch.keys())
+    assert bunch.dataset_name == "oc03_fake"
+    assert bunch.resample_id == 1
+    assert bunch.feature_names == ["x_0", "x_1"]
+    assert list(bunch.target_names) == ["0", "1", "2"]
+    assert bunch.n_classes == 3
+    assert "oc03_fake" in bunch.DESCR
+    # Resample 1 is the alternating mask, so the split is 5/5
+    assert bunch.data_train.shape == (5, 2)
+    assert bunch.data_test.shape == (5, 2)
+    assert bunch.target_train.shape == (5,)
+    assert bunch.target_test.shape == (5,)
+    assert np.issubdtype(bunch.data_train.dtype, np.floating)
+    assert np.issubdtype(bunch.target_train.dtype, np.integer)
+
+
+def test_fetch_tocuco_partition_applies_the_published_mask(tocuco_root, tmp_path):
+    """Rows the mask marks True go to train, the rest to test, in file order."""
+    bunch = fetch_tocuco_partition("oc03_fake", 0, data_home=tmp_path)
+    expected = np.array(
+        [
+            [1.0, 2.0],
+            [3.0, 4.0],
+            [5.0, 6.0],
+            [7.0, 8.0],
+            [9.0, 10.0],
+            [11.0, 12.0],
+            [13.0, 14.0],
+            [15.0, 16.0],
+            [17.0, 18.0],
+            [19.0, 20.0],
+        ]
+    )
+    np.testing.assert_array_equal(bunch.data_train, expected[:7])
+    np.testing.assert_array_equal(bunch.data_test, expected[7:])
+    assert bunch.train_index.tolist() == list(range(7))
+
+
+def test_fetch_tocuco_partition_descr_falls_back_when_metadata_has_no_entry(tmp_path):
+    """DESCR falls back to the bare form when metadata.csv lacks the name's row."""
+    tocuco_root_dir = tmp_path / "tocuco"
+    _build_dataset_tree(tocuco_root_dir, "oc03_fake")
+    divergent_metadata = (
+        "dataset,is_oc,n_patterns_train,n_patterns_test,n_features,n_classes,"
+        "class_distr,imbalance_ratio\n"
+        'other_dataset,True,7,3,2,3,"[0.4 0.3 0.3]",1.33\n'
+    )
+    (tocuco_root_dir / "oc03_fake" / "metadata.csv").write_text(
+        divergent_metadata, encoding="utf-8"
+    )
+    bunch = fetch_tocuco_partition("oc03_fake", 0, data_home=tmp_path)
+    assert bunch.DESCR == "TOC-UCO dataset 'oc03_fake'."
+
+
+def test_fetch_tocuco_partition_missing_seed_raises(tocuco_root, tmp_path):
+    """IndexError for a resample_id past the end of the dataset's masks."""
+    with pytest.raises(IndexError, match=r"No mask for resample 99"):
+        fetch_tocuco_partition("oc03_fake", 99, data_home=tmp_path)
+
+
+def test_fetch_tocuco_partition_downloads_only_the_requested_dataset(
+    tmp_path, fake_urlretrieve
+):
+    """fetch_tocuco_partition with nothing cached downloads only that one dataset."""
+    fetch_tocuco_partition("oc03_fake", 0, data_home=tmp_path)
+    assert {p.name for p in (tmp_path / "tocuco").iterdir()} == {"oc03_fake"}
+    assert len(fake_urlretrieve.calls) == 3
+
+
+@pytest.mark.parametrize("fetcher", _FETCHERS, ids=["fetch", "partition"])
+def test_fetch_missing_cache_no_download_raises(fetcher, tmp_path):
+    """Both fetchers refuse an absent cache when download_if_missing=False."""
     with pytest.raises(OSError, match="TOC-UCO dataset 'oc03_fake' not found"):
-        fetch_tocuco("oc03_fake", data_home=tmp_path, download_if_missing=False)
+        fetcher("oc03_fake", data_home=tmp_path, download_if_missing=False)
 
 
-def test_fetch_downloaded_tree_missing_masks_raises(tmp_path, monkeypatch):
+@pytest.mark.parametrize("fetcher", _FETCHERS, ids=["fetch", "partition"])
+def test_fetch_downloaded_tree_missing_masks_raises(fetcher, tmp_path, monkeypatch):
     """A maskless tree adopted mid-race raises OSError, never a generated holdout."""
 
     def fake_download(name, data_home, n_retries, delay):
@@ -574,15 +662,20 @@ def test_fetch_downloaded_tree_missing_masks_raises(tmp_path, monkeypatch):
         "skordinal.datasets._tocuco._download_tocuco_dataset", fake_download
     )
     with pytest.raises(OSError, match=r"oc03_fake\.masks\.json"):
-        fetch_tocuco("oc03_fake", data_home=tmp_path)
+        fetcher("oc03_fake", data_home=tmp_path)
 
 
 @pytest.mark.parametrize(
     "call,fail_suffix,n_calls_before",
     [
         (lambda **kw: fetch_tocuco("oc03_fake", **kw), "/train_masks.json", 2),
+        (
+            lambda **kw: fetch_tocuco_partition("oc03_fake", 0, **kw),
+            "/train_masks.json",
+            2,
+        ),
     ],
-    ids=["fetch"],
+    ids=["fetch", "partition"],
 )
 def test_n_retries_and_delay_reach_the_retry_loop(
     call, fail_suffix, n_calls_before, tmp_path, fake_urlretrieve, monkeypatch
@@ -613,6 +706,7 @@ def test_n_retries_and_delay_reach_the_retry_loop(
     [
         lambda tmp_path: fetch_tocuco("a/b", data_home=tmp_path),
         lambda tmp_path: fetch_tocuco("", data_home=tmp_path),
+        lambda tmp_path: fetch_tocuco_partition("../x", 0, data_home=tmp_path),
         lambda tmp_path: fetch_tocuco(".", data_home=tmp_path),
         lambda tmp_path: fetch_tocuco("..", data_home=tmp_path),
         lambda tmp_path: fetch_tocuco(".hidden", data_home=tmp_path),
@@ -621,6 +715,7 @@ def test_n_retries_and_delay_reach_the_retry_loop(
     ids=[
         "fetch_tocuco-embedded-slash",
         "fetch_tocuco-empty-name",
+        "fetch_tocuco_partition-dotdot",
         "fetch_tocuco-dot",
         "fetch_tocuco-dotdot",
         "fetch_tocuco-hidden",
@@ -634,17 +729,32 @@ def test_unsafe_or_empty_dataset_name_raises_value_error(call, tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_data_home_is_keyword_only(tmp_path):
-    """fetch_tocuco rejects a positional data_home."""
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda path: fetch_tocuco("oc03_fake", path),
+        lambda path: fetch_tocuco_partition("oc03_fake", 0, path),
+    ],
+    ids=["fetch", "partition"],
+)
+def test_data_home_is_keyword_only(call, tmp_path):
+    """Every public entry point rejects a positional data_home."""
     with pytest.raises(TypeError):
-        fetch_tocuco("oc03_fake", tmp_path)  # type: ignore[call-arg]
+        call(tmp_path)  # type: ignore[call-arg]
 
 
-def test_public_name_is_listed_in_all():
-    """fetch_tocuco is listed in the datasets package's __all__."""
+@pytest.mark.parametrize(
+    "name",
+    [
+        "fetch_tocuco",
+        "fetch_tocuco_partition",
+    ],
+)
+def test_public_name_is_listed_in_all(name):
+    """Each public TOC-UCO function is listed in the datasets package's __all__."""
     import skordinal.datasets as datasets_pkg
 
-    assert "fetch_tocuco" in datasets_pkg.__all__
+    assert name in datasets_pkg.__all__
 
 
 def test_load_partitions_on_tocuco_layout(tocuco_root):

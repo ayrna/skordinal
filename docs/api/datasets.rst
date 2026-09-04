@@ -10,7 +10,9 @@ are yielded by :func:`~skordinal.datasets.load_partitions`, and
 :func:`~skordinal.datasets.make_ordinal_classification` generates synthetic
 ordinal problems. The TOC-UCO collection is fetched on demand and cached
 under :func:`~skordinal.datasets.get_data_home`:
-:func:`~skordinal.datasets.fetch_tocuco` loads one of its datasets.
+:func:`~skordinal.datasets.fetch_tocuco` loads one dataset and
+:func:`~skordinal.datasets.fetch_tocuco_partition` one of its canonical
+train/test partitions.
 
 .. currentmodule:: skordinal.datasets
 
@@ -25,6 +27,7 @@ under :func:`~skordinal.datasets.get_data_home`:
    load_dataset
    load_partitions
    fetch_tocuco
+   fetch_tocuco_partition
    make_ordinal_classification
    get_data_home
    clear_data_home

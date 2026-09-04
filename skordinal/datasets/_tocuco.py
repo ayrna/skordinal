@@ -1,4 +1,4 @@
-"""Remote download and dataset access for the TOC-UCO collection."""
+"""Remote download and partition access for the TOC-UCO collection."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.utils import Bunch
 from sklearn.utils._param_validation import Interval, validate_params
 
-from ._base import get_data_home, load_dataset
+from ._base import get_data_home, load_dataset, load_partitions
 
 _logger = logging.getLogger(__name__)
 
@@ -264,6 +264,13 @@ class _CachedDataset:
             if not self.is_complete():
                 raise
 
+    def load_partition(self, resample_id):
+        """Load one partition, attaching the TOC-UCO name and description."""
+        bunch = next(load_partitions(self.csv_path, resamples=[resample_id]))
+        bunch.dataset_name = self.name
+        bunch.DESCR = _make_descr(self.name, self.metadata_row())
+        return bunch
+
 
 def _download_tocuco_dataset(name, data_home, n_retries, delay):
     """Download, normalise, and publish one TOC-UCO dataset's cache tree."""
@@ -468,6 +475,128 @@ def fetch_tocuco(
     bunch.url = f"{_DATASET_BASE_URL}/{name}"
     bunch.DESCR = _make_descr(name, meta)
     return bunch
+
+
+@validate_params(
+    {
+        "name": [str],
+        "resample_id": [Interval(Integral, 0, None, closed="left")],
+        "data_home": [str, os.PathLike, None],
+        "download_if_missing": ["boolean"],
+        "n_retries": [Interval(Integral, 0, None, closed="left")],
+        "delay": [Interval(Real, 0, None, closed="left")],
+    },
+    prefer_skip_nested_validation=True,
+)
+def fetch_tocuco_partition(
+    name,
+    resample_id,
+    *,
+    data_home=None,
+    download_if_missing=True,
+    n_retries=3,
+    delay=1.0,
+) -> Bunch:
+    """Load one train/test partition of a TOC-UCO dataset.
+
+    A previously cached dataset is used when present; otherwise only the
+    requested dataset is downloaded (its three published files), and the
+    partition is resolved from that dataset's ordered partition masks.
+
+    Parameters
+    ----------
+    name : str
+        Dataset name, for example ``"oc09_era"``.
+
+    resample_id : int
+        Zero-based index of the partition. Must be non-negative.
+
+    data_home : str, os.PathLike, or None, default=None
+        Cache root; see ``fetch_tocuco`` for resolution rules.
+
+    download_if_missing : bool, default=True
+        If ``False`` and the cache is absent, raise ``OSError`` instead
+        of downloading.
+
+    n_retries : int, default=3
+        Number of retry attempts after the initial download fails when a
+        single dataset must be fetched. Must be non-negative; ``0``
+        performs a single attempt with no retries.
+
+    delay : float, default=1.0
+        Seconds to wait between retry attempts. Must be non-negative.
+
+    Returns
+    -------
+    bunch : ``sklearn.utils.Bunch``
+        Dictionary-like object with the following attributes.
+
+        data_train : ndarray of shape (n_train, n_features)
+            Training features.
+        target_train : ndarray of shape (n_train,)
+            Training targets (int32).
+        data_test : ndarray of shape (n_test, n_features)
+            Test features.
+        target_test : ndarray of shape (n_test,)
+            Test targets.
+        feature_names : list of str
+            Feature column names from the CSV header.
+        target_names : ndarray of str
+            Sorted unique target values as strings.
+        dataset_name : str
+            Echo of the requested dataset name.
+        resample_id : int
+            Echo of the requested resample index.
+        train_index : ndarray of shape (n_train,)
+            0-based indices of the training rows within the original
+            dataset array.
+        test_index : ndarray of shape (n_test,)
+            0-based indices of the test rows within the original
+            dataset array.
+        n_classes : int
+            Number of ordinal classes.
+        DESCR : str
+            Short human-readable description.
+
+    Raises
+    ------
+    OSError
+        When ``download_if_missing=False`` and the dataset is not cached,
+        or when its cache is missing a file. A metadata row absent for
+        the name only degrades ``DESCR`` to a generic text.
+
+    ValueError
+        When ``name`` is empty, starts with a dot, contains a path
+        separator, or ends with ``".csv"``. Also raised when ``name`` is
+        not found in the TOC-UCO repository. CSV-parsing and
+        mask-validation errors from the partition loader also propagate
+        as ``ValueError``.
+
+    IndexError
+        When no mask exists for the requested ``resample_id``.
+
+    urllib.error.URLError
+        When the download fails: immediately for a permanent HTTP client
+        error (any 4xx status other than 408 and 429), or after all
+        retry attempts for a transient failure (a timeout, a 5xx status,
+        or HTTP 408/429).
+
+    Examples
+    --------
+    >>> from skordinal.datasets import fetch_tocuco_partition  # doctest: +SKIP
+    >>> bunch = fetch_tocuco_partition("oc09_era", 0)          # doctest: +SKIP
+    >>> bunch.data_train.shape[1] == bunch.data_test.shape[1]  # doctest: +SKIP
+    True
+    """
+    dataset = _ensure_dataset_cached(
+        name,
+        data_home,
+        download_if_missing,
+        n_retries,
+        delay,
+        "fetch_tocuco_partition",
+    )
+    return dataset.load_partition(resample_id)
 
 
 def load_tocuco_partitions(
