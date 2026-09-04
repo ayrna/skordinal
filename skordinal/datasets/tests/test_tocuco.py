@@ -9,7 +9,11 @@ import numpy as np
 import pytest
 from sklearn.utils import Bunch
 
-from skordinal.datasets import load_partitions, load_tocuco_partitions
+from skordinal.datasets import (
+    load_partitions,
+    load_tocuco_dataset,
+    load_tocuco_partitions,
+)
 
 _CSV = """\
 x_0,x_1,y
@@ -295,7 +299,7 @@ def test_load_tocuco_partitions_translates_http_404(monkeypatch):
         "skordinal.datasets._tocuco.urllib.request.urlretrieve", not_found
     )
 
-    with pytest.raises(ValueError, match="Dataset 'missing' not found"):
+    with pytest.raises(ValueError, match="dataset 'missing' not found"):
         next(load_tocuco_partitions("missing", resamples=1))
 
 
@@ -363,3 +367,149 @@ def test_real_tocuco_dataset_dtypes():
     assert bunch.data_test.dtype == np.float64
     assert np.issubdtype(bunch.target_train.dtype, np.integer)
     assert np.issubdtype(bunch.target_test.dtype, np.integer)
+
+
+def test_load_tocuco_dataset_downloads_and_returns_valid_bunch(monkeypatch):
+    """A downloaded dataset produces a standard Bunch."""
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve",
+        _fake_downloader(),
+    )
+
+    bunch = load_tocuco_dataset("toy")
+
+    assert isinstance(bunch, Bunch)
+    assert bunch.data.shape == (6, 2)
+    assert bunch.target.shape == (6,)
+    assert bunch.feature_names == ["x_0", "x_1"]
+    np.testing.assert_array_equal(bunch.target_names, ["0", "1", "2"])
+    assert bunch.n_classes == 3
+    assert bunch.filename == "toy.csv"
+    assert bunch.data_module is None
+    assert bunch.frame is None
+    assert "TOC-UCO Dataset 'toy': 6 samples, 2 features, 3 classes" in bunch.DESCR
+
+
+def test_load_tocuco_dataset_return_X_y(monkeypatch):
+    """The return_X_y parameter yields exactly a (data, target) tuple."""
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve",
+        _fake_downloader(),
+    )
+
+    result = load_tocuco_dataset("toy", return_X_y=True)
+
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    X, y = result
+    assert X.shape == (6, 2)
+    assert y.shape == (6,)
+
+
+def test_load_tocuco_dataset_as_frame(monkeypatch):
+    """The as_frame parameter wraps the dataset into pandas objects."""
+    import pandas as pd
+
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve",
+        _fake_downloader(),
+    )
+
+    bunch = load_tocuco_dataset("toy", as_frame=True)
+
+    assert isinstance(bunch.frame, pd.DataFrame)
+    assert isinstance(bunch.data, pd.DataFrame)
+    assert isinstance(bunch.target, pd.Series)
+    assert bunch.frame.shape == (6, 3)
+    assert list(bunch.data.columns) == ["x_0", "x_1"]
+    assert bunch.target.name == "target"
+
+
+def test_load_tocuco_dataset_uses_expected_remote_files(monkeypatch):
+    """The loader downloads only the dataset CSV, not the mask file."""
+    calls = []
+
+    def download(url, filename):
+        calls.append(url)
+        _fake_downloader()(url, filename)
+
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve", download
+    )
+
+    load_tocuco_dataset("toy")
+
+    assert calls == [f"{_EXPECTED_BASE_URL}/toy.csv"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["toy", Path("toy")],
+    ids=["string_name", "path_like_name"],
+)
+def test_load_tocuco_dataset_normalizes_dataset_name(monkeypatch, name):
+    """String and path-like names produce the same dataset."""
+    calls = []
+
+    def download(url, filename):
+        calls.append(url)
+        _fake_downloader()(url, filename)
+
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve", download
+    )
+
+    bunch = load_tocuco_dataset(name)
+
+    assert bunch.filename == "toy.csv"
+    assert calls[0].endswith("/toy/toy.csv")
+
+
+def test_load_tocuco_dataset_rejects_html_dataset(monkeypatch):
+    """A successful HTTP response containing an error page is rejected."""
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve",
+        _fake_downloader(csv_content="<html>not found</html>\n"),
+    )
+
+    with pytest.raises(ValueError, match="HTML web page"):
+        load_tocuco_dataset("missing")
+
+
+def test_load_tocuco_dataset_translates_http_404(monkeypatch):
+    """A missing remote dataset raises a clear ValueError for the user."""
+
+    def not_found(url, filename):
+        raise HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve", not_found
+    )
+
+    with pytest.raises(ValueError, match="not found"):
+        load_tocuco_dataset("missing")
+
+
+def test_load_tocuco_dataset_rejects_corrupt_csv(monkeypatch):
+    """Malformed CSV content raises a parsing error."""
+    monkeypatch.setattr(
+        "skordinal.datasets._tocuco.urllib.request.urlretrieve",
+        _fake_downloader(csv_content="x_0,x_1,y\n1,2\nnot,csv,content,extra\n"),
+    )
+
+    with pytest.raises(ValueError):
+        load_tocuco_dataset("toy")
+
+
+@pytest.mark.network
+@pytest.mark.parametrize("name", ["dr04_forestfires", "oc03_newthyroid"])
+def test_real_tocuco_dataset_load_dataset_is_available(name):
+    """A real Tocuco dataset can be downloaded as a full bunch without partitions."""
+    bunch = load_tocuco_dataset(name)
+
+    assert bunch.data.ndim == 2
+    assert bunch.target.shape == (bunch.data.shape[0],)
+    assert bunch.n_classes >= 2
+    assert len(bunch.feature_names) == bunch.data.shape[1]
+    assert np.isfinite(bunch.data).all()
+    assert np.issubdtype(bunch.target.dtype, np.integer)

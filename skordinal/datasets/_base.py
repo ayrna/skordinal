@@ -539,6 +539,13 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     >>> load_dataset("era", data_home="/my/data").data.shape  # doctest: +SKIP
     (1000, 4)
     """
+    if str(name).startswith("tocuco"):
+        from ._tocuco import load_tocuco_dataset
+
+        return load_tocuco_dataset(
+            name=name.replace("tocuco_", ""), return_X_y=return_X_y, as_frame=as_frame
+        )
+
     path, data_module_value = _resolve_csv_path(name, data_home)
     return _bunch_from_csv(
         path,
