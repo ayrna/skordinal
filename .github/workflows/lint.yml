@@ -31,10 +31,10 @@ jobs:
           pip install "ruff>=0.4" "mypy>=1.9" pytest
 
       - name: Ruff check
-        run: ruff check skordinal/
+        run: ruff check .
 
       - name: Ruff format
-        run: ruff format --check skordinal/
+        run: ruff format --check .
 
       - name: mypy
         run: mypy skordinal/
