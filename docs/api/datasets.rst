@@ -8,7 +8,13 @@ without any external download. Each loader follows the scikit-learn
 path with :func:`~skordinal.datasets.load_dataset`, its train/test resamples
 are yielded by :func:`~skordinal.datasets.load_partitions`, and
 :func:`~skordinal.datasets.make_ordinal_classification` generates synthetic
-ordinal problems.
+ordinal problems. The TOC-UCO collection is fetched on demand and cached
+under :func:`~skordinal.datasets.get_data_home`:
+:func:`~skordinal.datasets.fetch_tocuco` loads one dataset,
+:func:`~skordinal.datasets.fetch_tocuco_partition` one of its canonical
+train/test partitions, :func:`~skordinal.datasets.download_tocuco`
+prefetches the whole collection, and
+:func:`~skordinal.datasets.list_tocuco_datasets` lists the cache.
 
 .. currentmodule:: skordinal.datasets
 
@@ -22,6 +28,10 @@ ordinal problems.
    load_swd
    load_dataset
    load_partitions
+   fetch_tocuco
+   fetch_tocuco_partition
+   download_tocuco
+   list_tocuco_datasets
    make_ordinal_classification
    get_data_home
    clear_data_home

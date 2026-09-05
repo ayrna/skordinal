@@ -145,7 +145,13 @@ def _resolve_csv_path(name, data_home=None):
     name_str = str(name)
     if data_home is not None:
         fname = name_str if name_str.endswith(".csv") else f"{name_str}.csv"
-        return Path(data_home) / fname, None
+        direct = Path(data_home) / fname
+        # Fall back to the nested per-dataset layout the TOC-UCO cache
+        # publishes, so its root works directly as a data_home
+        nested = Path(data_home) / Path(fname).stem / fname
+        if not direct.is_file() and nested.is_file():
+            return nested, None
+        return direct, None
     if Path(name_str).is_file():
         return Path(name_str), None
     return _bundled_csv_path(name_str.removesuffix(".csv")), DATA_MODULE
@@ -459,7 +465,9 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
     Resolution order:
 
     1. If ``data_home`` is given, look for ``<data_home>/<name>.csv`` (or
-       ``<data_home>/<name>`` when ``name`` already ends with ``.csv``).
+       ``<data_home>/<name>`` when ``name`` already ends with ``.csv``),
+       falling back to the nested ``<data_home>/<name>/<name>.csv`` layout
+       a TOC-UCO cache root publishes.
     2. Otherwise, if ``name`` is an existing file path, open it directly.
     3. Otherwise, resolve against the bundled data directory.
 
@@ -679,11 +687,6 @@ def load_partitions(
     >>> for bunch in load_partitions("era", resamples=3):  # doctest: +SKIP
     ...     print(bunch.resample_id, bunch.data_train.shape[0])
     """
-    if str(name).startswith("tocuco"):
-        from ._tocuco import load_tocuco_partitions
-
-        return load_tocuco_partitions(name.replace("tocuco_", ""), resamples=resamples)
-
     csv_path, _ = _resolve_csv_path(name, data_home)
     if not csv_path.exists():
         raise FileNotFoundError(f"Dataset file not found: {csv_path}")

@@ -1,4 +1,4 @@
-"""Load and generate ordinal classification datasets."""
+"""Load, fetch, and generate ordinal classification datasets."""
 
 from ._base import (
     clear_data_home,
@@ -14,11 +14,20 @@ from ._loaders import (
     load_swd,
 )
 from ._samples_generator import make_ordinal_classification
-from ._tocuco import load_tocuco_partitions
+from ._tocuco import (
+    download_tocuco,
+    fetch_tocuco,
+    fetch_tocuco_partition,
+    list_tocuco_datasets,
+)
 
 __all__ = [
     "clear_data_home",
+    "download_tocuco",
+    "fetch_tocuco",
+    "fetch_tocuco_partition",
     "get_data_home",
+    "list_tocuco_datasets",
     "load_balance_scale",
     "load_dataset",
     "load_era",
@@ -27,5 +36,4 @@ __all__ = [
     "load_partitions",
     "load_swd",
     "make_ordinal_classification",
-    "load_tocuco_partitions",
 ]
