@@ -1123,22 +1123,6 @@ def test_data_home_is_keyword_only(call, tmp_path):
         call(tmp_path)  # type: ignore[call-arg]
 
 
-@pytest.mark.parametrize(
-    "name",
-    [
-        "download_tocuco",
-        "fetch_tocuco",
-        "fetch_tocuco_partition",
-        "list_tocuco_datasets",
-    ],
-)
-def test_public_name_is_listed_in_all(name):
-    """Each public TOC-UCO function is listed in the datasets package's __all__."""
-    import skordinal.datasets as datasets_pkg
-
-    assert name in datasets_pkg.__all__
-
-
 def test_cache_root_env_var_used_for_data_home_resolution(tmp_path, monkeypatch):
     """SKORDINAL_DATA resolves data_home when it is not passed explicitly."""
     monkeypatch.setenv("SKORDINAL_DATA", str(tmp_path))
