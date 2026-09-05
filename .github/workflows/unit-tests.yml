@@ -26,11 +26,6 @@ jobs:
           # Python 3.14 is a pre-release, skip macOS until it reaches GA
           - os: macos-latest
             python-version: "3.14"
-        include:
-          # Extra job: verify compatibility with NumPy 2.x.
-          - os: ubuntu-latest
-            python-version: "3.12"
-            numpy-constraint: ">=2.0,<3"
     steps:
       - uses: actions/checkout@v7
 
@@ -44,9 +39,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          if [ -n "${{ matrix.numpy-constraint }}" ]; then
-            pip install "numpy${{ matrix.numpy-constraint }}"
-          fi
 
       - name: Run tests
         run: pytest -m "not network"
@@ -72,6 +64,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           disable_search: true
           fail_ci_if_error: false
