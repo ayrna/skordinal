@@ -221,6 +221,20 @@ def test_nnop_random_state_accepts_random_state_instance(X, y):
     np.testing.assert_array_equal(rs_seed.theta1_, rs_instance.theta1_)
 
 
+def test_nnop_alpha_shrinks_weights(ordinal_data):
+    """Higher alpha yields smaller penalized weights in each layer than alpha=0."""
+    X, y = ordinal_data
+    clf_noreg = NNOP(alpha=0.0, random_state=0).fit(X, y)
+    clf_reg = NNOP(alpha=10.0, random_state=0).fit(X, y)
+
+    # Leave out column 0 of each layer, the biases the penalty does not act on
+    for theta_reg, theta_noreg in zip(
+        (clf_reg.theta1_[:, 1:], clf_reg.theta2_[:, 1:]),
+        (clf_noreg.theta1_[:, 1:], clf_noreg.theta2_[:, 1:]),
+    ):
+        assert np.linalg.norm(theta_reg) < np.linalg.norm(theta_noreg)
+
+
 def test_nnop_predict_uses_trained_unit_bias():
     """predict evaluates the trained unit hidden bias, not sigmoid(1)."""
     clf = NNOP(n_hidden=1, max_iter=1).fit(

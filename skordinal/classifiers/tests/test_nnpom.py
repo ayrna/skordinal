@@ -226,6 +226,20 @@ def test_nnpom_random_state_accepts_random_state_instance(X, y):
     np.testing.assert_array_equal(rs_seed.theta1_, rs_instance.theta1_)
 
 
+def test_nnpom_alpha_shrinks_weights(ordinal_data):
+    """Higher alpha yields smaller penalized weights in each layer than alpha=0."""
+    X, y = ordinal_data
+    clf_noreg = NNPOM(alpha=0.0, random_state=0).fit(X, y)
+    clf_reg = NNPOM(alpha=10.0, random_state=0).fit(X, y)
+
+    # Leave out column 0 of theta1_, the biases the penalty does not act on
+    for theta_reg, theta_noreg in zip(
+        (clf_reg.theta1_[:, 1:], clf_reg.theta2_),
+        (clf_noreg.theta1_[:, 1:], clf_noreg.theta2_),
+    ):
+        assert np.linalg.norm(theta_reg) < np.linalg.norm(theta_noreg)
+
+
 def test_fit_no_nan_with_near_zero_probabilities():
     """Training on perfectly separated data must produce finite weights."""
     X_reg = np.vstack([np.ones((10, 2)) * 10, -np.ones((10, 2)) * 10])
