@@ -372,17 +372,17 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
             + (self.alpha / (2 * n)) * (w @ w)
         )
 
-        s_left = -scipy.special.expit(-m_left)
-        s_right = -scipy.special.expit(-m_right)
-        grad_f = sample_weight * (s_left - s_right) / n
+        sigma_left = scipy.special.expit(-m_left)
+        sigma_right = scipy.special.expit(-m_right)
+        grad_f = sample_weight * (sigma_right - sigma_left) / n
         grad_w = X.T @ grad_f + (self.alpha / n) * w
 
         # Sparse scatter: each sample touches only its adjacent threshold bins
         grad_b = np.zeros(K - 1)
         mask_l = y_enc > 0
         mask_r = y_enc < K - 1
-        np.add.at(grad_b, y_enc[mask_l] - 1, -s_left[mask_l] * sample_weight[mask_l])
-        np.add.at(grad_b, y_enc[mask_r], s_right[mask_r] * sample_weight[mask_r])
+        np.add.at(grad_b, y_enc[mask_l] - 1, sigma_left[mask_l] * sample_weight[mask_l])
+        np.add.at(grad_b, y_enc[mask_r], -sigma_right[mask_r] * sample_weight[mask_r])
         grad_b /= n
 
         grad_t = thresholds_grad(t, grad_b)
