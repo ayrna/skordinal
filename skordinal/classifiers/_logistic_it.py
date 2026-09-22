@@ -95,19 +95,18 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
                   + \\frac{\\alpha}{2n} \\|w\\|^2
 
     The formula is shown unweighted; ``class_weight`` multiplies each
-    sample's term.  The threshold gradient is sparse: each sample
-    contributes only to the two threshold bins adjacent to its class.
-    L-BFGS-B optimises the packed vector ``[w; t]`` where ``b[0] = t[0]``,
-    ``b[k] = t[0] + t[1]^2 + ... + t[k]^2`` for ``k >= 1``.
+    sample's term.  L-BFGS-B optimises the packed vector ``[w; t]`` where
+    ``t`` is the unconstrained representation of the thresholds;
+    ``b[0] = t[0]``, ``b[k] = t[0] + t[1]^2 + ... + t[k]^2`` for
+    ``k >= 1``.
 
     Standardising features (zero mean, unit variance) is recommended;
     extreme feature scales can degrade the fit under the fixed solver
     tolerance.
 
-    ``predict`` returns the most probable class,
-    ``classes_[argmax(predict_proba(X), axis=1)]``.  Because the loss is a
-    0-1 surrogate, this mode is also the risk-minimising decision, so
-    ``predict`` and the training objective agree.
+    ``predict`` uses the cumulative-median rule, which is not in general
+    equal to the modal prediction ``classes_[argmax(predict_proba(X),
+    axis=1)]``; see ``predict`` for the exact rule and its rationale.
 
     References
     ----------
@@ -266,6 +265,15 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
     def predict(self, X):
         """Predict ordinal class labels for patterns in X.
 
+        The predicted class follows the cumulative-median rule: the number
+        of fitted thresholds the projection ``f(x) = w^T x`` exceeds,
+        equivalently the first class whose cumulative probability
+        ``P(Y <= k | x)`` reaches 0.5.  This median inverts the training
+        objective directly, since the Immediate-Threshold loss places
+        ``f(x_i)`` between ``b_{y_i - 1}`` and ``b_{y_i}``, and unlike the
+        mode (``argmax(predict_proba(X))``) it can differ when adjacent
+        thresholds are close.
+
         Parameters
         ----------
         X : array-like of shape (n_samples, n_features)
@@ -283,8 +291,9 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, dtype=np.float64)
-        proba = cumproba_to_proba(self._cumproba(X), repair=True)
-        return self.classes_[proba.argmax(axis=1)]
+        f = self._project(X)
+        labels_enc = (f[:, np.newaxis] > self.thresholds_[np.newaxis, :]).sum(axis=1)
+        return self.classes_[labels_enc]
 
     def predict_projection(self, X):
         """Return the raw latent projection for each sample.
