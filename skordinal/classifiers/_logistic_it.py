@@ -44,8 +44,9 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
         Maximum number of L-BFGS-B iterations.
 
     tol : float, default=1e-5
-        Convergence tolerance forwarded to L-BFGS-B as both ``ftol`` and
-        ``gtol``.  Must be strictly positive.
+        Convergence tolerance forwarded to L-BFGS-B as ``gtol``, so the
+        solver stops once the projected gradient max-norm falls below it.
+        Must be strictly positive.
 
     class_weight : dict, "balanced", or None, default=None
         Per-class weights applied to each sample's loss contribution.
@@ -186,7 +187,7 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
             jac=True,
             options={
                 "maxiter": self.max_iter,
-                "ftol": self.tol,
+                "ftol": 64 * np.finfo(float).eps,
                 "gtol": self.tol,
             },
         )

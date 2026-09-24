@@ -80,9 +80,9 @@ class POM(ClassifierMixin, BaseEstimator):
         Maximum number of solver iterations.
 
     tol : float, default=1e-5
-        Convergence tolerance forwarded to the solver (``ftol`` and ``gtol``
-        for ``"lbfgs"``, ``gtol`` for ``"bfgs"``, ``xtol`` for
-        ``"newton-cg"``). Must be strictly positive.
+        Convergence tolerance forwarded to the solver (``gtol`` for
+        ``"lbfgs"`` and ``"bfgs"``, ``xtol`` for ``"newton-cg"``). Must be
+        strictly positive.
 
     class_weight : dict, "balanced", or None, default=None
         Per-class weights applied to each sample's loss contribution.
@@ -231,7 +231,7 @@ class POM(ClassifierMixin, BaseEstimator):
         options = {"maxiter": self.max_iter}
         if self.solver == "lbfgs":
             method = "L-BFGS-B"
-            options["ftol"] = self.tol
+            options["ftol"] = 64 * np.finfo(float).eps
             options["gtol"] = self.tol
         elif self.solver == "bfgs":
             method = "BFGS"
