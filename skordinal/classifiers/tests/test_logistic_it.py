@@ -238,7 +238,7 @@ def test_logistic_it_proba_and_cumproba_well_formed(ordinal_data):
     assert np.all(cumproba >= 0.0) and np.all(cumproba <= 1.0)
     assert np.all(np.diff(cumproba, axis=1) >= 0)
 
-    expected_pred = clf.classes_[proba.argmax(axis=1)]
+    expected_pred = clf.classes_[(cumproba < 0.5).sum(axis=1)]
     np.testing.assert_array_equal(clf.predict(X), expected_pred)
 
 
@@ -359,6 +359,12 @@ def test_logistic_it_projection_well_formed(ordinal_data):
 
     order = np.argsort(projection)
     assert np.all(np.diff(clf.predict(X)[order]) >= 0)
+
+    # stronger than monotonicity: catches a rescaled or shifted projection
+    n_exceeded = (projection[:, np.newaxis] > clf.thresholds_[np.newaxis, :]).sum(
+        axis=1
+    )
+    np.testing.assert_array_equal(clf.predict(X), clf.classes_[n_exceeded])
 
 
 def test_logistic_it_projection_linear_in_convex_combination(ordinal_data):

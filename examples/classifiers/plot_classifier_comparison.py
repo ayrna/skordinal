@@ -96,12 +96,12 @@ for name, clf in classifiers.items():
 # %%
 # Ranking
 # -------
-# Sorted by kappa, highest first. Three pairs share their scores.
-# ``LogisticAT`` and ``LogisticIT`` predict the same label on every test
-# sample, their losses differing only in which thresholds each sample is
-# charged against, and so do ``SVOR`` and ``REDSVM``. ``POM`` and
+# Sorted by kappa, highest first. Two pairs share their scores. ``SVOR``
+# and ``REDSVM`` predict the same label on every test sample. ``POM`` and
 # ``OrdinalDecomposition``, both linear logistic models, disagree on four
-# samples and tie by coincidence.
+# samples and tie by coincidence. ``LogisticAT`` and ``LogisticIT`` share
+# the cumulative-median rule but not the loss, so their fitted thresholds
+# differ and here they disagree on one sample.
 
 import matplotlib.pyplot as plt
 
