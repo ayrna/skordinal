@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 from scipy.special import softmax
-from sklearn.exceptions import NotFittedError
+from sklearn.exceptions import ConvergenceWarning, NotFittedError
 
 from skordinal.classifiers._mlp_base import MLPBaseClassifier
 
@@ -14,10 +14,10 @@ class DummyMLP(MLPBaseClassifier):
     last_sample_weight = None
 
     def _initialize_parameters(self, rng):
-        return rng.normal(size=self.input_shape_ * self.num_classes_)
+        return rng.normal(size=self.n_features_in_ * self.n_classes_)
 
     def _unpack_parameters(self, params):
-        self.weights_ = params.reshape(self.input_shape_, self.num_classes_)
+        self.weights_ = params.reshape(self.n_features_in_, self.n_classes_)
 
     def _cost_and_grad(self, params, X, Y, sample_weight):
         type(self).last_sample_weight = sample_weight.copy()
@@ -44,8 +44,8 @@ def test_fit_returns_self_and_sets_fitted_attributes(data):
 
     assert clf is estimator
     assert clf.classes_.tolist() == [10, 20, 30]
-    assert clf.num_classes_ == 3
-    assert clf.input_shape_ == X.shape[1]
+    assert clf.n_classes_ == 3
+    assert clf.n_features_in_ == X.shape[1]
     assert np.isfinite(clf.loss_)
     assert clf.n_iter_ >= 0
     assert clf.weights_.shape == (X.shape[1], len(clf.classes_))
@@ -58,6 +58,34 @@ def test_fit_preserves_original_labels_in_predict(data):
     clf = DummyMLP(max_iter=1, random_state=0).fit(X, y)
 
     assert set(clf.predict(X)).issubset(set(y))
+
+
+def test_fit_warns_when_optimizer_does_not_converge(data, monkeypatch):
+    """Fitting warns when L-BFGS-B does not converge."""
+    X, y = data
+
+    def fake_minimize(fun, x0, args, method, jac, options):
+        cost, _ = fun(x0, *args)
+
+        return type(
+            "Result",
+            (),
+            {
+                "fun": cost,
+                "nit": 17,
+                "x": np.ones_like(x0),
+                "success": False,
+                "message": "Maximum iterations reached",
+            },
+        )()
+
+    monkeypatch.setattr(
+        "skordinal.classifiers._mlp_base.scipy.optimize.minimize",
+        fake_minimize,
+    )
+
+    with pytest.warns(ConvergenceWarning, match="failed to converge"):
+        DummyMLP(max_iter=17).fit(X, y)
 
 
 def test_predict_proba_has_valid_shape_and_values(data):
@@ -109,7 +137,6 @@ def test_random_state_reproduces_initialization(data):
         ("n_hidden_units", 0),
         ("alpha", -1.0),
         ("max_iter", 0),
-        ("verbose", "yes"),
     ],
 )
 def test_invalid_hyperparameters_are_rejected(data, parameter, value):
@@ -140,7 +167,18 @@ def test_optimizer_uses_lbfgs_and_unpacks_result(data, monkeypatch):
         calls.update(method=method, jac=jac, options=options)
         cost, gradient = fun(x0, *args)
         assert gradient.shape == x0.shape
-        return type("Result", (), {"fun": cost, "nit": 4, "x": np.ones_like(x0)})()
+
+        return type(
+            "Result",
+            (),
+            {
+                "fun": cost,
+                "nit": 4,
+                "x": np.ones_like(x0),
+                "success": True,
+                "message": "CONVERGENCE: dummy result",
+            },
+        )()
 
     monkeypatch.setattr(
         "skordinal.classifiers._mlp_base.scipy.optimize.minimize", fake_minimize
