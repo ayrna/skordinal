@@ -1,11 +1,13 @@
 """Base class for Multi-Layer Perceptron classifiers."""
 
+import warnings
 from abc import ABC, abstractmethod
 from numbers import Integral, Real
 
 import numpy as np
 import scipy.optimize
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils import check_random_state, compute_sample_weight
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.validation import check_is_fitted, validate_data
@@ -35,9 +37,6 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
 
     random_state : int, RandomState instance or None, default=None
         Determines random number generation for weight initialization.
-
-    verbose : bool, default=False
-        Whether to print progress messages to stdout during training.
     """
 
     _parameter_constraints: dict = {
@@ -47,7 +46,6 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         "class_weight": [None, dict, StrOptions({"balanced"})],
         "max_iter": [Interval(Integral, 1, None, closed="left")],
         "random_state": ["random_state", None],
-        "verbose": ["boolean"],
     }
 
     def __init__(
@@ -58,7 +56,6 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         class_weight=None,
         max_iter=500,
         random_state=None,
-        verbose=False,
     ):
         self.n_hidden_layers = n_hidden_layers
         self.n_hidden_units = n_hidden_units
@@ -66,7 +63,6 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         self.class_weight = class_weight
         self.max_iter = max_iter
         self.random_state = random_state
-        self.verbose = verbose
 
     @abstractmethod
     def _initialize_parameters(self, rng: np.random.RandomState) -> np.ndarray:
@@ -128,7 +124,7 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         X : ndarray of shape (n_samples, n_features)
             Training data.
 
-        Y_target : ndarray of shape (n_samples,)
+        y : ndarray of shape (n_samples,)
             Target values.
 
         Returns
@@ -140,12 +136,12 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
 
         self.classes_, y_encoded = check_ordinal_targets(y)
 
-        self.num_classes_ = len(self.classes_)
-        self.input_shape_ = X.shape[1]
+        self.n_classes_ = len(self.classes_)
+        self.n_features_in_ = X.shape[1]
         n_samples = X.shape[0]
 
-        Y_target = np.zeros((n_samples, self.num_classes_))
-        Y_target[np.arange(n_samples), y_encoded] = 1.0
+        Y = np.zeros((n_samples, self.n_classes_))
+        Y[np.arange(n_samples), y_encoded] = 1.0
 
         sample_weight = np.ones(n_samples)
         if self.class_weight is not None:
@@ -159,11 +155,19 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         res = scipy.optimize.minimize(
             fun=self._cost_and_grad,
             x0=params0,
-            args=(X, Y_target, sample_weight),
+            args=(X, Y, sample_weight),
             method="L-BFGS-B",
             jac=True,
             options={"maxiter": self.max_iter},
         )
+
+        if not res.success:
+            warnings.warn(
+                f"{self.__class__.__name__} failed to converge after "
+                f"{res.nit} iterations. {res.message}",
+                ConvergenceWarning,
+                stacklevel=2,
+            )
 
         self.loss_ = res.fun
         self.n_iter_ = res.nit
