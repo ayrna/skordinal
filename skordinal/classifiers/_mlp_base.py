@@ -125,11 +125,11 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
-            The training input samples.
+        X : ndarray of shape (n_samples, n_features)
+            Training data.
 
-        y : array-like of shape (n_samples,)
-            The target values (class labels).
+        Y_target : ndarray of shape (n_samples,)
+            Target values.
 
         Returns
         -------
@@ -177,7 +177,7 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : ndarray of shape (n_samples, n_features)
             The input data.
 
         Returns
@@ -194,13 +194,13 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : ndarray of shape (n_samples, n_features)
             The input data.
 
         Returns
         -------
         y_pred : ndarray of shape (n_samples,)
-            The predicted classes.
+            Predicted classes.
         """
         probas = self.predict_proba(X)
         indices = np.argmax(probas, axis=1)
