@@ -247,8 +247,8 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
 
         delta = np.dot(delta_out, W_out.T) * deriv
 
-        grad_W = []
-        grad_b = []
+        grad_W: list[np.ndarray] = []
+        grad_b: list[np.ndarray] = []
 
         # Reverse loop through hidden layers
         for i in range(self.n_hidden_layers - 1, -1, -1):
