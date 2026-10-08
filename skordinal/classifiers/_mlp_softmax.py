@@ -139,9 +139,7 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
             input_dim = self.n_hidden_units
 
         size_W_out = input_dim * self.n_classes_
-        self.W_out_ = params[idx : idx + size_W_out].reshape(
-            input_dim, self.n_classes_
-        )
+        self.W_out_ = params[idx : idx + size_W_out].reshape(input_dim, self.n_classes_)
         idx += size_W_out
 
         size_b_out = self.n_classes_
@@ -218,21 +216,13 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
         # -------------------------
         # Loss + L2 regularization
         # -------------------------
-        l2_penalty = (
-            sum(np.sum(w**2) for w in W)
-            + np.sum(W_out**2)
-        )
+        l2_penalty = sum(np.sum(w**2) for w in W) + np.sum(W_out**2)
 
         cross_entropy = (
-            -np.sum(
-                sample_weight[:, np.newaxis] * Y * log_prob
-            )
-            / weight_sum
+            -np.sum(sample_weight[:, np.newaxis] * Y * log_prob) / weight_sum
         )
 
-        J = cross_entropy + (
-            self.alpha / (2 * weight_sum)
-        ) * l2_penalty
+        J = cross_entropy + (self.alpha / (2 * weight_sum)) * l2_penalty
 
         # ----------------
         # Backward pass
@@ -243,8 +233,7 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
 
         # Gradients for the output layer
         grad_W_out = (
-            np.dot(A[-1].T, delta_out) / weight_sum
-            + (self.alpha / weight_sum) * W_out
+            np.dot(A[-1].T, delta_out) / weight_sum + (self.alpha / weight_sum) * W_out
         )
 
         grad_b_out = np.sum(delta_out, axis=0) / weight_sum
@@ -263,10 +252,7 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
 
         # Reverse loop through hidden layers
         for i in range(self.n_hidden_layers - 1, -1, -1):
-            gW = (
-                np.dot(A[i].T, delta) / weight_sum
-                + (self.alpha / weight_sum) * W[i]
-            )
+            gW = np.dot(A[i].T, delta) / weight_sum + (self.alpha / weight_sum) * W[i]
             gb = np.sum(delta, axis=0) / weight_sum
 
             grad_W.insert(0, gW.ravel())
