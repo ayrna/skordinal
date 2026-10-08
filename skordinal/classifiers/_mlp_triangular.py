@@ -182,9 +182,7 @@ class MLPTriangularClassifier(MLPBaseClassifier):
             input_dim = self.n_hidden_units
 
         size_W_out = input_dim * self.n_classes_
-        self.W_out_ = params[idx : idx + size_W_out].reshape(
-            input_dim, self.n_classes_
-        )
+        self.W_out_ = params[idx : idx + size_W_out].reshape(input_dim, self.n_classes_)
         idx += size_W_out
         self.b_out_ = params[idx : idx + self.n_classes_]
 
@@ -254,8 +252,8 @@ class MLPTriangularClassifier(MLPBaseClassifier):
 
         delta = np.dot(delta_out, W_out.T) * deriv
 
-        grad_W = []
-        grad_b = []
+        grad_W: list[np.ndarray] = []
+        grad_b: list[np.ndarray] = []
         for i in range(self.n_hidden_layers - 1, -1, -1):
             gW = np.dot(A[i].T, delta) / weight_sum + (self.alpha / weight_sum) * W[i]
             gb = np.sum(delta, axis=0) / weight_sum

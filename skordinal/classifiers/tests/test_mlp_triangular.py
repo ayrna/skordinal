@@ -335,7 +335,7 @@ def test_mlp_triangular_gradient_with_non_uniform_sample_weights():
     X = rng.standard_normal((20, 3))
     y_encoded = rng.integers(0, 3, size=len(X))
     Y = np.eye(3)[y_encoded]
-    
+
     sample_weight = rng.uniform(0.1, 3.0, size=len(X))
 
     clf = MLPTriangularClassifier(
@@ -357,7 +357,7 @@ def test_mlp_triangular_gradient_with_non_uniform_sample_weights():
 def test_mlp_triangular_class_weight_changes_results(X, y):
     """Providing class weights actively changes the optimization outcome."""
     clf_unweighted = MLPTriangularClassifier(max_iter=10, random_state=0).fit(X, y)
-    
+
     clf_weighted = MLPTriangularClassifier(
         class_weight={0: 1.0, 1: 1.0, 2: 10.0}, max_iter=10, random_state=0
     ).fit(X, y)
@@ -369,7 +369,7 @@ def test_mlp_triangular_t_alpha_clips_at_zero():
     """Large t_alpha values correctly clip distant class probabilities to 0."""
     clf = MLPTriangularClassifier(t_alpha=1.0, eta=1.0)
     clf.n_classes_ = 3
-    
+
     clf._precompute_soft_labels()
 
     np.testing.assert_array_equal(clf.soft_label_matrix_, np.eye(3))
