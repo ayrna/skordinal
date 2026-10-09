@@ -166,7 +166,9 @@ PyObject* modelToPython(smo_Settings* model){
 								"s:O,"
 								"s:O,"
 								"s:O,"
-								"s:d"
+								"s:d,"
+								"s:i,"
+								"s:s"
 								"}",
 								"ard", ard_list,
 								"kernel", model->kernel,
@@ -175,7 +177,9 @@ PyObject* modelToPython(smo_Settings* model){
 								"alpha", alpha_list,
 								"pairs", pairs_data_list_dict,
 								"biasj", biasj_list,
-								"bias", model->bias
+								"bias", model->bias,
+								"convergence_failed", model->convergence_failed,
+								"convergence_message", model->convergence_message
     	   					);
 	//Pybuild increment the passed PyObjects references so is necesary
 	//to decrement them in order to let python free memory when the model 

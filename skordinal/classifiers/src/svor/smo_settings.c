@@ -91,6 +91,8 @@ smo_Settings * Create_smo_Settings_Python ( def_Settings * settings )
 		psetting->duration = 0 ;
 		psetting->smo_timing = 0 ;
 		psetting->abort = FALSE ;
+		psetting->convergence_failed = FALSE ;
+		psetting->convergence_message[0] = '\0' ;
 
 		psetting->alpha = NULL ;
 		psetting->inputfile = NULL ;

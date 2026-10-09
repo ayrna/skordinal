@@ -199,6 +199,8 @@ typedef struct _smo_Settings
 	double svs ;
 
 	BOOL abort ;		/*/ flag of exit*/
+	BOOL convergence_failed ;
+	char convergence_message[1024] ;
 
 } smo_Settings ;
 

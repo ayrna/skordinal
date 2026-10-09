@@ -8,7 +8,7 @@ import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pytest
-from sklearn.exceptions import NotFittedError
+from sklearn.exceptions import ConvergenceWarning, NotFittedError
 
 from skordinal.classifiers import SVOR
 from skordinal.utils._testing import make_balance_scale_split
@@ -20,6 +20,25 @@ PREDICTIONS_DIR = {
 }
 
 CONSTRAINTS = ["explicit", "implicit"]
+
+
+def test_svor_nonconvergence_warns_and_returns_model(monkeypatch):
+    """Non-converged backend training emits a ConvergenceWarning."""
+    import skordinal.classifiers._svor as svor_module
+
+    class Backend:
+        @staticmethod
+        def fit(labels, features, options):
+            return {
+                "convergence_failed": 1,
+                "convergence_message": "KKT conditions were not satisfied",
+                "biasj": [0.0],
+            }
+
+    monkeypatch.setattr(svor_module, "svor", Backend)
+    classifier = SVOR(constraints="explicit")
+    with pytest.warns(ConvergenceWarning, match="KKT conditions"):
+        assert classifier.fit([[0.0], [1.0]], [0, 1]) is classifier
 
 
 @pytest.fixture

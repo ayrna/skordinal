@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
 from numbers import Integral, Real
 
 import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.validation import check_is_fitted, validate_data
 
@@ -167,6 +169,12 @@ class SVOR(ClassifierMixin, BaseEstimator):
             arg, mode, str(self.tol), str(gamma_value), str(self.C)
         )
         self.model_ = svor.fit((y_encoded + 1).tolist(), X.tolist(), options)
+        if self.model_.get("convergence_failed", False):
+            warnings.warn(
+                self.model_["convergence_message"],
+                ConvergenceWarning,
+                stacklevel=2,
+            )
         # biasj are the backend's ordered cutpoints
         self.thresholds_ = np.asarray(self.model_["biasj"], dtype=np.float64)
         return self
