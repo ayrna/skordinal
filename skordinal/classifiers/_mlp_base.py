@@ -37,6 +37,11 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
 
     random_state : int, RandomState instance or None, default=None
         Determines random number generation for weight initialization.
+
+    tol : float, default=1e-5
+            Convergence tolerance forwarded to L-BFGS-B as ``gtol``, so the
+            solver stops once the projected gradient max-norm falls below it.
+            Must be strictly positive.
     """
 
     _parameter_constraints: dict = {
@@ -46,6 +51,7 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         "class_weight": [None, dict, StrOptions({"balanced"})],
         "max_iter": [Interval(Integral, 1, None, closed="left")],
         "random_state": ["random_state", None],
+        "tol": [Interval(Real, 0.0, None, closed="neither")],
     }
 
     def __init__(
@@ -56,6 +62,7 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         class_weight=None,
         max_iter=500,
         random_state=None,
+        tol=1e-5,
     ):
         self.n_hidden_layers = n_hidden_layers
         self.n_hidden_units = n_hidden_units
@@ -63,6 +70,7 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         self.class_weight = class_weight
         self.max_iter = max_iter
         self.random_state = random_state
+        self.tol = tol
 
     @abstractmethod
     def _initialize_parameters(self, rng: np.random.RandomState) -> np.ndarray:
@@ -158,7 +166,11 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
             args=(X, Y, sample_weight),
             method="L-BFGS-B",
             jac=True,
-            options={"maxiter": self.max_iter},
+            options={
+                "maxiter": self.max_iter,
+                "ftol": 1e-5,
+                "gtol": self.tol,
+            },
         )
 
         if not res.success:

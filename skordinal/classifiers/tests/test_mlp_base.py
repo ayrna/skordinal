@@ -189,7 +189,11 @@ def test_optimizer_uses_lbfgs_and_unpacks_result(data, monkeypatch):
     assert calls == {
         "method": "L-BFGS-B",
         "jac": True,
-        "options": {"maxiter": 17},
+        "options": {
+            "maxiter": 17,
+            "ftol": 1e-5,
+            "gtol": 1e-5,
+        },
     }
     assert clf.n_iter_ == 4
     np.testing.assert_array_equal(clf.weights_, np.ones_like(clf.weights_))
