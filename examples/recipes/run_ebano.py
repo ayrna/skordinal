@@ -29,15 +29,10 @@ print(f"Loading '{dataset_name}' dataset...")
 
 if tocuco_dataset:
     tocuco_root = download_tocuco(data_home=data_home)
-    X, _ = load_dataset(
+    
+X, _ = load_dataset(
         name=dataset_name,
         data_home=tocuco_root,
-        return_X_y=True,
-    )
-else:
-    X, _ = load_dataset(
-        name=dataset_name,
-        data_home=data_home,
         return_X_y=True,
     )
 
