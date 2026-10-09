@@ -21,12 +21,7 @@ def _write_predictions(
     """Write one saved prediction CSV in the layout expected by EBANO."""
     if pattern_ids is None:
         pattern_ids = np.arange(probabilities.shape[0])
-    seed_dir = (
-        model_root
-        / dataset_name
-        / "predictions_by_seed"
-        / f"seed_{seed}"
-    )
+    seed_dir = model_root / dataset_name / "predictions_by_seed" / f"seed_{seed}"
     seed_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         {
@@ -110,7 +105,9 @@ def test_fit_and_predict_use_sorted_saved_probabilities(saved_model_predictions)
 
     np.testing.assert_allclose(model.predict_proba(X_train), train_expected)
     np.testing.assert_allclose(model.predict_proba(X_test), test_expected)
-    np.testing.assert_array_equal(model.predict(X_test), np.argmax(test_expected, axis=1))
+    np.testing.assert_array_equal(
+        model.predict(X_test), np.argmax(test_expected, axis=1)
+    )
 
 
 def test_predict_proba_before_fit_raises_not_fitted():
@@ -174,24 +171,28 @@ def test_predict_proba_raises_for_missing_test_predictions(tmp_path):
 def test_predict_proba_loads_test_when_shapes_match_but_data_differs(tmp_path):
     """The model correctly identifies a test set even if it has the exact same shape as the train set."""
     model_root = tmp_path / "model"
-    _write_predictions(model_root, "toy", 0, "train", np.array([[0.9, 0.1], [0.1, 0.9]]))
+    _write_predictions(
+        model_root, "toy", 0, "train", np.array([[0.9, 0.1], [0.1, 0.9]])
+    )
     _write_predictions(model_root, "toy", 0, "test", np.array([[0.5, 0.5], [0.5, 0.5]]))
-    
+
     model = EBANO([str(model_root)], dataset_name="toy", random_state=0)
-    
+
     X_train = np.array([[1.0], [2.0]])
     model.fit(X_train, np.array([0, 1]))
-    
+
     X_test = np.array([[3.0], [4.0]])
-    
+
     probas = model.predict_proba(X_test)
     np.testing.assert_allclose(probas, [[0.5, 0.5], [0.5, 0.5]])
 
 
 def test_fit_rejects_random_state_instance():
     """A RandomState instance cannot be used because it cannot be parsed into a directory path."""
-    model = EBANO(["unused"], dataset_name="toy", random_state=np.random.RandomState(42))
-    
+    model = EBANO(
+        ["unused"], dataset_name="toy", random_state=np.random.RandomState(42)
+    )
+
     with pytest.raises(TypeError, match="must be an integer"):
         model.fit(np.zeros((2, 1)), np.array([0, 1]))
 
@@ -204,7 +205,7 @@ def test_fit_rejects_random_state_instance():
         ("weights_cv_n_iters", 0),
         ("weights_cv_n_iters", 10.5),
         ("random_state", "seed"),
-    ]
+    ],
 )
 def test_ebano_hyperparameter_validation(param_name, invalid_value):
     """Scikit-learn parameter constraints reject invalid types and values."""
@@ -212,7 +213,7 @@ def test_ebano_hyperparameter_validation(param_name, invalid_value):
         "models_saved_results_paths": ["path"],
         "dataset_name": "toy",
         "weights_cv_n_iters": 100,
-        "random_state": 42
+        "random_state": 42,
     }
     kwargs[param_name] = invalid_value
     model = EBANO(**kwargs)
