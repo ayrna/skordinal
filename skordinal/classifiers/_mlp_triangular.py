@@ -77,6 +77,7 @@ class MLPTriangularClassifier(MLPBaseClassifier):
         eta=1.0,
         class_weight=None,
         max_iter=500,
+        tol=1e-4,
         random_state=None,
     ):
         self.t_alpha = t_alpha
@@ -88,6 +89,7 @@ class MLPTriangularClassifier(MLPBaseClassifier):
             alpha=alpha,
             class_weight=class_weight,
             max_iter=max_iter,
+            tol=tol,
             random_state=random_state,
         )
 
