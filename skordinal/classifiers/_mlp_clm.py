@@ -41,6 +41,9 @@ class MLPCLMClassifier(MLPBaseClassifier):
 
     max_iter : int, default=500
         Maximum number of iterations.
+    
+    tol: float, default=1e-4
+        Tolerance for the optimization convergence.
 
     random_state : int, RandomState instance or None, default=None
         Determines random number generation for weight initialization.
@@ -85,6 +88,7 @@ class MLPCLMClassifier(MLPBaseClassifier):
         activation="sigmoid",
         class_weight=None,
         max_iter=500,
+        tol=1e-4,
         random_state=None,
     ):
         self.activation = activation
@@ -94,6 +98,7 @@ class MLPCLMClassifier(MLPBaseClassifier):
             alpha=alpha,
             class_weight=class_weight,
             max_iter=max_iter,
+            tol=tol,
             random_state=random_state,
         )
 
