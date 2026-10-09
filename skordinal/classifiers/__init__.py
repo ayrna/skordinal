@@ -1,6 +1,7 @@
 """Ordinal classification classifiers module."""
 
 from ._cost_sensitive_wrapper import CostSensitiveWrapper
+from ._ebano import EBANO
 from ._elmop import ELMOP
 from ._kdlor import KDLOR
 from ._logistic_at import LogisticAT
@@ -16,6 +17,7 @@ from ._svor import SVOR
 
 __all__ = [
     "CostSensitiveWrapper",
+    "EBANO",
     "ELMOP",
     "KDLOR",
     "LogisticAT",
