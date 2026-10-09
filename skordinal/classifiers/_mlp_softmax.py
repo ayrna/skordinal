@@ -34,6 +34,9 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
     max_iter : int, default=500
         Maximum number of iterations for the L-BFGS-B solver.
 
+    tol: float, default=1e-4
+        Tolerance for the optimization.
+
     random_state : int, RandomState instance or None, default=None
         Determines random number generation for weight initialization.
     """
@@ -53,6 +56,7 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
         alpha=0.01,
         class_weight=None,
         max_iter=500,
+        tol=1e-4,
         random_state=None,
     ):
         super().__init__(
@@ -61,6 +65,7 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
             alpha=alpha,
             class_weight=class_weight,
             max_iter=max_iter,
+            tol=tol,
             random_state=random_state,
         )
         self.activation = activation
