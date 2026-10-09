@@ -41,7 +41,7 @@ class MLPCLMClassifier(MLPBaseClassifier):
 
     max_iter : int, default=500
         Maximum number of iterations.
-    
+
     tol: float, default=1e-4
         Tolerance for the optimization convergence.
 
