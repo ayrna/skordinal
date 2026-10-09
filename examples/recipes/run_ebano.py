@@ -29,12 +29,12 @@ print(f"Loading '{dataset_name}' dataset...")
 
 if tocuco_dataset:
     tocuco_root = download_tocuco(data_home=data_home)
-    
+
 X, _ = load_dataset(
-        name=dataset_name,
-        data_home=tocuco_root,
-        return_X_y=True,
-    )
+    name=dataset_name,
+    data_home=tocuco_root,
+    return_X_y=True,
+)
 
 print("Running EBANO...")
 
