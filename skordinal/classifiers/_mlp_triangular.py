@@ -44,6 +44,9 @@ class MLPTriangularClassifier(MLPBaseClassifier):
     max_iter : int, default=500
         Maximum number of iterations for the solver.
 
+    tol: float, default=1e-4
+        Tolerance for the optimization convergence.
+
     random_state : int, RandomState instance or None, default=None
         Determines random number generation for weight initialization.
 
