@@ -117,6 +117,7 @@ def test_mlp_clm_default_parameters():
         "class_weight": None,
         "max_iter": 500,
         "random_state": None,
+        "tol": 1e-5,
     }
 
 
@@ -154,6 +155,8 @@ def test_mlp_clm_clone_and_set_params():
         ("link_function", "Logit"),
         ("min_distance", -0.1),
         ("class_weight", "uniform"),
+        ("tol", 0.0),
+        ("tol", -1e-3),
     ],
 )
 def test_mlp_clm_hyperparameter_value_validation(X, y, param_name, invalid_value):
@@ -176,6 +179,7 @@ def test_mlp_clm_hyperparameter_value_validation(X, y, param_name, invalid_value
         ("min_distance", "far"),
         ("class_weight", [1, 2, 3]),
         ("random_state", "seed"),
+        ("tol", "small"),
     ],
 )
 def test_mlp_clm_hyperparameter_type_validation(X, y, param_name, invalid_value):
@@ -729,8 +733,19 @@ def test_mlp_clm_warns_when_not_converged(X, y):
     """Stopping after one iteration raises a ConvergenceWarning."""
     with warnings.catch_warnings():
         warnings.simplefilter("default", ConvergenceWarning)
-        with pytest.warns(ConvergenceWarning, match="MLPCLMClassifier"):
+        with pytest.warns(ConvergenceWarning, match=r"max_iter=1\b"):
             MLPCLMClassifier(max_iter=1, random_state=0).fit(X, y)
+
+
+def test_mlp_clm_tol_is_forwarded_to_the_solver(ordinal_data):
+    """A looser tolerance stops L-BFGS-B no later than a tighter one."""
+    X, y = ordinal_data
+    n_iters = [
+        MLPCLMClassifier(tol=tol, max_iter=1000, random_state=0).fit(X, y).n_iter_
+        for tol in (1e-1, 1e-8)
+    ]
+
+    assert n_iters[0] < n_iters[1]
 
 
 def test_mlp_clm_training_decreases_loss(ordinal_data):

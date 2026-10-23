@@ -54,6 +54,10 @@ class MLPCLMClassifier(MLPBaseClassifier):
     random_state : int, RandomState instance or None, default=None
         Determines random number generation for weight initialization.
 
+    tol : float, default=1e-5
+        Convergence tolerance forwarded to L-BFGS-B as ``gtol``. Must be
+        strictly positive.
+
     Attributes
     ----------
     classes_ : ndarray of shape (n_classes,)
@@ -137,6 +141,7 @@ class MLPCLMClassifier(MLPBaseClassifier):
         class_weight=None,
         max_iter=500,
         random_state=None,
+        tol=1e-5,
     ):
         self.activation = activation
         self.link_function = link_function
@@ -148,6 +153,7 @@ class MLPCLMClassifier(MLPBaseClassifier):
             class_weight=class_weight,
             max_iter=max_iter,
             random_state=random_state,
+            tol=tol,
         )
 
     def _initialize_parameters(self, rng: np.random.RandomState) -> np.ndarray:
