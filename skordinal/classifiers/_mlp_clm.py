@@ -1,26 +1,28 @@
 """Multi-Layer Perceptron using a Cumulative Link Model output."""
 
+from numbers import Real
+
 import numpy as np
 from scipy.special import expit
-from sklearn.utils._param_validation import StrOptions
+from sklearn.utils._param_validation import Interval, StrOptions
 
-from skordinal.utils.extmath import (
-    cumproba_to_proba,
-    params_to_thresholds,
-    thresholds_grad,
-    thresholds_to_params,
-)
-
+from ._clm import CLM
 from ._mlp_base import MLPBaseClassifier
+
+# Added to the probabilities inside the log-likelihood so the loss and its
+# gradient stay finite when a sample is confidently misclassified. Unlike a
+# hard floor, the smoothed loss keeps the gradient consistent with the loss
+_PROBA_EPS = 1e-15
 
 
 class MLPCLMClassifier(MLPBaseClassifier):
     """Multi-Layer Perceptron using a Cumulative Link Model output.
 
-    This neural network replaces the standard multiclass output with a
-    Cumulative Link Model layer. It projects the features into a single
-    latent scalar and estimates the cumulative probabilities of belonging
-    to each ordinal category.
+    The hidden layers project each sample onto a single latent scalar ``z``,
+    which a :class:`CLM` output layer turns into the probabilities of the
+    ordered classes through ``P(Y <= k | z) = F(theta_k - z)``. The network
+    and the thresholds are trained jointly by minimising the weighted
+    negative log-likelihood plus an L2 penalty on the weights.
 
     Parameters
     ----------
@@ -30,23 +32,66 @@ class MLPCLMClassifier(MLPBaseClassifier):
     n_hidden_units : int, default=4
         Number of neurons per hidden layer.
 
+    alpha : float, default=0.01
+        L2 regularization parameter applied to the weights. Biases and
+        thresholds are not penalised.
+
     activation : {'sigmoid', 'tanh', 'relu'}, default='sigmoid'
         Activation function for the hidden layers.
 
-    alpha : float, default=0.01
-        L2 regularization parameter applied to the weights.
+    link_function : {'logit', 'probit', 'cloglog'}, default='logit'
+        Link function of the CLM output layer.
+
+    min_distance : float, default=0.0
+        Minimum distance between consecutive thresholds.
 
     class_weight : dict, "balanced", or None, default=None
         Weights associated with classes.
 
     max_iter : int, default=500
-        Maximum number of iterations.
-
-    tol: float, default=1e-4
-        Tolerance for the optimization convergence.
+        Maximum number of iterations of the L-BFGS-B solver.
 
     random_state : int, RandomState instance or None, default=None
         Determines random number generation for weight initialization.
+
+    Attributes
+    ----------
+    classes_ : ndarray of shape (n_classes,)
+        Class labels, in ordinal order.
+
+    n_classes_ : int
+        Number of classes.
+
+    n_features_in_ : int
+        Number of features seen during fit.
+
+    feature_names_in_ : ndarray of shape (n_features_in_,)
+        Names of features seen during fit. Defined only when ``X`` has
+        feature names that are all strings.
+
+    clm_ : CLM
+        The output layer used by the network.
+
+    W_ : list of ndarray
+        Weight matrices of the hidden layers.
+
+    b_ : list of ndarray
+        Bias vectors of the hidden layers.
+
+    w_out_ : ndarray of shape (n_hidden_units, 1)
+        Weights of the projection onto the latent scalar.
+
+    t_ : ndarray of shape (n_classes - 1,)
+        Unconstrained threshold parameters of the CLM layer.
+
+    thresholds_ : ndarray of shape (n_classes - 1,)
+        Ordered thresholds of the CLM layer.
+
+    loss_ : float
+        Value of the objective at the end of training.
+
+    n_iter_ : int
+        Number of iterations run by the solver.
 
     References
     ----------
@@ -57,7 +102,6 @@ class MLPCLMClassifier(MLPBaseClassifier):
     .. [2] P. McCullagh, "Regression models for ordinal data",
        Journal of the Royal Statistical Society. Series B (Methodological),
        vol. 42, no. 2, pp. 109-142, 1980.
-
 
     Examples
     --------
@@ -77,6 +121,8 @@ class MLPCLMClassifier(MLPBaseClassifier):
     _parameter_constraints.update(
         {
             "activation": [StrOptions({"sigmoid", "tanh", "relu"})],
+            "link_function": [StrOptions({"logit", "probit", "cloglog"})],
+            "min_distance": [Interval(Real, 0.0, None, closed="left")],
         }
     )
 
@@ -86,24 +132,30 @@ class MLPCLMClassifier(MLPBaseClassifier):
         n_hidden_units=4,
         alpha=0.01,
         activation="sigmoid",
+        link_function="logit",
+        min_distance=0.0,
         class_weight=None,
         max_iter=500,
-        tol=1e-4,
         random_state=None,
     ):
         self.activation = activation
+        self.link_function = link_function
+        self.min_distance = min_distance
         super().__init__(
             n_hidden_layers=n_hidden_layers,
             n_hidden_units=n_hidden_units,
             alpha=alpha,
             class_weight=class_weight,
             max_iter=max_iter,
-            tol=tol,
             random_state=random_state,
         )
 
     def _initialize_parameters(self, rng: np.random.RandomState) -> np.ndarray:
-        """Initialize weights, biases, projection scalar, and thresholds.
+        """Initialize hidden weights, projection weights and thresholds.
+
+        Hidden weights use He-uniform initialization for ReLU and
+        Glorot-uniform otherwise; biases start at zero and thresholds are
+        spread evenly over ``[-2, 2]``.
 
         Parameters
         ----------
@@ -113,42 +165,39 @@ class MLPCLMClassifier(MLPBaseClassifier):
         Returns
         -------
         params : ndarray
-            A 1D array containing all initialized network parameters concatenated
-            together (hidden weights, hidden biases, final projection weights,
-            and unconstrained thresholds).
+            1D array with the hidden weights and biases, the projection
+            weights and the unconstrained thresholds, in that order.
         """
+        self.clm_ = CLM(
+            self.n_classes_,
+            link_function=self.link_function,
+            min_distance=self.min_distance,
+        )
+
         params = []
         input_dim = self.n_features_in_
-
         for _ in range(self.n_hidden_layers):
-            limit = 0
             if self.activation == "relu":
                 limit = np.sqrt(6 / input_dim)
             else:
                 limit = np.sqrt(6 / (input_dim + self.n_hidden_units))
-
             W = rng.uniform(-limit, limit, (input_dim, self.n_hidden_units))
-            b = np.zeros(self.n_hidden_units)
-            params.extend([W.ravel(), b.ravel()])
+            params.extend([W.ravel(), np.zeros(self.n_hidden_units)])
             input_dim = self.n_hidden_units
 
         limit = np.sqrt(6 / (input_dim + 1))
-        w_out = rng.uniform(-limit, limit, (input_dim, 1))
-        params.append(w_out.ravel())
-
-        initial_thresholds = np.linspace(-2.0, 2.0, self.n_classes_ - 1)
-        t_params = thresholds_to_params(initial_thresholds)
-        params.append(t_params.ravel())
+        params.append(rng.uniform(-limit, limit, input_dim))
+        params.append(self.clm_.init_params())
 
         return np.concatenate(params)
 
-    def _unpack_parameters(self, params: np.ndarray):
-        """Extract the matrices W, vectors b, w_out, and thresholds t.
+    def _split_parameters(self, params: np.ndarray):
+        """Split the 1D parameter array into the layers' arrays.
 
         Parameters
         ----------
         params : ndarray
-            A 1D array containing all unconstrained parameters of the model.
+            1D array containing all unconstrained parameters of the model.
 
         Returns
         -------
@@ -157,35 +206,59 @@ class MLPCLMClassifier(MLPBaseClassifier):
         b : list of ndarray
             Bias vectors for each hidden layer.
         w_out : ndarray of shape (n_units_last_hidden, 1)
-            Weights for the final scalar projection layer.
+            Weights of the projection onto the latent scalar.
         t : ndarray of shape (n_classes - 1,)
-            Unconstrained threshold parameters for the Cumulative Link Model.
+            Unconstrained threshold parameters of the CLM layer.
         """
         idx = 0
         W = []
         b = []
         input_dim = self.n_features_in_
-
         for _ in range(self.n_hidden_layers):
             size_W = input_dim * self.n_hidden_units
             W.append(params[idx : idx + size_W].reshape(input_dim, self.n_hidden_units))
             idx += size_W
-
-            size_b = self.n_hidden_units
-            b.append(params[idx : idx + size_b])
-            idx += size_b
-
+            b.append(params[idx : idx + self.n_hidden_units])
+            idx += self.n_hidden_units
             input_dim = self.n_hidden_units
 
-        self.w_out_ = params[idx : idx + input_dim].reshape(input_dim, 1)
+        w_out = params[idx : idx + input_dim].reshape(input_dim, 1)
         idx += input_dim
 
-        self.t_ = params[idx:]
+        t = params[idx:]
+        if t.shape != (self.clm_.n_params,):
+            raise ValueError(
+                f"Expected {idx + self.clm_.n_params} parameters, got {params.size}."
+            )
 
-        self.W_ = W
-        self.b_ = b
+        return W, b, w_out, t
 
-        return W, b, self.w_out_, self.t_
+    def _unpack_parameters(self, params: np.ndarray):
+        """Store the optimised parameters as fitted attributes."""
+        self.W_, self.b_, self.w_out_, self.t_ = self._split_parameters(params)
+        self.thresholds_ = self.clm_.thresholds(self.t_)
+
+    def _activate(self, Z: np.ndarray) -> np.ndarray:
+        if self.activation == "sigmoid":
+            return expit(Z)
+        if self.activation == "tanh":
+            return np.tanh(Z)
+        return np.maximum(0.0, Z)
+
+    def _activation_derivative(self, A: np.ndarray) -> np.ndarray:
+        """Derivative of the activation, expressed in terms of its output."""
+        if self.activation == "sigmoid":
+            return A * (1.0 - A)
+        if self.activation == "tanh":
+            return 1.0 - A**2
+        return (A > 0.0).astype(float)
+
+    def _forward(self, X, W, b, w_out):
+        """Return the activations of every layer and the latent projection."""
+        A = [X]
+        for W_i, b_i in zip(W, b):
+            A.append(self._activate(A[-1] @ W_i + b_i))
+        return A, A[-1] @ w_out
 
     def _cost_and_grad(
         self,
@@ -194,7 +267,7 @@ class MLPCLMClassifier(MLPBaseClassifier):
         Y: np.ndarray,
         sample_weight: np.ndarray,
     ) -> tuple[float, np.ndarray]:
-        """Compute the CLM loss and perform backpropagation.
+        """Compute the CLM loss and its gradient by backpropagation.
 
         Parameters
         ----------
@@ -203,158 +276,61 @@ class MLPCLMClassifier(MLPBaseClassifier):
         X : ndarray of shape (n_samples, n_features)
             Training data.
         Y : ndarray of shape (n_samples, n_classes)
-            Target matrix (one-hot encoded representation of the classes).
+            One-hot encoded targets.
         sample_weight : ndarray of shape (n_samples,)
             Sample weights.
 
         Returns
         -------
         J : float
-            The scalar cost, which includes the Negative Log-Likelihood loss
-            and the L2 regularization penalty.
-        grads : ndarray
-            1D array containing the gradient of the cost with respect to
-            all parameters.
+            Weighted mean negative log-likelihood, with ``1e-15`` added to
+            the probabilities for numerical stability, plus the L2 penalty.
+        grad : ndarray
+            Gradient of ``J`` with respect to ``params``.
         """
-        n_samples = X.shape[0]
         weight_sum = np.sum(sample_weight)
-        W, b, w_out, t = self._unpack_parameters(params)
+        W, b, w_out, t = self._split_parameters(params)
 
-        # -----------------
-        # Forwards pass
-        # -----------------
-        A = [X]
-        for i in range(self.n_hidden_layers):
-            Z = np.dot(A[-1], W[i]) + b[i]
-            if self.activation == "sigmoid":
-                A_next = expit(Z)
-            elif self.activation == "tanh":
-                A_next = np.tanh(Z)
-            elif self.activation == "relu":
-                A_next = np.maximum(0, Z)
-            else:
-                raise ValueError(f"Unsupported activation: {self.activation}")
-            A.append(A_next)
+        A, z = self._forward(X, W, b, w_out)
+        P = self.clm_.forward(z, t) + _PROBA_EPS
 
-        z_proj = np.dot(A[-1], w_out)
-
-        theta = params_to_thresholds(t)
-
-        # Cumulative link model formulation
-        z_clm = theta[np.newaxis, :] - z_proj
-        cumproba = expit(z_clm)
-
-        # P = [ P(Y<=1), P(Y<=2)-P(Y<=1), ..., 1-P(Y<=K-1) ]
-        a3 = np.hstack([cumproba, np.ones((n_samples, 1))])
-        P = np.hstack([a3[:, 0:1], a3[:, 1:] - a3[:, :-1]])
-
-        tiny = np.finfo(np.float64).tiny
-        P = np.maximum(P, tiny)
-
-        # -----------------
-        # Loss + L2 penalty
-        # -----------------
-        l2_penalty = sum(np.sum(w**2) for w in W) + np.sum(w_out**2)
-
-        J = -np.sum(sample_weight[:, np.newaxis] * Y * np.log(P)) / weight_sum
-
+        weighted_Y = sample_weight[:, np.newaxis] * Y
+        l2_penalty = sum(np.sum(W_i**2) for W_i in W) + np.sum(w_out**2)
+        J = -np.sum(weighted_Y * np.log(P)) / weight_sum
         J += (self.alpha / (2 * weight_sum)) * l2_penalty
 
-        # -----------------
-        # Backwards pass
-        # -----------------
+        grad_z, grad_t = self.clm_.backward(z, t, -weighted_Y / P / weight_sum)
 
-        P = np.clip(P, 1e-15, 1.0 - 1e-15)
-        error_der = -(sample_weight[:, np.newaxis] * Y) / P
-
-        f_grad = cumproba * (1 - cumproba)
-
-        # Gradient pushing into the cumulative link layer
-        g_grad = error_der * np.hstack(
-            [f_grad[:, 0:1], f_grad[:, 1:] - f_grad[:, :-1], -f_grad[:, -1:]]
-        )
-
-        delta_z = -np.sum(g_grad, axis=1, keepdims=True)
-
-        # Gradient with respect to the ordered thresholds
-        raw_theta_grad = (
-            np.sum(
-                error_der[:, :-1] * f_grad - error_der[:, 1:] * f_grad,
-                axis=0,
-            )
-            / weight_sum
-        )
-
-        # Push the gradient back through the cumsum-of-squares map
-        grad_t = thresholds_grad(t, raw_theta_grad)
-        grad_w_out = (
-            np.dot(A[-1].T, delta_z) / weight_sum + (self.alpha / weight_sum) * w_out
-        )
-
-        # Propagate error back to the last hidden layer
-        if self.activation == "sigmoid":
-            deriv = A[-1] * (1 - A[-1])
-        elif self.activation == "tanh":
-            deriv = 1 - A[-1] ** 2
-        elif self.activation == "relu":
-            deriv = (A[-1] > 0).astype(float)
-
-        delta = np.dot(delta_z, w_out.T) * deriv
+        grad_w_out = A[-1].T @ grad_z + (self.alpha / weight_sum) * w_out
+        delta = (grad_z @ w_out.T) * self._activation_derivative(A[-1])
 
         grad_W: list[np.ndarray] = []
         grad_b: list[np.ndarray] = []
-
-        # Reverse loop through hidden layers
         for i in range(self.n_hidden_layers - 1, -1, -1):
-            gW = np.dot(A[i].T, delta) / weight_sum + (self.alpha / weight_sum) * W[i]
-            gb = np.sum(delta, axis=0) / weight_sum
-
-            grad_W.insert(0, gW.ravel())
-            grad_b.insert(0, gb.ravel())
-
+            grad_W.insert(0, A[i].T @ delta + (self.alpha / weight_sum) * W[i])
+            grad_b.insert(0, np.sum(delta, axis=0))
             if i > 0:
-                if self.activation == "sigmoid":
-                    deriv = A[i] * (1 - A[i])
-                elif self.activation == "tanh":
-                    deriv = 1 - A[i] ** 2
-                elif self.activation == "relu":
-                    deriv = (A[i] > 0).astype(float)
+                delta = (delta @ W[i].T) * self._activation_derivative(A[i])
 
-                delta = np.dot(delta, W[i].T) * deriv
-
-        # Pack all gradients
         grads = []
         for gW, gb in zip(grad_W, grad_b):
-            grads.extend([gW, gb])
-        grads.extend([grad_w_out.ravel(), grad_t.ravel()])
+            grads.extend([gW.ravel(), gb])
+        grads.extend([grad_w_out.ravel(), grad_t])
 
         return J, np.concatenate(grads)
 
     def _predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """ "Compute class probabilities using the optimized CLM parameters.
+        """Compute class probabilities using the optimized parameters.
 
         Parameters
         ----------
         X : ndarray of shape (n_samples, n_features)
-            The validated input data for which to compute probabilities.
+            The validated input data.
 
         Returns
-        ----------
+        -------
         probas : ndarray of shape (n_samples, n_classes)
             The predicted probabilities of each class for the samples in X.
         """
-        A = X
-        for W, b in zip(self.W_, self.b_):
-            Z = np.dot(A, W) + b
-            if self.activation == "sigmoid":
-                A = expit(Z)
-            elif self.activation == "tanh":
-                A = np.tanh(Z)
-            elif self.activation == "relu":
-                A = np.maximum(0, Z)
-
-        z_proj = np.dot(A, self.w_out_)
-        theta = params_to_thresholds(self.t_)
-        cumproba = expit(theta[np.newaxis, :] - z_proj)
-
-        return cumproba_to_proba(cumproba, repair=True)
+        _, z = self._forward(X, self.W_, self.b_, self.w_out_)
+        return self.clm_.forward(z, self.t_)
