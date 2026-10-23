@@ -1,12 +1,13 @@
 """Tests for the LogisticAT classifier."""
 
 import inspect
+import warnings
 
 import numpy as np
 import pandas as pd
 import pytest
 import scipy.optimize
-from sklearn.exceptions import NotFittedError
+from sklearn.exceptions import ConvergenceWarning, NotFittedError
 from sklearn.utils.class_weight import compute_class_weight
 
 from skordinal.classifiers import LogisticAT
@@ -346,6 +347,20 @@ def test_logistic_at_large_magnitude_x_finite_probabilities():
 
     assert np.isfinite(proba).all()
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-12)
+
+
+def test_logistic_at_convergence_warning(ordinal_data):
+    """Only an exhausted max_iter warns, naming n_iter_, and fit still sets loss_."""
+    X, y = ordinal_data
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConvergenceWarning)
+        LogisticAT().fit(X, y)
+
+    with pytest.warns(ConvergenceWarning, match="failed to converge") as record:
+        clf = LogisticAT(max_iter=1).fit(X, y)
+
+    assert f"after {clf.n_iter_} iteration(s)" in str(record[0].message)
+    assert np.isfinite(clf.loss_)
 
 
 def test_logistic_at_projection_well_formed(ordinal_data):

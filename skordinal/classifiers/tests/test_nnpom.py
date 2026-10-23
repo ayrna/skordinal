@@ -1,7 +1,6 @@
 """Tests for the NNPOM classifier."""
 
 import inspect
-import re
 import warnings
 
 import numpy as np
@@ -319,11 +318,11 @@ def test_nnpom_convergence_warning_only_at_insufficient_max_iter(ordinal_data):
         warnings.simplefilter("error", ConvergenceWarning)
         NNPOM(random_state=0).fit(X, y)
 
-    with pytest.warns(ConvergenceWarning, match="did not converge") as record:
+    with pytest.warns(ConvergenceWarning, match="failed to converge") as record:
         clf = NNPOM(max_iter=1, random_state=0).fit(X, y)
 
     message = str(record[0].message)
-    assert re.search(rf"stopped after {clf.n_iter_} iterations?\b", message), message
+    assert f"after {clf.n_iter_} iteration(s)" in message, message
 
 
 def test_nnpom_projection_well_formed(ordinal_data):
