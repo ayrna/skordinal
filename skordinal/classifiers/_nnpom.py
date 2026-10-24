@@ -163,7 +163,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             If parameters are invalid or data has wrong format.
 
         """
-        X, y = validate_data(self, X, y)
+        X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
         rng = check_random_state(self.random_state)
 
@@ -257,7 +257,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         proba = cumproba_to_proba(self._cumproba(X), repair=True)
         return self.classes_[proba.argmax(axis=1)]
 
@@ -290,7 +290,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return repair_cumproba(self._cumproba(X))
 
     def predict_proba(self, X: ArrayLike) -> np.ndarray:
@@ -319,7 +319,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return cumproba_to_proba(self._cumproba(X), repair=True)
 
     def predict_projection(self, X: ArrayLike) -> np.ndarray:
@@ -345,7 +345,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             If the model is not fitted yet.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return self._project(X)
 
     def _project(self, X: np.ndarray) -> np.ndarray:

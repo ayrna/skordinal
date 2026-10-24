@@ -148,7 +148,7 @@ class SVOR(ClassifierMixin, BaseEstimator):
         ValueError
             If parameters are invalid or data has wrong format.
         """
-        X, y = validate_data(self, X, y)
+        X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
 
         arg = ""
@@ -208,7 +208,7 @@ class SVOR(ClassifierMixin, BaseEstimator):
             If the input is invalid.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         y_pred, _ = svor.predict(X.tolist(), self.model_)
         return self.classes_[np.asarray(y_pred).astype(int) - 1]
 
@@ -239,6 +239,6 @@ class SVOR(ClassifierMixin, BaseEstimator):
             If the input is invalid.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         _, projection = svor.predict(X.tolist(), self.model_)
         return np.asarray(projection, dtype=np.float64)
