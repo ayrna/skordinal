@@ -8,7 +8,7 @@ import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pytest
-from sklearn.exceptions import NotFittedError
+from sklearn.exceptions import ConvergenceWarning, NotFittedError
 
 from skordinal.classifiers import SVOR
 from skordinal.utils._testing import make_balance_scale_split
@@ -240,6 +240,19 @@ def test_svor_gamma_scale_zero_variance(X, y):
         classifier = SVOR(gamma="scale", kernel="rbf").fit(X_constant, y)
 
     assert set(classifier.predict(X_constant)).issubset(set(classifier.classes_))
+
+
+def test_svor_convergence_warning(X, y):
+    """Only an unconverged SMO warns, and fit still returns the model."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConvergenceWarning)
+        SVOR().fit(X, y)
+
+    # The SMO stops on these points with a KKT gap above tol, as in #175
+    X_unconverged = np.array([[3], [2], [1], [3], [1], [0], [3], [3]])
+    y_unconverged = np.array([3, 2, 3, 0, 0, 0, 0, 1])
+    with pytest.warns(ConvergenceWarning, match="KKT conditions of thresholds_"):
+        SVOR(kernel="linear", constraints="explicit").fit(X_unconverged, y_unconverged)
 
 
 @pytest.mark.parametrize("constraints", CONSTRAINTS)

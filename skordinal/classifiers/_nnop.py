@@ -154,7 +154,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
             If parameters are invalid or data has wrong format.
 
         """
-        X, y = validate_data(self, X, y)
+        X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
         rng = check_random_state(self.random_state)
 
@@ -250,7 +250,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         n_samples = X.shape[0]
         n_classes = len(self.classes_)
 
@@ -294,7 +294,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return repair_cumproba(self._cumproba(X))
 
     def predict_proba(self, X: ArrayLike) -> np.ndarray:
@@ -332,7 +332,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return cumproba_to_proba(self._cumproba(X), repair=True)
 
     def _cumproba(self, X: np.ndarray) -> np.ndarray:
