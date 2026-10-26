@@ -5,8 +5,8 @@ Every classifier here models the order of the target rather than treating the
 classes as unrelated labels. They do so in different ways: by placing learned
 thresholds on a latent scale, by predicting the cumulative distribution over
 classes, or by decomposing the problem into ordered binary subproblems. The
-three meta-estimators at the end build an ordinal classifier out of an
-ordinary classifier or regressor.
+meta-estimators at the end build composite ordinal classifiers or ensembles of
+ordinal classifiers.
 
 .. currentmodule:: skordinal.classifiers
 
@@ -23,6 +23,7 @@ ordinary classifier or regressor.
    REDSVM
    SVOR
    ORBoost
+   EBANO
    OrdinalDecomposition
    RegressorWrapper
    CostSensitiveWrapper
