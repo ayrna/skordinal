@@ -30,11 +30,12 @@ At a glance
 (:class:`~skordinal.classifiers.KDLOR`), support vector machines
 (:class:`~skordinal.classifiers.REDSVM`,
 :class:`~skordinal.classifiers.SVOR`), boosting
-(:class:`~skordinal.classifiers.ORBoost`) and three meta-estimators
-(:class:`~skordinal.classifiers.OrdinalDecomposition`,
+(:class:`~skordinal.classifiers.ORBoost`) and four meta-estimators
+(:class:`~skordinal.classifiers.EBANO`,
+:class:`~skordinal.classifiers.OrdinalDecomposition`,
 :class:`~skordinal.classifiers.RegressorWrapper`,
-:class:`~skordinal.classifiers.CostSensitiveWrapper`) that build an ordinal
-classifier out of an ordinary one.
+:class:`~skordinal.classifiers.CostSensitiveWrapper`) that combine ordinal
+classifiers or build one from an ordinary estimator.
 
 **Fourteen metrics** spanning the ways an ordinal prediction can be judged:
 distance to the true class (MAE, AMAE, MMAE), exact and off-by-one accuracy
