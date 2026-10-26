@@ -5,7 +5,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import REDSVM, SVOR, OrdinalDecomposition, MLPSoftmaxClassifier
+from skordinal.classifiers import (
+    REDSVM,
+    SVOR,
+    MLPSoftmaxClassifier,
+    OrdinalDecomposition,
+)
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
