@@ -16,6 +16,14 @@ train/test partitions, :func:`~skordinal.datasets.download_tocuco`
 prefetches the whole collection, and
 :func:`~skordinal.datasets.list_tocuco_datasets` lists the cache.
 
+The :func:`~skordinal.datasets.compute_dataset_air` and
+:func:`~skordinal.datasets.compute_dataset_mir` functions calculate class
+imbalance from a one-dimensional target array. AIR averages the per-class
+imbalance ratios and is 1 for a balanced dataset; MIR is the majority-class
+count divided by the minority-class count. To use a dataset loaded by
+:func:`~skordinal.datasets.load_dataset`, pass its ``target`` attribute; the
+same functions work with labels from any other source.
+
 .. currentmodule:: skordinal.datasets
 
 .. autosummary::
@@ -33,5 +41,7 @@ prefetches the whole collection, and
    download_tocuco
    list_tocuco_datasets
    make_ordinal_classification
+   compute_dataset_air
+   compute_dataset_mir
    get_data_home
    clear_data_home

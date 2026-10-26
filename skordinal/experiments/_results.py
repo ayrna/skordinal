@@ -19,9 +19,9 @@ from ._base import _check_path_component, _check_resample_id, _check_split
 from ._io import (
     _atomic_dump,
     _atomic_write,
+    _format_split_files,
     _parse_proba_column,
     _sweep_orphaned_temp_files,
-    _write_split_files,
 )
 
 
@@ -185,6 +185,7 @@ class Results:
         row, so a rerun detects the partition as missing and rewrites it.
         Re-saving a partition first deletes its previous seed directory and
         model artefact, so no stale file outlives the row describing it.
+        An invalid result is rejected before anything is deleted.
 
         Parameters
         ----------
@@ -207,9 +208,10 @@ class Results:
             column (``train_true_y``, or ``test_true_y`` when test
             predictions are present), if a true or predicted label is not one
             of ``best_model.classes_``, or if a probability matrix does not
-            hold one row per sample and one column per class. Files already
-            written for a preceding split are left in place; nothing else is
-            recorded for the partition.
+            hold one row per sample and one column per class.
+
+        AttributeError
+            If ``result.best_model`` has no ``classes_``.
 
         OSError
             If a stale artefact cannot be removed or the folder cannot be
@@ -235,16 +237,9 @@ class Results:
 
         base_dir = self._pair_dir(result.classifier_name, result.dataset_name)
         seed_dir, model_path = self._resample_paths(base_dir, result.resample_id)
-        # Clear any temp file left by a prior crash before writing new ones
-        _sweep_orphaned_temp_files(base_dir)
-        # Uncommit first, so a crash cannot leave a row without its files
-        self._uncommit_report_row(base_dir, result.resample_id)
-        # Must run before the writes below recreate what it deletes
-        self._remove_stale_artefacts(base_dir, result.resample_id)
-
+        # Format before deleting anything, so an invalid result keeps the old one
         classes = np.asarray(result.best_model.classes_)
-        _write_split_files(
-            seed_dir,
+        files = _format_split_files(
             "train",
             index=result.train_index,
             true_y=result.train_true_y,
@@ -255,8 +250,7 @@ class Results:
         )
         if result.test_predicted_y is not None:
             assert result.test_true_y is not None
-            _write_split_files(
-                seed_dir,
+            files |= _format_split_files(
                 "test",
                 index=result.test_index,
                 true_y=result.test_true_y,
@@ -265,6 +259,16 @@ class Results:
                 classes=classes,
                 resample_id=result.resample_id,
             )
+
+        # Clear any temp file left by a prior crash before writing new ones
+        _sweep_orphaned_temp_files(base_dir)
+        # Uncommit first, so a crash cannot leave a row without its files
+        self._uncommit_report_row(base_dir, result.resample_id)
+        # Must run before the writes below recreate what it deletes
+        self._remove_stale_artefacts(base_dir, result.resample_id)
+
+        for name, text in files.items():
+            _atomic_write(seed_dir / name, text)
 
         if save_model:
             # Wrap the scaler in so the artefact accepts raw features

@@ -24,6 +24,7 @@ ordinal classifiers.
    SVOR
    ORBoost
    EBANO
+   OPBE
    OrdinalDecomposition
    RegressorWrapper
    CostSensitiveWrapper

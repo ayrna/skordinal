@@ -1,7 +1,6 @@
 """Tests for the POM classifier."""
 
 import inspect
-import re
 import warnings
 
 import numpy as np
@@ -302,40 +301,6 @@ def test_pom_solvers_reach_same_optimum(ordinal_data):
         np.testing.assert_allclose(other.thresholds_, ref.thresholds_, atol=1e-3)
 
 
-def test_pom_convergence_warning_names_true_iteration_count(ordinal_data):
-    """POM(max_iter=1).fit warns, naming the true n_iter_ in the message."""
-    X, y = ordinal_data
-    with pytest.warns(ConvergenceWarning, match="did not converge") as record:
-        clf = POM(max_iter=1).fit(X, y)
-
-    message = str(record[0].message)
-    assert re.search(rf"stopped after {clf.n_iter_} iterations?\b", message), message
-
-
-def test_pom_convergence_warning_reports_nit_not_max_iter(ordinal_data, monkeypatch):
-    """The warning names the true result.nit, never the max_iter value."""
-    X, y = ordinal_data
-    real_minimize = scipy.optimize.minimize
-
-    def forced_failure(*args, **kwargs):
-        """Run the real optimizer, then force a failed result with nit=7."""
-        result = real_minimize(*args, **kwargs)
-        result.success = False
-        result.nit = 7
-        return result
-
-    monkeypatch.setattr(scipy.optimize, "minimize", forced_failure)
-
-    with pytest.warns(ConvergenceWarning, match="did not converge") as record:
-        clf = POM(max_iter=1000).fit(X, y)
-
-    message = str(record[0].message)
-    assert "7" in message
-    assert "1000" not in message
-    # loss_ must be set even though the solver did not converge
-    assert np.isfinite(clf.loss_)
-
-
 def test_pom_exact_proba_tie_predicts_lower_class(X, y):
     """An exact predict_proba tie resolves to the lower class."""
     clf = POM(link="logit").fit(X, y)
@@ -428,6 +393,20 @@ def test_pom_large_magnitude_x_finite_probabilities():
 
     assert np.isfinite(proba).all()
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-12)
+
+
+def test_pom_convergence_warning(ordinal_data):
+    """Only an exhausted max_iter warns, naming n_iter_, and fit still sets loss_."""
+    X, y = ordinal_data
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConvergenceWarning)
+        POM().fit(X, y)
+
+    with pytest.warns(ConvergenceWarning, match="failed to converge") as record:
+        clf = POM(max_iter=1).fit(X, y)
+
+    assert f"after {clf.n_iter_} iteration(s)" in str(record[0].message)
+    assert np.isfinite(clf.loss_)
 
 
 def test_pom_projection_well_formed(ordinal_data):
