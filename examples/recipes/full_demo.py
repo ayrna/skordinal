@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import REDSVM, SVOR, OrdinalDecomposition
+from skordinal.classifiers import REDSVM, SVOR, OrdinalDecomposition, MLPSoftmaxClassifier
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
@@ -67,6 +67,14 @@ RECIPE = {
                 "C": [0.1, 1, 10],
                 "gamma": [0.1, 1, 10],
                 "constraints": ["explicit", "implicit"],
+            },
+        ),
+        "MLPSoftmax": ModelConfig(
+            MLPSoftmaxClassifier(random_state=42),
+            param_grid={
+                "n_hidden_units": [10, 20],
+                "alpha": [0.001, 0.01],
+                "max_iter": [500, 1000],
             },
         ),
     },
