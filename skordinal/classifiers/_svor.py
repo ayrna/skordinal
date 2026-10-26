@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import warnings
 from numbers import Integral, Real
 
 import numpy as np
 from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.validation import check_is_fitted, validate_data
 
@@ -77,6 +79,12 @@ class SVOR(ClassifierMixin, BaseEstimator):
     model_ : dict
         Model state returned by the C backend after fitting.
 
+    Notes
+    -----
+    If the SMO ends with the KKT conditions of a threshold violated by more than
+    ``tol``, or with disordered thresholds, a ``ConvergenceWarning`` is raised and
+    ``fit`` still returns the model, with non-decreasing thresholds.
+
     References
     ----------
     .. [1] P.A. Gutiérrez, M. Pérez-Ortiz, J. Sánchez-Monedero, F. Fernández-Navarro
@@ -140,7 +148,7 @@ class SVOR(ClassifierMixin, BaseEstimator):
         ValueError
             If parameters are invalid or data has wrong format.
         """
-        X, y = validate_data(self, X, y)
+        X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
 
         arg = ""
@@ -167,6 +175,12 @@ class SVOR(ClassifierMixin, BaseEstimator):
             arg, mode, str(self.tol), str(gamma_value), str(self.C)
         )
         self.model_ = svor.fit((y_encoded + 1).tolist(), X.tolist(), options)
+        if self.model_["convergence_failed"]:
+            warnings.warn(
+                self.model_["convergence_message"],
+                ConvergenceWarning,
+                stacklevel=2,
+            )
         # biasj are the backend's ordered cutpoints
         self.thresholds_ = np.asarray(self.model_["biasj"], dtype=np.float64)
         return self
@@ -194,7 +208,7 @@ class SVOR(ClassifierMixin, BaseEstimator):
             If the input is invalid.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         y_pred, _ = svor.predict(X.tolist(), self.model_)
         return self.classes_[np.asarray(y_pred).astype(int) - 1]
 
@@ -225,6 +239,6 @@ class SVOR(ClassifierMixin, BaseEstimator):
             If the input is invalid.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         _, projection = svor.predict(X.tolist(), self.model_)
         return np.asarray(projection, dtype=np.float64)

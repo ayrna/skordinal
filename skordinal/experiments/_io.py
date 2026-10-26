@@ -80,8 +80,7 @@ def _parse_proba_column(series: Iterable[str]) -> np.ndarray:
     return np.vstack([np.fromstring(x.strip("[]"), sep=",") for x in series])
 
 
-def _write_split_files(
-    seed_dir: Path,
+def _format_split_files(
     split: str,
     *,
     index: np.ndarray | None,
@@ -90,8 +89,8 @@ def _write_split_files(
     proba: np.ndarray | None,
     classes: np.ndarray,
     resample_id: int,
-) -> None:
-    """Encode one split's labels and write its per-seed output files."""
+) -> dict[str, str]:
+    """Encode one split's labels and map its per-seed file names to their text."""
     if not np.isin(true_y, classes).all():
         raise ValueError(
             f"'{split}' true labels contain classes unknown to the fitted model."
@@ -114,19 +113,15 @@ def _write_split_files(
             )
         columns["Prediction probabilities"] = _format_proba_column(proba)
     columns["Prediction"] = prediction
-    _atomic_write(
-        seed_dir / f"{split}_predictions.csv",
-        pd.DataFrame(columns).to_csv(index=False),
-    )
 
     cm = confusion_matrix(target, prediction, labels=np.arange(classes.size))
     body = np.array2string(
         cm, separator=", ", threshold=cm.size, max_line_width=sys.maxsize
     )
-    _atomic_write(
-        seed_dir / f"{split}_confusion_matrix.txt",
-        f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
-    )
+    return {
+        f"{split}_predictions.csv": pd.DataFrame(columns).to_csv(index=False),
+        f"{split}_confusion_matrix.txt": f"Seed {resample_id}\n{'=' * 21}\n{body}\n",
+    }
 
 
 def _read_confusion_matrix_size(path: Path) -> int | None:
