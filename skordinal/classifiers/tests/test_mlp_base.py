@@ -75,6 +75,7 @@ def test_fit_warns_when_optimizer_does_not_converge(data, monkeypatch):
                 "nit": 17,
                 "x": np.ones_like(x0),
                 "success": False,
+                "status": 1,
                 "message": "Maximum iterations reached",
             },
         )()
@@ -176,6 +177,7 @@ def test_optimizer_uses_lbfgs_and_unpacks_result(data, monkeypatch):
                 "nit": 4,
                 "x": np.ones_like(x0),
                 "success": True,
+                "status": 0,
                 "message": "CONVERGENCE: dummy result",
             },
         )()

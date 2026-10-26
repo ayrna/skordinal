@@ -1,18 +1,17 @@
 """Proportional Odds Model (POM) for ordinal classification."""
 
 import math
-import warnings
 from numbers import Integral, Real
 
 import numpy as np
 import scipy.optimize
 import scipy.special
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
-from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.utils.validation import check_is_fitted, validate_data
 
+from skordinal.utils._optimize import _check_optimize_result
 from skordinal.utils.extmath import (
     cumproba_to_proba,
     params_to_thresholds,
@@ -249,18 +248,9 @@ class POM(ClassifierMixin, BaseEstimator):
             options=options,
         )
 
-        if not result.success:
-            warnings.warn(
-                f"POM did not converge (stopped after {result.nit} "
-                f"iterations: {result.message}). Consider increasing "
-                "max_iter, setting alpha > 0, or standardising X.",
-                ConvergenceWarning,
-                stacklevel=2,
-            )
-
+        self.n_iter_ = _check_optimize_result(self.solver, result, self.max_iter)
         self.coef_ = result.x[:n_features]
         self.thresholds_ = params_to_thresholds(result.x[n_features:])
-        self.n_iter_ = int(result.nit)
         self.loss_ = float(result.fun)
 
         return self

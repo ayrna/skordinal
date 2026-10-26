@@ -13,10 +13,10 @@ from skordinal.experiments._io import (
     _atomic_write,
     _ensure_parent,
     _format_proba_column,
+    _format_split_files,
     _parse_proba_column,
     _read_confusion_matrix_size,
     _sweep_orphaned_temp_files,
-    _write_split_files,
 )
 
 
@@ -103,11 +103,10 @@ def test_sweep_removes_only_stray_temp_files(tmp_path):
     assert temp_dir.is_dir()
 
 
-def test_confusion_matrix_not_elided_for_many_classes(tmp_path):
-    """A large confusion matrix is written in full, without summarising."""
+def test_confusion_matrix_not_elided_for_many_classes():
+    """A large confusion matrix is formatted in full, without summarising."""
     labels = np.arange(40)
-    _write_split_files(
-        tmp_path,
+    files = _format_split_files(
         "train",
         index=None,
         true_y=labels,
@@ -117,12 +116,7 @@ def test_confusion_matrix_not_elided_for_many_classes(tmp_path):
         resample_id=0,
     )
 
-    body = (
-        (tmp_path / "train_confusion_matrix.txt")
-        .read_text()
-        .split("\n", 2)[2]
-        .rstrip("\n")
-    )
+    body = files["train_confusion_matrix.txt"].split("\n", 2)[2].rstrip("\n")
     assert "..." not in body
     # Check the matrix keeps one physical line per row (no wrapping)
     assert body.count("\n") == 39

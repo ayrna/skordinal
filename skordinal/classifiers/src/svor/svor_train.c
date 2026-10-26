@@ -247,7 +247,8 @@ PyObject* fit(PyObject* self, PyObject* args)
 		Clear_smo_Settings( smosetting ) ;
 		Clear_def_Settings( defsetting ) ;
 
-		PyErr_SetString(PyExc_MemoryError, "The train process failed");
+		if (!PyErr_Occurred())
+			PyErr_SetString(PyExc_RuntimeError, "The train process failed");
 		return NULL;
 	}
 

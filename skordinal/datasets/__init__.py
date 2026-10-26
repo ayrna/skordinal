@@ -6,6 +6,7 @@ from ._base import (
     load_dataset,
     load_partitions,
 )
+from ._imbalance import compute_dataset_air, compute_dataset_mir
 from ._loaders import (
     load_balance_scale,
     load_era,
@@ -23,6 +24,8 @@ from ._tocuco import (
 
 __all__ = [
     "clear_data_home",
+    "compute_dataset_air",
+    "compute_dataset_mir",
     "download_tocuco",
     "fetch_tocuco",
     "fetch_tocuco_partition",

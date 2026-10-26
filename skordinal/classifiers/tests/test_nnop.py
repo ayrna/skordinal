@@ -1,7 +1,6 @@
 """Tests for the NNOP classifier."""
 
 import inspect
-import re
 import warnings
 
 import numpy as np
@@ -320,8 +319,8 @@ def test_nnop_convergence_warning_only_at_insufficient_max_iter(ordinal_data):
         warnings.simplefilter("error", ConvergenceWarning)
         NNOP(random_state=0).fit(X, y)
 
-    with pytest.warns(ConvergenceWarning, match="did not converge") as record:
+    with pytest.warns(ConvergenceWarning, match="failed to converge") as record:
         clf = NNOP(max_iter=1, random_state=0).fit(X, y)
 
     message = str(record[0].message)
-    assert re.search(rf"stopped after {clf.n_iter_} iterations?\b", message), message
+    assert f"after {clf.n_iter_} iteration(s)" in message, message

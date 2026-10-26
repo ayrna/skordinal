@@ -8,6 +8,7 @@ from ._logistic_it import LogisticIT
 from ._mlp_triangular import MLPTriangularClassifier
 from ._nnop import NNOP
 from ._nnpom import NNPOM
+from ._opbe import OPBE
 from ._orboost import ORBoost
 from ._ordinal_decomposition import OrdinalDecomposition
 from ._pom import POM
@@ -24,6 +25,7 @@ __all__ = [
     "MLPTriangularClassifier",
     "NNOP",
     "NNPOM",
+    "OPBE",
     "ORBoost",
     "OrdinalDecomposition",
     "POM",

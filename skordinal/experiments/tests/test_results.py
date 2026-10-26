@@ -5,6 +5,7 @@ import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pytest
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import confusion_matrix
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -83,6 +84,11 @@ def _make_result(
         test_index=test_index,
         scaler=scaler,
     )
+
+
+def _snapshot(root):
+    """Map every file under root to its bytes."""
+    return {path: path.read_bytes() for path in root.rglob("*") if path.is_file()}
 
 
 def _make_pair_csv(base, classifier, dataset, rows):
@@ -337,22 +343,39 @@ def test_save_requires_true_labels(tmp_path):
     ],
 )
 def test_save_rejects_unknown_labels(tmp_path, overrides, match):
-    """A label absent from classes_ raises instead of mis-encoding."""
+    """A label absent from classes_ raises and keeps the saved result."""
     kwargs = dict(
         train_predicted_y=np.array([1, 2, 3]),
         test_predicted_y=np.array([1, 2, 3]),
         train_true_y=np.array([1, 2, 3]),
         test_true_y=np.array([1, 2, 3]),
     )
+    results = Results(tmp_path)
+    results.save(_make_result(**kwargs))
+    saved = _snapshot(tmp_path)
+
     kwargs.update(overrides)
     with pytest.raises(ValueError, match=match):
-        Results(tmp_path).save(_make_result(**kwargs))
-    # Check the failed save left no model behind
-    assert not (tmp_path / "clf" / "ds" / "models" / "0.joblib").exists()
+        results.save(_make_result(**kwargs))
+
+    assert _snapshot(tmp_path) == saved
+
+
+def test_save_rejects_model_without_classes(tmp_path):
+    """A model without classes_ raises and keeps the saved result."""
+    results = Results(tmp_path)
+    results.save(_make_result())
+    saved = _snapshot(tmp_path)
+
+    regressor = LinearRegression().fit([[0.0], [1.0]], [1, 2])
+    with pytest.raises(AttributeError, match="classes_"):
+        results.save(_make_result(estimator=regressor))
+
+    assert _snapshot(tmp_path) == saved
 
 
 def test_save_rejects_misshaped_proba(tmp_path):
-    """A probability matrix without one column per class raises."""
+    """A misshaped probability matrix raises and keeps the saved result."""
     result = ExperimentResult(
         dataset_name="toy",
         classifier_name="clf",
@@ -367,8 +390,14 @@ def test_save_rejects_misshaped_proba(tmp_path):
         train_true_y=np.array([1, 2, 3]),
         train_y_proba=np.full((3, 2), 0.5),
     )
+    results = Results(tmp_path)
+    results.save(_make_result(dataset="toy"), save_model=False)
+    saved = _snapshot(tmp_path)
+
     with pytest.raises(ValueError, match="probabilities have shape"):
-        Results(tmp_path).save(result, save_model=False)
+        results.save(result, save_model=False)
+
+    assert _snapshot(tmp_path) == saved
 
 
 def test_save_no_test_partition(tmp_path):
