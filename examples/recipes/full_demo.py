@@ -5,7 +5,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import REDSVM, SVOR, OrdinalDecomposition
+from skordinal.classifiers import (
+    EBANO,
+    REDSVM,
+    SVOR,
+    LogisticAT,
+    LogisticIT,
+    OrdinalDecomposition,
+)
 from skordinal.experiments import ModelConfig
 
 RECIPE = {
@@ -67,6 +74,19 @@ RECIPE = {
                 "C": [0.1, 1, 10],
                 "gamma": [0.1, 1, 10],
                 "constraints": ["explicit", "implicit"],
+            },
+        ),
+        "EBANO": ModelConfig(
+            EBANO(
+                [("at", LogisticAT()), ("it", LogisticIT())],
+                cv=3,
+                n_iter=200,
+                random_state=0,
+            ),
+            param_grid={
+                "at__alpha": [0.01, 0.1, 1.0],
+                "it__alpha": [0.01, 0.1, 1.0],
+                "n_iter": [200, 300],
             },
         ),
     },
