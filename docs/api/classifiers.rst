@@ -23,6 +23,7 @@ ordinary classifier or regressor.
    REDSVM
    SVOR
    ORBoost
+   OPBE
    OrdinalDecomposition
    RegressorWrapper
    CostSensitiveWrapper

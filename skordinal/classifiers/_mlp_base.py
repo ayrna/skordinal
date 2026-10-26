@@ -1,17 +1,16 @@
 """Base class for Multi-Layer Perceptron classifiers."""
 
-import warnings
 from abc import ABC, abstractmethod
 from numbers import Integral, Real
 
 import numpy as np
 import scipy.optimize
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
-from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils import check_random_state, compute_sample_weight
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.validation import check_is_fitted, validate_data
 
+from skordinal.utils._optimize import _check_optimize_result
 from skordinal.utils.validation import check_ordinal_targets
 
 
@@ -173,16 +172,8 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
             },
         )
 
-        if not res.success:
-            warnings.warn(
-                f"{self.__class__.__name__} failed to converge after "
-                f"{res.nit} iterations. {res.message}",
-                ConvergenceWarning,
-                stacklevel=2,
-            )
-
+        self.n_iter_ = _check_optimize_result("lbfgs", res, self.max_iter)
         self.loss_ = res.fun
-        self.n_iter_ = res.nit
 
         self._unpack_parameters(res.x)
 

@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import warnings
 from numbers import Integral, Real
 
 import numpy as np
-import scipy
+import scipy.optimize
 from numpy.typing import ArrayLike
 from scipy.special import expit
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
-from sklearn.exceptions import ConvergenceWarning
 from sklearn.utils import check_random_state
 from sklearn.utils._param_validation import Interval
 from sklearn.utils.validation import check_is_fitted, validate_data
 
+from skordinal.utils._optimize import _check_optimize_result
 from skordinal.utils.extmath import (
     cumproba_to_proba,
     params_to_thresholds,
@@ -164,7 +163,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             If parameters are invalid or data has wrong format.
 
         """
-        X, y = validate_data(self, X, y)
+        X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
         rng = check_random_state(self.random_state)
 
@@ -198,8 +197,8 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             axis=0,
         )[:, np.newaxis]
 
-        results_optimization = scipy.optimize.fmin_l_bfgs_b(
-            func=self._objective,
+        result = scipy.optimize.minimize(
+            fun=self._objective,
             x0=initial_nn_params.ravel(),
             args=(
                 self.n_features_in_,
@@ -209,27 +208,15 @@ class NNPOM(ClassifierMixin, BaseEstimator):
                 Y,
                 self.alpha,
             ),
-            fprime=None,
-            factr=1e3,
-            maxiter=self.max_iter,
+            method="L-BFGS-B",
+            jac=True,
+            # Keep the factr=1e3 of fmin_l_bfgs_b in 0.2.0, so fits stay the same
+            options={"maxiter": self.max_iter, "ftol": 1e3 * np.finfo(float).eps},
         )
 
-        nn_params = results_optimization[0]
-        self.loss_ = float(results_optimization[1])
-        self.n_iter_ = int(results_optimization[2].get("nit", 0))
-
-        if results_optimization[2].get("warnflag", 0) != 0:
-            task = results_optimization[2].get("task", "")
-            if isinstance(task, bytes):
-                task = task.decode()
-            warnings.warn(
-                f"NNPOM did not converge (stopped after {self.n_iter_} "
-                f"iterations: {task}). Consider increasing max_iter, "
-                "adjusting the regularization strength alpha, or "
-                "standardizing X.",
-                ConvergenceWarning,
-                stacklevel=2,
-            )
+        self.n_iter_ = _check_optimize_result("lbfgs", result, self.max_iter)
+        nn_params = result.x
+        self.loss_ = float(result.fun)
 
         # Unpack the parameters
         theta1, theta2, thresholds_param = self._unpack_parameters(
@@ -270,7 +257,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         proba = cumproba_to_proba(self._cumproba(X), repair=True)
         return self.classes_[proba.argmax(axis=1)]
 
@@ -303,7 +290,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return repair_cumproba(self._cumproba(X))
 
     def predict_proba(self, X: ArrayLike) -> np.ndarray:
@@ -332,7 +319,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return cumproba_to_proba(self._cumproba(X), repair=True)
 
     def predict_projection(self, X: ArrayLike) -> np.ndarray:
@@ -358,7 +345,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             If the model is not fitted yet.
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         return self._project(X)
 
     def _project(self, X: np.ndarray) -> np.ndarray:

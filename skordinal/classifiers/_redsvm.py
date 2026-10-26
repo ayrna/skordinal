@@ -163,7 +163,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
             If parameters are invalid or data has wrong format.
 
         """
-        X, y = validate_data(self, X, y)
+        X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
 
         # Resolve gamma to a scalar before passing it to the C++ backend
@@ -231,7 +231,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         y_pred, _ = svm.predict(X.tolist(), self.model_)
         return self.classes_[np.asarray(y_pred).astype(int) - 1]
 
@@ -263,6 +263,6 @@ class REDSVM(ClassifierMixin, BaseEstimator):
 
         """
         check_is_fitted(self)
-        X = validate_data(self, X, reset=False)
+        X = validate_data(self, X, reset=False, dtype=np.float64)
         _, projection = svm.predict(X.tolist(), self.model_)
         return np.asarray(projection, dtype=np.float64)
