@@ -137,7 +137,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : ndarray or sparse matrix of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         y : ndarray of shape (n_samples,)
@@ -232,7 +232,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         Returns
@@ -274,7 +274,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         Returns
@@ -305,7 +305,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         Returns
@@ -447,7 +447,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
         n_classes : int
             Number of classes.
 
-        X : {array-like, sparse matrix}, shape (n_samples, n_features)
+        X : ndarray of shape (n_samples, n_features)
             Training patterns array, where n_samples is the number of samples and
             n_features is the number of features
 
