@@ -16,6 +16,13 @@ Progress bars during a benchmark run need one optional extra::
 
    pip install "skordinal[progress]"
 
+``OrdinalXGBClassifier`` needs another, with the XGBoost engine::
+
+   pip install "skordinal[xgboost]"
+
+On macOS, XGBoost also needs the OpenMP runtime, installed with
+``brew install libomp``.
+
 For a development install, in editable mode and with every optional
 dependency::
 
