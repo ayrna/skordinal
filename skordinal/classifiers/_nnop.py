@@ -48,7 +48,8 @@ class NNOP(ClassifierMixin, BaseEstimator):
         number of iterations.
 
     alpha : float, default=0.01
-        Regularization parameter.
+        Strength of the L2 regularization term. The L2 regularization term
+        is divided by the sample size when added to the loss.
 
     random_state : int, RandomState instance, default=None
         Determines random number generation for weight initialization.
@@ -113,7 +114,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
         "epsilon_init": [Interval(Real, 0.0, None, closed="neither")],
         "n_hidden": [Interval(Integral, 1, None, closed="left")],
         "max_iter": [Interval(Integral, 1, None, closed="left")],
-        "alpha": [Interval(Real, 0.0, None, closed="neither")],
+        "alpha": [Interval(Real, 0.0, None, closed="left")],
         "random_state": ["random_state"],
     }
 
@@ -137,7 +138,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : ndarray or sparse matrix of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         y : ndarray of shape (n_samples,)
@@ -232,7 +233,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         Returns
@@ -274,7 +275,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         Returns
@@ -305,7 +306,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
 
         Parameters
         ----------
-        X : {array-like, sparse matrix} of shape (n_samples, n_features)
+        X : array-like of shape (n_samples, n_features)
             The input data.
 
         Returns
@@ -447,7 +448,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
         n_classes : int
             Number of classes.
 
-        X : {array-like, sparse matrix}, shape (n_samples, n_features)
+        X : ndarray of shape (n_samples, n_features)
             Training patterns array, where n_samples is the number of samples and
             n_features is the number of features
 

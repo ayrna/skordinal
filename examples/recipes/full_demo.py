@@ -8,6 +8,7 @@ from sklearn.svm import SVC
 from skordinal.classifiers import (
     REDSVM,
     SVOR,
+    MLPCLMClassifier,
     MLPTriangularClassifier,
     OrdinalDecomposition,
 )
@@ -72,6 +73,15 @@ RECIPE = {
                 "C": [0.1, 1, 10],
                 "gamma": [0.1, 1, 10],
                 "constraints": ["explicit", "implicit"],
+            },
+        ),
+        "MLP-CLM": ModelConfig(
+            MLPCLMClassifier(random_state=42),
+            param_grid={
+                "n_hidden_layers": [1, 2],
+                "n_hidden_units": [10, 20],
+                "alpha": [0.001, 0.01],
+                "max_iter": [500, 1000, 2000],
             },
         ),
         "MLPTriangular": ModelConfig(
