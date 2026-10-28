@@ -55,7 +55,8 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         number of iterations.
 
     alpha : float, default=0.01
-        Regularization parameter.
+        Strength of the L2 regularization term. The L2 regularization term
+        is divided by the sample size when added to the loss.
 
     random_state : int, RandomState instance, default=None
         Determines random number generation for weight initialization.
@@ -122,7 +123,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
         "epsilon_init": [Interval(Real, 0.0, None, closed="neither")],
         "n_hidden": [Interval(Integral, 1, None, closed="left")],
         "max_iter": [Interval(Integral, 1, None, closed="left")],
-        "alpha": [Interval(Real, 0.0, None, closed="neither")],
+        "alpha": [Interval(Real, 0.0, None, closed="left")],
         "random_state": ["random_state"],
     }
 
