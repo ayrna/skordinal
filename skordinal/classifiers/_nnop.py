@@ -27,13 +27,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
     "n_hidden" neurons and one output layer with as many neurons as the number of
     classes minus one.
 
-    The learning is based on iRProp+ algorithm and the implementation provided by
-    Roberto Calandra in his toolbox Rprop Toolbox for MATLAB:
-    http://www.ias.informatik.tu-darmstadt.de/Research/RpropToolbox
-
-    The model is adjusted by minimizing mean squared error. A regularization parameter
-    ``alpha`` is included based on L2, and the number of iterations is specified by the
-    "iterations" parameter.
+    This model optimizes the squared error using L-BFGS-B.
 
     Parameters
     ----------
