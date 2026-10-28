@@ -28,3 +28,4 @@ ordinary classifier or regressor.
    RegressorWrapper
    CostSensitiveWrapper
    MLPCLMClassifier
+   MLPTriangularClassifier
