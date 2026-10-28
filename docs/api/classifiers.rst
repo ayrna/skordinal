@@ -27,3 +27,4 @@ ordinary classifier or regressor.
    OrdinalDecomposition
    RegressorWrapper
    CostSensitiveWrapper
+   MLPCLMClassifier
