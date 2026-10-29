@@ -44,7 +44,7 @@ print(f"Train: {X_train.shape},  Test: {X_test.shape}")
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
 
-from skordinal.classifiers import (
+from skordinal.reduction import (
     CostSensitiveWrapper,
     OrdinalDecomposition,
     RegressorWrapper,

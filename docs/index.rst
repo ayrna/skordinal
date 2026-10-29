@@ -21,19 +21,19 @@ At a glance
 -----------
 
 **Thirteen ordinal classifiers**: threshold models
-(:class:`~skordinal.classifiers.POM`,
-:class:`~skordinal.classifiers.LogisticAT`,
-:class:`~skordinal.classifiers.LogisticIT`), neural networks
-(:class:`~skordinal.classifiers.NNPOM`,
-:class:`~skordinal.classifiers.NNOP`,
-:class:`~skordinal.classifiers.ELMOP`), kernel discriminants
-(:class:`~skordinal.classifiers.KDLOR`), support vector machines
-(:class:`~skordinal.classifiers.REDSVM`,
-:class:`~skordinal.classifiers.SVOR`), boosting
-(:class:`~skordinal.classifiers.ORBoost`) and three meta-estimators
-(:class:`~skordinal.classifiers.OrdinalDecomposition`,
-:class:`~skordinal.classifiers.RegressorWrapper`,
-:class:`~skordinal.classifiers.CostSensitiveWrapper`) that build an ordinal
+(:class:`~skordinal.linear_model.POM`,
+:class:`~skordinal.linear_model.LogisticAT`,
+:class:`~skordinal.linear_model.LogisticIT`), neural networks
+(:class:`~skordinal.neural_network.NNPOM`,
+:class:`~skordinal.neural_network.NNOP`,
+:class:`~skordinal.neural_network.ELMOP`), kernel discriminants
+(:class:`~skordinal.discriminant_analysis.KDLOR`), support vector machines
+(:class:`~skordinal.svm.REDSVM`,
+:class:`~skordinal.svm.SVOR`), boosting
+(:class:`~skordinal.ensemble.ORBoost`) and three meta-estimators
+(:class:`~skordinal.reduction.OrdinalDecomposition`,
+:class:`~skordinal.reduction.RegressorWrapper`,
+:class:`~skordinal.reduction.CostSensitiveWrapper`) that build an ordinal
 classifier out of an ordinary one.
 
 **Fourteen metrics** spanning the ways an ordinal prediction can be judged:

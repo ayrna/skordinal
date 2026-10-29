@@ -40,7 +40,7 @@ print(f"Train: {X_train.shape},  Test: {X_test.shape}")
 
 from sklearn.linear_model import LogisticRegression
 
-from skordinal.classifiers import LogisticAT
+from skordinal.linear_model import LogisticAT
 
 nominal = LogisticRegression(max_iter=1000).fit(X_train, y_train)
 ordinal = LogisticAT().fit(X_train, y_train)

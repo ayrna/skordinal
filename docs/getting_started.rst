@@ -32,7 +32,7 @@ classifier, and evaluates it with two ordinal metrics::
    from sklearn.model_selection import train_test_split
 
    from skordinal.datasets import load_era
-   from skordinal.classifiers import POM
+   from skordinal.linear_model import POM
    from skordinal.metrics import mean_absolute_error, weighted_kappa
 
    X, y = load_era(return_X_y=True)
