@@ -5,6 +5,8 @@ from ._elmop import ELMOP
 from ._kdlor import KDLOR
 from ._logistic_at import LogisticAT
 from ._logistic_it import LogisticIT
+from ._mlp_clm import MLPCLMClassifier
+from ._mlp_triangular import MLPTriangularClassifier
 from ._nnop import NNOP
 from ._nnpom import NNPOM
 from ._opbe import OPBE
@@ -21,6 +23,8 @@ __all__ = [
     "KDLOR",
     "LogisticAT",
     "LogisticIT",
+    "MLPCLMClassifier",
+    "MLPTriangularClassifier",
     "NNOP",
     "NNPOM",
     "OPBE",
