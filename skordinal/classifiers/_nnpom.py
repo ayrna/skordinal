@@ -34,13 +34,7 @@ class NNPOM(ClassifierMixin, BaseEstimator):
     but as many thresholds as the number of classes minus one. The standard POM model
     is applied in this neuron to have probabilistic outputs.
 
-    The learning is based on iRProp+ algorithm and the implementation provided by
-    Roberto Calandra in his toolbox Rprop Toolbox for MATLAB:
-    http://www.ias.informatik.tu-darmstadt.de/Research/RpropToolbox
-
-    The model is adjusted by minimizing cross entropy. A regularization parameter
-    ``alpha`` is included based on L2, and the number of iterations is specified
-    by the "max_iter" parameter.
+    This model optimizes the log-loss function using L-BFGS-B.
 
     Parameters
     ----------
