@@ -195,7 +195,8 @@ class BaseLoss(ABC):
 
         It deviates from scikit-learn's ``fit_intercept_only`` in two ways.
         ``n_classes`` is explicit, because a loss holds no number of classes, and
-        the result is the ``n_classes - 1`` thresholds instead of one intercept.
+        the result is the ``n_classes - 1`` thresholds, not a scalar or one
+        intercept per class.
         A class without mass counts as half a sample of the mean positive weight,
         so the result is finite and depends on the weights only through their
         ratios, and with every class present it is the exact optimum.
@@ -214,7 +215,7 @@ class BaseLoss(ABC):
         Returns
         -------
         thresholds : ndarray of shape (n_classes - 1,)
-            Ordered optimal thresholds.
+            Optimal thresholds.
         """
 
 
@@ -242,7 +243,7 @@ def _pav(log_num, log_den):
 
 
 class _BaseThresholdLoss(BaseLoss):
-    """The margin, probabilities and initial thresholds both threshold losses share."""
+    """The margin, probabilities and intercept-only fit of both threshold losses."""
 
     def __init__(self, margin: str | BaseMargin = "logistic"):
         self.margin = get_margin(margin)
@@ -271,8 +272,8 @@ class _BaseThresholdLoss(BaseLoss):
         Each threshold is ``margin.optimal_threshold`` of the log-ratio of the
         class masses on its two sides, ordered with pool adjacent violators.
         Pooled thresholds are tied, and a tie is a zero parameter with zero
-        gradient in ``params_to_thresholds``, so a solver started there
-        separates the ties first.
+        gradient in ``params_to_thresholds``, which no solver moves, so a
+        consumer with that parametrisation separates the ties before it starts.
         """
         counts = np.bincount(y_true, sample_weight, n_classes).astype(np.float64)
         n_weighted = (
