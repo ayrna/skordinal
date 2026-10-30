@@ -10,7 +10,8 @@ full multi-classifier × multi-dataset benchmark.
   with an optional hyperparameter grid.  It is immutable and carries no
   evaluation protocol::
 
-      from skordinal.classifiers import POM, SVOR
+      from skordinal.linear_model import POM
+      from skordinal.svm import SVOR
       from skordinal.experiments import ModelConfig
 
       pom = ModelConfig(POM())

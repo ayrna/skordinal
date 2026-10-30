@@ -43,21 +43,16 @@ print(f"Train: {X_train.shape},  Test: {X_test.shape}")
 # defaults and a fixed seed, except that ``NNPOM`` gets enough
 # iterations to converge.
 
-from skordinal.classifiers import (
-    ELMOP,
-    KDLOR,
-    NNOP,
-    NNPOM,
-    POM,
-    REDSVM,
-    SVOR,
+from skordinal.discriminant_analysis import KDLOR
+from skordinal.ensemble import ORBoost
+from skordinal.linear_model import POM, LogisticAT, LogisticIT
+from skordinal.neural_network import ELMOP, NNOP, NNPOM
+from skordinal.reduction import (
     CostSensitiveWrapper,
-    LogisticAT,
-    LogisticIT,
-    ORBoost,
     OrdinalDecomposition,
     RegressorWrapper,
 )
+from skordinal.svm import REDSVM, SVOR
 
 classifiers = {
     "POM": POM(),

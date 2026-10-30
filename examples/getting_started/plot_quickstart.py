@@ -39,8 +39,8 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-from skordinal.classifiers import SVOR
 from skordinal.metrics import get_ordinal_scorer
+from skordinal.svm import SVOR
 
 pipeline = Pipeline([("scaler", StandardScaler()), ("classifier", SVOR())])
 

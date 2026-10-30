@@ -1,7 +1,8 @@
 """EBANO soft-voting ensemble on balance_scale."""
 
-from skordinal.classifiers import EBANO, LogisticAT, LogisticIT
+from skordinal.ensemble import EBANO
 from skordinal.experiments import ModelConfig
+from skordinal.linear_model import LogisticAT, LogisticIT
 
 RECIPE = {
     "datasets": ["balance_scale"],

@@ -39,7 +39,7 @@ print(f"Class counts: {np.bincount(y).tolist()}")
 # frequency of its class so the small class pulls on the fit as hard as
 # the large ones.
 
-from skordinal.classifiers import LogisticAT
+from skordinal.linear_model import LogisticAT
 
 models = {
     "default": LogisticAT(),

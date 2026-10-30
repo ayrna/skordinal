@@ -2,8 +2,8 @@
 
 from sklearn.preprocessing import StandardScaler
 
-from skordinal.classifiers import NNPOM
 from skordinal.experiments import ModelConfig
+from skordinal.neural_network import NNPOM
 
 RECIPE = {
     "datasets": ["balance_scale"],

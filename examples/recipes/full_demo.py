@@ -5,15 +5,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import (
-    EBANO,
-    REDSVM,
-    SVOR,
-    LogisticAT,
-    LogisticIT,
-    OrdinalDecomposition,
-)
+from skordinal.ensemble import EBANO
 from skordinal.experiments import ModelConfig
+from skordinal.linear_model import LogisticAT, LogisticIT
+from skordinal.neural_network import MLPCLMClassifier, MLPTriangularClassifier
+from skordinal.reduction import OrdinalDecomposition
+from skordinal.svm import REDSVM, SVOR
 
 RECIPE = {
     "datasets": ["balance_scale", "era", "swd"],
@@ -87,6 +84,27 @@ RECIPE = {
                 "at__alpha": [0.01, 0.1, 1.0],
                 "it__alpha": [0.01, 0.1, 1.0],
                 "n_iter": [200, 300],
+            },
+        ),
+        "MLP-CLM": ModelConfig(
+            MLPCLMClassifier(random_state=42),
+            param_grid={
+                "n_hidden_layers": [1, 2],
+                "n_hidden_units": [10, 20],
+                "alpha": [0.001, 0.01],
+                "max_iter": [500, 1000, 2000],
+            },
+        ),
+        "MLPTriangular": ModelConfig(
+            MLPTriangularClassifier(random_state=42),
+            param_grid={
+                "activation": ["relu", "tanh"],
+                "n_hidden_layers": [1, 2],
+                "n_hidden_units": [10, 20],
+                "alpha2": [0.01, 0.05, 0.1],
+                "eta": [0.5, 1.0],
+                "alpha": [0.001, 0.01],
+                "max_iter": [500, 1000, 2000],
             },
         ),
     },

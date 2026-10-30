@@ -2,8 +2,8 @@
 
 from sklearn.preprocessing import StandardScaler
 
-from skordinal.classifiers import SVOR
 from skordinal.experiments import ModelConfig
+from skordinal.svm import SVOR
 
 RECIPE = {
     "datasets": ["balance_scale"],
