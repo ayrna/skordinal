@@ -3,7 +3,8 @@ Neural networks
 
 Neural networks for ordinal targets, with a cumulative link output (NNPOM,
 MLPCLMClassifier), ordinal coded outputs (NNOP, ELMOP) or a softmax output
-trained with soft ordinal labels (MLPTriangularClassifier).
+trained on the labels (MLPSoftmaxClassifier) or on soft ordinal labels
+(MLPTriangularClassifier).
 
 .. currentmodule:: skordinal.neural_network
 
@@ -14,4 +15,5 @@ trained with soft ordinal labels (MLPTriangularClassifier).
    NNOP
    ELMOP
    MLPCLMClassifier
+   MLPSoftmaxClassifier
    MLPTriangularClassifier
