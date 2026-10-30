@@ -2,8 +2,8 @@
 
 from sklearn.preprocessing import StandardScaler
 
-from skordinal.classifiers import MLPSoftmaxClassifier
 from skordinal.experiments import ModelConfig
+from skordinal.neural_network import MLPSoftmaxClassifier
 
 RECIPE = {
     "datasets": ["balance_scale"],

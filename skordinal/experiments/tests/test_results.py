@@ -11,7 +11,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import LogisticAT
 from skordinal.experiments import (
     Experiment,
     ExperimentResult,
@@ -19,6 +18,7 @@ from skordinal.experiments import (
     Results,
 )
 from skordinal.experiments._io import _TEMP_PREFIX
+from skordinal.linear_model import LogisticAT
 from skordinal.metrics import accuracy_score, mean_absolute_error
 
 

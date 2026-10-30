@@ -67,9 +67,9 @@ jobs:
           CIBW_TEST_COMMAND: >
             python -c "import skordinal;
             print(f'skordinal {skordinal.__version__} imported');
-            import skordinal.classifiers._libsvmrank;
-            import skordinal.classifiers._libsvor;
-            import skordinal.classifiers._orensemble;
+            import skordinal.svm._libsvmrank;
+            import skordinal.svm._libsvor;
+            import skordinal.ensemble._orensemble;
             print('C extensions loaded')"
       - uses: actions/upload-artifact@v7
         with:

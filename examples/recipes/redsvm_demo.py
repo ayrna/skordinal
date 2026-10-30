@@ -2,8 +2,8 @@
 
 from sklearn.preprocessing import StandardScaler
 
-from skordinal.classifiers import REDSVM
 from skordinal.experiments import ModelConfig
+from skordinal.svm import REDSVM
 
 RECIPE = {
     "datasets": ["balance_scale"],

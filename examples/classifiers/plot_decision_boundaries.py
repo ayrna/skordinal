@@ -35,7 +35,9 @@ X = StandardScaler().fit_transform(X)
 
 from sklearn.neighbors import KNeighborsClassifier
 
-from skordinal.classifiers import KDLOR, NNPOM, POM, LogisticAT
+from skordinal.discriminant_analysis import KDLOR
+from skordinal.linear_model import POM, LogisticAT
+from skordinal.neural_network import NNPOM
 
 classifiers = {
     "POM": POM(),
