@@ -4,8 +4,8 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import OrdinalDecomposition
 from skordinal.experiments import ModelConfig
+from skordinal.reduction import OrdinalDecomposition
 
 RECIPE = {
     "datasets": ["balance_scale"],

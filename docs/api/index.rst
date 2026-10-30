@@ -4,7 +4,12 @@ API Reference
 .. toctree::
    :maxdepth: 2
 
-   classifiers
+   linear_model
+   svm
+   discriminant_analysis
+   neural_network
+   ensemble
+   reduction
    metrics
    datasets
    experiments

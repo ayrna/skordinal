@@ -1,7 +1,7 @@
 """MLP Triangular ordinal neural network classifier on balance_scale."""
 
-from skordinal.classifiers import MLPTriangularClassifier
 from skordinal.experiments import ModelConfig
+from skordinal.neural_network import MLPTriangularClassifier
 
 RECIPE = {
     "datasets": ["balance_scale"],

@@ -36,7 +36,7 @@ print(f"Shape: {X.shape},  classes: {sorted(set(y.tolist()))}")
 
 import numpy as np
 
-from skordinal.classifiers import LogisticAT
+from skordinal.linear_model import LogisticAT
 
 clf = LogisticAT()
 clf.fit(X, y)

@@ -2,7 +2,19 @@
 
 import logging
 
-__all__: list[str] = []
+__all__ = [
+    "datasets",
+    "discriminant_analysis",
+    "ensemble",
+    "experiments",
+    "linear_model",
+    "metrics",
+    "neural_network",
+    "preprocessing",
+    "reduction",
+    "svm",
+    "utils",
+]
 __version__ = "0.2.0"
 
 # Library convention: emit records, never configure handlers for the app

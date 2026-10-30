@@ -22,8 +22,9 @@ import tempfile
 
 from sklearn.preprocessing import StandardScaler
 
-from skordinal.classifiers import POM, SVOR
 from skordinal.experiments import Benchmark, ModelConfig
+from skordinal.linear_model import POM
+from skordinal.svm import SVOR
 
 results_path = tempfile.mkdtemp()
 

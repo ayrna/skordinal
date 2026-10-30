@@ -5,14 +5,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-from skordinal.classifiers import (
-    REDSVM,
-    SVOR,
-    MLPCLMClassifier,
-    MLPTriangularClassifier,
-    OrdinalDecomposition,
-)
 from skordinal.experiments import ModelConfig
+from skordinal.neural_network import MLPCLMClassifier, MLPTriangularClassifier
+from skordinal.reduction import OrdinalDecomposition
+from skordinal.svm import REDSVM, SVOR
 
 RECIPE = {
     "datasets": ["balance_scale", "era", "swd"],

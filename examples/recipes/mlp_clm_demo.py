@@ -1,7 +1,7 @@
 """MLP-CLM ordinal neural network classifier on balance_scale."""
 
-from skordinal.classifiers import MLPCLMClassifier
 from skordinal.experiments import ModelConfig
+from skordinal.neural_network import MLPCLMClassifier
 
 RECIPE = {
     "datasets": ["balance_scale"],
