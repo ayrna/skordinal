@@ -11,3 +11,4 @@ fixed subproblem and is documented with the reductions.
    :toctree: generated/
 
    ORBoost
+   EBANO

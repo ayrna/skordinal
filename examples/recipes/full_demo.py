@@ -5,8 +5,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
+from skordinal.ensemble import EBANO
 from skordinal.experiments import ModelConfig
-from skordinal.neural_network import MLPCLMClassifier, MLPTriangularClassifier
+from skordinal.linear_model import LogisticAT, LogisticIT
+from skordinal.neural_network import (
+    MLPCLMClassifier,
+    MLPSoftmaxClassifier,
+    MLPTriangularClassifier,
+)
 from skordinal.reduction import OrdinalDecomposition
 from skordinal.svm import REDSVM, SVOR
 
@@ -69,6 +75,27 @@ RECIPE = {
                 "C": [0.1, 1, 10],
                 "gamma": [0.1, 1, 10],
                 "constraints": ["explicit", "implicit"],
+            },
+        ),
+        "MLPSoftmax": ModelConfig(
+            MLPSoftmaxClassifier(random_state=42),
+            param_grid={
+                "n_hidden_units": [10, 20],
+                "alpha": [0.001, 0.01],
+                "max_iter": [500, 1000],
+            },
+        ),
+        "EBANO": ModelConfig(
+            EBANO(
+                [("at", LogisticAT()), ("it", LogisticIT())],
+                cv=3,
+                n_iter=200,
+                random_state=0,
+            ),
+            param_grid={
+                "at__alpha": [0.01, 0.1, 1.0],
+                "it__alpha": [0.01, 0.1, 1.0],
+                "n_iter": [200, 300],
             },
         ),
         "MLP-CLM": ModelConfig(
