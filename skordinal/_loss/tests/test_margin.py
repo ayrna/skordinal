@@ -5,9 +5,11 @@ import warnings
 
 import numpy as np
 import pytest
+import scipy.optimize
 from numpy.testing import assert_allclose
 
 from skordinal._loss import BaseMargin, ExponentialMargin, LogisticMargin, get_margin
+from skordinal._loss.margin import _MARGINS
 
 FORMULAS = {
     "logistic": {
@@ -97,3 +99,21 @@ def test_margin_contract():
     """A margin cannot be instantiated without name and optimal_threshold."""
     with pytest.raises(TypeError, match=r"name'?, '?optimal_threshold"):
         type("Hinge", (BaseMargin,), {})()
+
+
+@pytest.mark.parametrize("name", list(_MARGINS))
+def test_optimal_threshold(name):
+    """optimal_threshold minimises the block term and grows with the log-ratio."""
+    margin = get_margin(name)
+    log_ratio = np.linspace(-6.0, 6.0, 13)
+
+    def block_term(t, num):
+        """Return the block term of a threshold with mass ``num`` below and 1 above."""
+        return num * margin.phi(t) + margin.phi(-t)
+
+    threshold = margin.optimal_threshold(log_ratio)
+
+    assert np.all(np.diff(threshold) >= 0.0)
+    for num, expected in zip(np.exp(log_ratio), threshold):
+        result = scipy.optimize.minimize_scalar(block_term, args=(num,))
+        assert_allclose(expected, result.x, atol=1e-6)
