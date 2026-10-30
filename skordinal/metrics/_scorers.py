@@ -8,7 +8,7 @@ from sklearn.utils._param_validation import validate_params
 from ._metrics import (
     accuracy_off1_score,
     average_mean_absolute_error,
-    geometric_mean,
+    geometric_mean_score,
     gmsec,
     kendalls_tau,
     maximum_mean_absolute_error,
@@ -34,7 +34,7 @@ _SCORERS = {
     ),
     "accuracy_score": make_scorer(accuracy_score),
     "accuracy_off1_score": make_scorer(accuracy_off1_score),
-    "geometric_mean": make_scorer(geometric_mean),
+    "geometric_mean_score": make_scorer(geometric_mean_score),
     "gmsec": make_scorer(gmsec),
     "mean_extreme_sensitivity": make_scorer(mean_extreme_sensitivity),
     "kendalls_tau": make_scorer(kendalls_tau),

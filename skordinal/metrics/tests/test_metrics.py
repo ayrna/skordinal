@@ -11,7 +11,7 @@ from skordinal.metrics import (
     accuracy_off1_score,
     accuracy_score,
     average_mean_absolute_error,
-    geometric_mean,
+    geometric_mean_score,
     gmsec,
     kendalls_tau,
     maximum_mean_absolute_error,
@@ -34,7 +34,7 @@ from skordinal.metrics._metrics import (
 _WEIGHTED_METRICS = [
     accuracy_off1_score,
     average_mean_absolute_error,
-    geometric_mean,
+    geometric_mean_score,
     gmsec,
     maximum_mean_absolute_error,
     mean_extreme_sensitivity,
@@ -392,19 +392,19 @@ def test_average_mean_absolute_error_pred_only_class_excluded():
     )
 
 
-def test_geometric_mean():
-    """geometric_mean returns the geometric mean of per-class sensitivities."""
+def test_geometric_mean_score():
+    """geometric_mean_score returns the geometric mean of per-class sensitivities."""
     y_true = np.array([1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3])
     y_pred = np.array([1, 3, 3, 1, 2, 3, 1, 2, 2, 1, 3, 1, 1, 2, 2, 2, 3, 3, 1, 3])
-    npt.assert_almost_equal(geometric_mean(y_true, y_pred), 0.7991, decimal=4)
+    npt.assert_almost_equal(geometric_mean_score(y_true, y_pred), 0.7991, decimal=4)
 
 
-def test_geometric_mean_zero_support_class_excluded():
+def test_geometric_mean_score_zero_support_class_excluded():
     """A class whose whole support is zero-weighted leaves the geometric mean."""
     y_true = np.array([0, 0, 1, 1, 2, 2])
     y_pred = np.array([0, 0, 1, 1, 2, 2])
     w = np.array([0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
-    npt.assert_almost_equal(geometric_mean(y_true, y_pred, sample_weight=w), 1.0)
+    npt.assert_almost_equal(geometric_mean_score(y_true, y_pred, sample_weight=w), 1.0)
 
 
 @pytest.mark.parametrize(
@@ -478,8 +478,13 @@ def test_minimum_sensitivity(y_true, y_pred, expected):
 
 @pytest.mark.parametrize(
     "fn",
-    [minimum_sensitivity, gmsec, mean_extreme_sensitivity, geometric_mean],
-    ids=["minimum_sensitivity", "gmsec", "mean_extreme_sensitivity", "geometric_mean"],
+    [minimum_sensitivity, gmsec, mean_extreme_sensitivity, geometric_mean_score],
+    ids=[
+        "minimum_sensitivity",
+        "gmsec",
+        "mean_extreme_sensitivity",
+        "geometric_mean_score",
+    ],
 )
 def test_sensitivity_metrics_ignore_pred_only_class(fn):
     """A class predicted but never true does not enter a recall-based metric."""
