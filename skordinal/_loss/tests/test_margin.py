@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_allclose
 
-from skordinal._loss import ExponentialMargin, LogisticMargin, Margin, get_margin
+from skordinal._loss import BaseMargin, ExponentialMargin, LogisticMargin, get_margin
 
 FORMULAS = {
     "logistic": {
@@ -15,14 +15,14 @@ FORMULAS = {
         "dphi": lambda z: -1.0 / (1.0 + math.exp(z)),
         "d2phi": lambda z: 1.0 / ((1.0 + math.exp(-z)) * (1.0 + math.exp(z))),
         "cumproba": lambda eta: 1.0 / (1.0 + math.exp(-eta)),
-        "log_odds_scale": 1.0,
+        "optimal_threshold": lambda d: d,
     },
     "exponential": {
         "phi": lambda z: math.exp(-z),
         "dphi": lambda z: -math.exp(-z),
         "d2phi": lambda z: math.exp(-z),
         "cumproba": lambda eta: 1.0 / (1.0 + math.exp(-2.0 * eta)),
-        "log_odds_scale": 0.5,
+        "optimal_threshold": lambda d: d / 2.0,
     },
 }
 
@@ -39,12 +39,12 @@ def test_margin(name):
     dphi, d2phi = margin.derivatives(z)
     grad, hess = margin.gradient_hessian(z, above)
 
-    assert margin.log_odds_scale == formulas["log_odds_scale"]
     for method, value in [
         ("phi", margin.phi(z)),
         ("dphi", dphi),
         ("d2phi", d2phi),
         ("cumproba", margin.cumproba(z)),
+        ("optimal_threshold", margin.optimal_threshold(z)),
     ]:
         assert_allclose(value, np.vectorize(formulas[method])(z), rtol=1e-12)
     fd_dphi = (margin.phi(z + eps) - margin.phi(z - eps)) / (2 * eps)
@@ -94,6 +94,6 @@ def test_get_margin():
 
 
 def test_margin_contract():
-    """A margin cannot be instantiated without name and log_odds_scale."""
-    with pytest.raises(TypeError, match=r"log_odds_scale'?, '?name"):
-        type("Hinge", (Margin,), {})()
+    """A margin cannot be instantiated without name and optimal_threshold."""
+    with pytest.raises(TypeError, match=r"name'?, '?optimal_threshold"):
+        type("Hinge", (BaseMargin,), {})()

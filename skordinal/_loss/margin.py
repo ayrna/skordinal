@@ -8,27 +8,21 @@ import numpy as np
 from scipy.special import expit
 
 
-class Margin(ABC):
+class BaseMargin(ABC):
     """Penalty ``phi`` of a signed margin ``z = s * eta``.
 
     ``s = +1`` when the true class lies at or below the threshold and ``-1``
     otherwise, so a margin on the right side of its threshold is positive and
     ``phi`` decreases with ``z``. A margin gives ``phi``, its two derivatives,
-    the estimate of ``P(Y <= k)`` from the unsigned margin ``eta`` and
-    ``log_odds_scale``, the factor ``c`` such that ``c * log(num / den)``
-    minimises ``num * phi(t) + den * phi(-t)``. Margins are stateless, and
-    :func:`get_margin` returns shared instances.
+    the estimate of ``P(Y <= k)`` from the unsigned margin ``eta`` and the
+    threshold ``t`` that minimises ``num * phi(t) + den * phi(-t)``. Margins are
+    stateless, and :func:`get_margin` returns shared instances.
     """
 
     @property
     @abstractmethod
     def name(self) -> str:
         """Name that :func:`get_margin` resolves."""
-
-    @property
-    @abstractmethod
-    def log_odds_scale(self) -> float:
-        """Factor ``c`` of the block minimiser ``c * log(num / den)``."""
 
     @abstractmethod
     def phi(self, z: np.ndarray) -> np.ndarray:
@@ -78,6 +72,21 @@ class Margin(ABC):
             Estimate of ``P(Y <= k)``.
         """
 
+    @abstractmethod
+    def optimal_threshold(self, log_ratio: np.ndarray) -> np.ndarray:
+        """Return the threshold ``t`` that minimises ``num * phi(t) + den * phi(-t)``.
+
+        Parameters
+        ----------
+        log_ratio : ndarray
+            ``log(num / den)`` of each threshold.
+
+        Returns
+        -------
+        threshold : ndarray of the same shape as ``log_ratio``
+            Minimiser ``t`` of each threshold, non-decreasing in ``log_ratio``.
+        """
+
     def gradient_hessian(
         self, eta: np.ndarray, above: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -107,7 +116,7 @@ class Margin(ABC):
         return s * dphi, d2phi
 
 
-class LogisticMargin(Margin):
+class LogisticMargin(BaseMargin):
     """Logistic margin ``phi(z) = log(1 + exp(-z))``.
 
     Each threshold term is the negative log-likelihood of a logistic model of
@@ -116,7 +125,6 @@ class LogisticMargin(Margin):
     """
 
     name = "logistic"
-    log_odds_scale = 1.0
 
     def phi(self, z: np.ndarray) -> np.ndarray:
         """Return ``log(1 + exp(-z))`` without overflow."""
@@ -132,6 +140,10 @@ class LogisticMargin(Margin):
         """Return ``sigma(eta)``."""
         return expit(eta)
 
+    def optimal_threshold(self, log_ratio: np.ndarray) -> np.ndarray:
+        """Return ``log_ratio``, the log-odds."""
+        return log_ratio
+
     def gradient_hessian(
         self, eta: np.ndarray, above: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -140,7 +152,7 @@ class LogisticMargin(Margin):
         return np.where(above, sigma, -sigma_minus), sigma * sigma_minus
 
 
-class ExponentialMargin(Margin):
+class ExponentialMargin(BaseMargin):
     """Exponential margin ``phi(z) = exp(-z)``, the loss of ORBoost.
 
     The population minimiser of the exponential loss is half the log-odds, so
@@ -154,7 +166,6 @@ class ExponentialMargin(Margin):
     """
 
     name = "exponential"
-    log_odds_scale = 0.5
 
     def phi(self, z: np.ndarray) -> np.ndarray:
         """Return ``exp(-z)``."""
@@ -169,23 +180,27 @@ class ExponentialMargin(Margin):
         """Return ``sigma(2 * eta)``."""
         return expit(2.0 * eta)
 
+    def optimal_threshold(self, log_ratio: np.ndarray) -> np.ndarray:
+        """Return half of ``log_ratio``."""
+        return 0.5 * log_ratio
+
 
 _MARGINS = {margin.name: margin for margin in (LogisticMargin(), ExponentialMargin())}
 
 
-def get_margin(margin: str | Margin) -> Margin:
+def get_margin(margin: str | BaseMargin) -> BaseMargin:
     """Return the margin given by name, or the margin instance given.
 
     Names resolve to shared instances, since margins are stateless.
 
     Parameters
     ----------
-    margin : {"logistic", "exponential"} or Margin
+    margin : {"logistic", "exponential"} or BaseMargin
         Name of the margin, or a margin instance.
 
     Returns
     -------
-    margin : Margin
+    margin : BaseMargin
         The shared instance of that name, or ``margin`` itself.
 
     Raises
@@ -193,7 +208,7 @@ def get_margin(margin: str | Margin) -> Margin:
     ValueError
         If ``margin`` is an unknown name.
     """
-    if isinstance(margin, Margin):
+    if isinstance(margin, BaseMargin):
         return margin
     if margin not in _MARGINS:
         raise ValueError(

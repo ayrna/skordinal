@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from skordinal._loss.margin import Margin, get_margin
+from skordinal._loss.margin import BaseMargin, get_margin
 from skordinal.utils.extmath import cumproba_to_proba
 
 
@@ -185,7 +185,7 @@ class BaseLoss(ABC):
         return cumproba_to_proba(self.predict_cumproba(raw_prediction, thresholds))
 
     @abstractmethod
-    def init_thresholds(
+    def fit_intercept_only(
         self,
         y_true: np.ndarray,
         n_classes: int,
@@ -193,10 +193,12 @@ class BaseLoss(ABC):
     ) -> np.ndarray:
         """Return the optimal thresholds without covariates, at ``f = 0``.
 
-        The analogue of ``fit_intercept_only`` in scikit-learn's losses. A class
-        without mass counts as half a sample of the mean positive weight, so the
-        result is finite and depends on the weights only through their ratios,
-        and with every class present it is the exact optimum.
+        It deviates from scikit-learn's ``fit_intercept_only`` in two ways.
+        ``n_classes`` is explicit, because a loss holds no number of classes, and
+        the result is the ``n_classes - 1`` thresholds instead of one intercept.
+        A class without mass counts as half a sample of the mean positive weight,
+        so the result is finite and depends on the weights only through their
+        ratios, and with every class present it is the exact optimum.
 
         Parameters
         ----------
@@ -216,32 +218,33 @@ class BaseLoss(ABC):
         """
 
 
-def _pav(log_num, log_den, scale):
-    """Return the ordered minimisers of a separable threshold problem.
+def _pav(log_num, log_den):
+    """Return the log-ratios ``log(num[k] / den[k])`` pooled until non-decreasing.
 
-    Threshold ``k`` contributes a convex term whose minimiser is
-    ``scale * log(num[k] / den[k])``, with the masses given in log scale. Pool
-    adjacent violators merges a block with the one before it while that one has
-    a larger value, adding their masses.
+    The masses are given in log scale. Pool adjacent violators merges a block
+    with the one before it while that one has a larger log-ratio, adding their
+    masses. A margin's optimal threshold is non-decreasing in the log-ratio, so
+    it maps the pooled log-ratios to the ordered minimisers of a separable
+    threshold problem.
     """
     blocks = []
     for k, (num, den) in enumerate(zip(log_num, log_den)):
-        start, value = k, scale * (num - den)
+        start, value = k, num - den
         while blocks and blocks[-1][4] > value:
             start, _, num_before, den_before, _ = blocks.pop()
             num, den = np.logaddexp(num_before, num), np.logaddexp(den_before, den)
-            value = scale * (num - den)
+            value = num - den
         blocks.append([start, k, num, den, value])
-    thresholds = np.empty(len(log_num))
+    log_ratios = np.empty(len(log_num))
     for start, end, _, _, value in blocks:
-        thresholds[start : end + 1] = value
-    return thresholds
+        log_ratios[start : end + 1] = value
+    return log_ratios
 
 
-class _ThresholdLoss(BaseLoss):
+class _BaseThresholdLoss(BaseLoss):
     """The margin, probabilities and initial thresholds both threshold losses share."""
 
-    def __init__(self, margin: str | Margin = "logistic"):
+    def __init__(self, margin: str | BaseMargin = "logistic"):
         self.margin = get_margin(margin)
 
     def __repr__(self) -> str:
@@ -257,7 +260,7 @@ class _ThresholdLoss(BaseLoss):
     def _pairs(self, log_masses):
         """Return the log-masses on each side of every threshold."""
 
-    def init_thresholds(
+    def fit_intercept_only(
         self,
         y_true: np.ndarray,
         n_classes: int,
@@ -265,7 +268,7 @@ class _ThresholdLoss(BaseLoss):
     ) -> np.ndarray:
         """Return the ordered optimal thresholds at ``f = 0``, in closed form.
 
-        Each threshold is ``margin.log_odds_scale`` times the log-odds of the
+        Each threshold is ``margin.optimal_threshold`` of the log-ratio of the
         class masses on its two sides, ordered with pool adjacent violators.
         Pooled thresholds are tied, and a tie is a zero parameter with zero
         gradient in ``params_to_thresholds``, so a solver started there
@@ -278,10 +281,10 @@ class _ThresholdLoss(BaseLoss):
         # An empty class weighs half a mean sample, so no frequency is 0 or 1
         counts[counts == 0.0] = 0.5 * counts.sum() / n_weighted
         log_num, log_den = self._pairs(np.log(counts))
-        return _pav(log_num, log_den, self.margin.log_odds_scale)
+        return self.margin.optimal_threshold(_pav(log_num, log_den))
 
 
-class AllThresholdLoss(_ThresholdLoss):
+class AllThresholdLoss(_BaseThresholdLoss):
     """All-threshold loss ``sum_k phi(s_ik * eta_ik)`` over every threshold.
 
     ``s_ik = +1`` if ``y_i <= k`` and ``-1`` otherwise, so every margin of a
@@ -292,7 +295,7 @@ class AllThresholdLoss(_ThresholdLoss):
 
     Parameters
     ----------
-    margin : {"logistic", "exponential"} or Margin, default="logistic"
+    margin : {"logistic", "exponential"} or BaseMargin, default="logistic"
         Margin function ``phi``.
 
     References
@@ -347,7 +350,7 @@ class AllThresholdLoss(_ThresholdLoss):
         return below, above
 
 
-class ImmediateThresholdLoss(_ThresholdLoss):
+class ImmediateThresholdLoss(_BaseThresholdLoss):
     """Immediate-threshold loss ``phi(eta_{i, y_i}) + phi(-eta_{i, y_i - 1})``.
 
     Each sample only sees the threshold above its class (``k = y_i``, when
@@ -361,7 +364,7 @@ class ImmediateThresholdLoss(_ThresholdLoss):
 
     Parameters
     ----------
-    margin : {"logistic", "exponential"} or Margin, default="logistic"
+    margin : {"logistic", "exponential"} or BaseMargin, default="logistic"
         Margin function ``phi``.
 
     References

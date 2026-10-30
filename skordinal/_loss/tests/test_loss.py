@@ -63,11 +63,13 @@ def optimal_thresholds(loss, y, sample_weight, n_classes):
     return params_to_thresholds(min(results, key=lambda result: result.fun).x)
 
 
-def naive_pav(num, den, scale):
-    """Return the ordered optima ``scale * log(num / den)`` by naive merging."""
+def naive_pav(num, den, optimal_threshold):
+    """Return the ordered optima of the blocks of thresholds by naive merging."""
     blocks = [[k] for k in range(len(num))]
     while True:
-        values = [scale * np.log(num[b].sum() / den[b].sum()) for b in blocks]
+        values = [
+            optimal_threshold(np.log(num[b].sum() / den[b].sum())) for b in blocks
+        ]
         unordered = [j for j in range(len(blocks) - 1) if values[j] > values[j + 1]]
         if not unordered:
             break
@@ -117,7 +119,7 @@ def problem(request):
         pytest.param(None, id="K5-alternating"),
     ]
 )
-def init_problem(request):
+def intercept_problem(request):
     """Labels, weights and classes where every class has mass."""
     if request.param is not None:
         n_classes, weighted = request.param
@@ -160,7 +162,7 @@ def test_shapes_and_weights(loss, problem):
         assert_array_equal(before, after)
 
 
-def test_finite_differences(loss, problem):
+def test_gradients_hessians_numerically(loss, problem):
     """The gradients and the second derivative match central differences."""
     y, f, thresholds, sample_weight = problem
     eps = 1e-5
@@ -183,11 +185,11 @@ def test_finite_differences(loss, problem):
     assert_allclose(hess, fd_hess / (2 * eps), rtol=1e-5, atol=1e-6)
 
 
-def test_init_thresholds(loss, init_problem):
-    """init_thresholds is the ordered minimiser of the loss at ``f = 0``."""
-    y, sample_weight, n_classes = init_problem
+def test_loss_intercept_only(loss, intercept_problem):
+    """fit_intercept_only is the ordered minimiser of the loss at ``f = 0``."""
+    y, sample_weight, n_classes = intercept_problem
 
-    theta = loss.init_thresholds(y, n_classes, sample_weight)
+    theta = loss.fit_intercept_only(y, n_classes, sample_weight)
 
     assert theta.shape == (n_classes - 1,)
     assert np.all(np.diff(theta) >= 0.0)
@@ -195,19 +197,19 @@ def test_init_thresholds(loss, init_problem):
     assert_allclose(theta, expected, atol=1e-6)
 
 
-def test_init_thresholds_weight_scale(loss):
-    """init_thresholds depends on the weights only through their ratios."""
+def test_fit_intercept_only_weight_scale(loss):
+    """fit_intercept_only depends on the weights only through their ratios."""
     y, _, _, sample_weight = make_problem(30, 5, weighted=True, all_classes=True)
     # An empty class brings in the pseudo-count, which must scale with the weights
     y[y == 2] = 3
 
-    theta = loss.init_thresholds(y, 5, sample_weight)
-    scaled = loss.init_thresholds(y, 5, 0.01 * sample_weight)
+    theta = loss.fit_intercept_only(y, 5, sample_weight)
+    scaled = loss.fit_intercept_only(y, 5, 0.01 * sample_weight)
 
     assert_allclose(scaled, theta, rtol=1e-12)
 
 
-def test_probabilities(loss, problem):
+def test_predict_proba(loss, problem):
     """predict_cumproba is non-decreasing in [0, 1] and predict_proba differences it."""
     y, f, thresholds, _ = problem
 
@@ -265,7 +267,7 @@ def test_logistic_estimators(estimator_cls, loss_cls, n_classes, weighted):
     ids=["AllThresholdLoss", "ImmediateThresholdLoss"],
 )
 @pytest.mark.parametrize("margin", list(FORMULAS))
-def test_hand_formulas(loss_cls, signs, margin):
+def test_loss_on_specific_values(loss_cls, signs, margin):
     """Loss, derivatives and probabilities follow the formulas term by term."""
     # The last two samples lie far above both thresholds, misclassified and not
     y, f = np.array([0, 1, 2, 1, 0, 2]), np.array([0.3, -0.2, 1.1, 0.4, 40.0, 40.0])
@@ -300,17 +302,19 @@ def test_hand_formulas(loss_cls, signs, margin):
 @pytest.mark.parametrize("seed", range(3))
 @pytest.mark.parametrize("margin", list(FORMULAS))
 def test_pav(n_classes, seed, margin):
-    """Immediate-threshold initial thresholds match a naive isotonic merge."""
+    """Immediate-threshold intercept-only thresholds match a naive isotonic merge."""
     rng = np.random.RandomState(seed)
     proportions = rng.dirichlet(np.full(n_classes, 0.7))
     y = np.concatenate([np.arange(n_classes), rng.choice(n_classes, 60, p=proportions)])
     w = rng.uniform(0.2, 3.0, size=len(y))
 
-    theta = ImmediateThresholdLoss(margin).init_thresholds(y, n_classes, w)
+    theta = ImmediateThresholdLoss(margin).fit_intercept_only(y, n_classes, w)
 
     counts = np.bincount(y, w, n_classes)
-    scale = FORMULAS[margin]["log_odds_scale"]
-    assert_allclose(theta, naive_pav(counts[:-1], counts[1:], scale), rtol=1e-10)
+    optimal_threshold = FORMULAS[margin]["optimal_threshold"]
+    assert_allclose(
+        theta, naive_pav(counts[:-1], counts[1:], optimal_threshold), rtol=1e-10
+    )
 
 
 @pytest.mark.parametrize("loss", LOSSES, ids=repr)
@@ -335,10 +339,10 @@ def test_empty_classes(loss, missing, how):
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        theta = loss.init_thresholds(y, 5, w)
+        theta = loss.fit_intercept_only(y, 5, w)
 
     assert np.all(np.isfinite(theta)) and np.all(np.diff(theta) >= 0.0)
-    expected = naive_pav(num, den, FORMULAS[loss.margin.name]["log_odds_scale"])
+    expected = naive_pav(num, den, FORMULAS[loss.margin.name]["optimal_threshold"])
     assert_allclose(theta, expected, rtol=1e-10)
 
 
@@ -355,4 +359,4 @@ def test_two_classes(margin):
     assert_allclose(
         at.predict_proba(f, thresholds), it.predict_proba(f, thresholds), rtol=1e-12
     )
-    assert_allclose(at.init_thresholds(y, 2, w), it.init_thresholds(y, 2, w))
+    assert_allclose(at.fit_intercept_only(y, 2, w), it.fit_intercept_only(y, 2, w))
