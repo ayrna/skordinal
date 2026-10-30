@@ -1,4 +1,4 @@
-"""Regressor wrapper meta-estimator for ordinal classification."""
+"""Regressor-based meta-estimator for ordinal classification."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from sklearn.utils.validation import check_is_fitted, validate_data
 from skordinal.utils.validation import check_ordinal_targets
 
 
-class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
+class RegressionClassifier(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
     """Regressor-based meta-estimator for ordinal classification.
 
     Wraps any scikit-learn regressor and adapts it for ordinal classification
@@ -77,7 +77,7 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         self.estimator = estimator
 
     @_fit_context(prefer_skip_nested_validation=True)
-    def fit(self, X: ArrayLike, y: ArrayLike) -> RegressorWrapper:
+    def fit(self, X: ArrayLike, y: ArrayLike) -> RegressionClassifier:
         """Fit the wrapped regressor to ``(X, y)``.
 
         Parameters
@@ -161,7 +161,7 @@ class RegressorWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         if np.isnan(y_cont).any():
             raise ValueError(
                 "The wrapped regressor returned NaN predictions. "
-                "RegressorWrapper cannot map NaN to a rank."
+                "RegressionClassifier cannot map NaN to a rank."
             )
 
         return y_cont

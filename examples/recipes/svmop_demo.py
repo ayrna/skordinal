@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 from skordinal.experiments import ModelConfig
-from skordinal.reduction import OrdinalDecomposition
+from skordinal.reduction import OrdinalDecompositionClassifier
 
 RECIPE = {
     "datasets": ["balance_scale"],
@@ -21,7 +21,7 @@ RECIPE = {
     "tuning_metric": "neg_mean_absolute_error",
     "models": {
         "SVMOP": ModelConfig(
-            OrdinalDecomposition(
+            OrdinalDecompositionClassifier(
                 estimator=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
                 decomposition="ordered_partitions",
                 decision_method="frank_hall",

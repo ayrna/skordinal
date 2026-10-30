@@ -78,7 +78,7 @@ class OPBE(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
 
     See Also
     --------
-    OrdinalDecomposition : Ordinal classification from binary subproblems.
+    OrdinalDecompositionClassifier : Ordinal classification from binary subproblems.
 
     Notes
     -----

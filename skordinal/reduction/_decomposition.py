@@ -1,4 +1,4 @@
-"""OrdinalDecomposition ensemble."""
+"""OrdinalDecompositionClassifier ensemble."""
 
 from __future__ import annotations
 
@@ -20,7 +20,9 @@ from skordinal.utils.extmath import cumproba_to_proba, losses_to_proba
 from skordinal.utils.validation import check_ordinal_targets
 
 
-class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
+class OrdinalDecompositionClassifier(
+    MetaEstimatorMixin, ClassifierMixin, BaseEstimator
+):
     """Ordinal decomposition ensemble classifier.
 
     This class implements an ensemble model where an ordinal problem is decomposed into
@@ -109,7 +111,7 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         self.decision_method = decision_method
 
     @_fit_context(prefer_skip_nested_validation=False)
-    def fit(self, X: ArrayLike, y: ArrayLike) -> OrdinalDecomposition:
+    def fit(self, X: ArrayLike, y: ArrayLike) -> OrdinalDecompositionClassifier:
         """Fit underlying estimators to data matrix X and target(s) y.
 
         Parameters

@@ -33,10 +33,10 @@ print(f"Train: {X_train.shape},  Test: {X_test.shape}")
 # %%
 # The three routes
 # ----------------
-# ``OrdinalDecomposition`` asks one binary question per boundary, "is the
-# class above k?", and combines the answers. ``CostSensitiveWrapper``
+# ``OrdinalDecompositionClassifier`` asks one binary question per boundary, "is the
+# class above k?", and combines the answers. ``CostSensitiveClassifier``
 # trains one one-vs-rest classifier per class and weights each negative
-# sample by its distance to that class. ``RegressorWrapper`` fits a
+# sample by its distance to that class. ``RegressionClassifier`` fits a
 # regressor to the class rank and rounds its output to the nearest one.
 # The first two wrap a ``LogisticRegression``, the last a random forest.
 # A plain ``LogisticRegression`` is the nominal baseline.
@@ -45,16 +45,20 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LogisticRegression
 
 from skordinal.reduction import (
-    CostSensitiveWrapper,
-    OrdinalDecomposition,
-    RegressorWrapper,
+    CostSensitiveClassifier,
+    OrdinalDecompositionClassifier,
+    RegressionClassifier,
 )
 
 models = {
     "LogisticRegression": LogisticRegression(max_iter=1000),
-    "OrdinalDecomposition": OrdinalDecomposition(LogisticRegression(max_iter=1000)),
-    "CostSensitiveWrapper": CostSensitiveWrapper(LogisticRegression(max_iter=1000)),
-    "RegressorWrapper": RegressorWrapper(RandomForestRegressor(random_state=0)),
+    "OrdinalDecompositionClassifier": OrdinalDecompositionClassifier(
+        LogisticRegression(max_iter=1000)
+    ),
+    "CostSensitiveClassifier": CostSensitiveClassifier(
+        LogisticRegression(max_iter=1000)
+    ),
+    "RegressionClassifier": RegressionClassifier(RandomForestRegressor(random_state=0)),
 }
 
 # %%
@@ -66,12 +70,12 @@ models = {
 from skordinal.metrics import accuracy_score, mean_absolute_error, weighted_kappa
 
 predictions = {}
-print(f"{'':22s} {'accuracy':>8s} {'MAE':>6s} {'kappa':>6s}")
+print(f"{'':30s} {'accuracy':>8s} {'MAE':>6s} {'kappa':>6s}")
 for name, clf in models.items():
     y_pred = clf.fit(X_train, y_train).predict(X_test)
     predictions[name] = y_pred
     print(
-        f"{name:22s} {accuracy_score(y_test, y_pred):8.3f} "
+        f"{name:30s} {accuracy_score(y_test, y_pred):8.3f} "
         f"{mean_absolute_error(y_test, y_pred):6.3f} "
         f"{weighted_kappa(y_test, y_pred):6.3f}"
     )
@@ -79,7 +83,7 @@ for name, clf in models.items():
 # %%
 # What the regressor sees
 # -----------------------
-# The wrapped forest predicts a continuous rank. ``RegressorWrapper``
+# The wrapped forest predicts a continuous rank. ``RegressionClassifier``
 # rounds it at the midpoints between ranks, drawn here as dashed lines,
 # and its ``thresholds_`` are those midpoints. A point lands in the wrong
 # class when the forest's output falls past a midpoint, so the mistakes
@@ -90,9 +94,9 @@ for name, clf in models.items():
 import matplotlib.pyplot as plt
 import numpy as np
 
-wrapper = models["RegressorWrapper"]
-score = wrapper.estimator_.predict(X_test)
-correct = predictions["RegressorWrapper"] == y_test
+regression = models["RegressionClassifier"]
+score = regression.estimator_.predict(X_test)
+correct = predictions["RegressionClassifier"] == y_test
 
 rng = np.random.default_rng(0)
 jitter = rng.uniform(-0.15, 0.15, size=len(y_test))
@@ -112,12 +116,12 @@ ax.scatter(
     color="darkorange",
     label="wrong",
 )
-for t in wrapper.thresholds_:
+for t in regression.thresholds_:
     ax.axvline(t, color="grey", linestyle="--", linewidth=0.8)
-ax.set_yticks(wrapper.classes_)
+ax.set_yticks(regression.classes_)
 ax.set_xlabel("Random forest output (class rank)")
 ax.set_ylabel("True class")
-ax.set_title("RegressorWrapper: round the regression to the nearest rank")
+ax.set_title("RegressionClassifier: round the regression to the nearest rank")
 ax.legend(loc="upper left")
 fig.tight_layout()
 plt.show()

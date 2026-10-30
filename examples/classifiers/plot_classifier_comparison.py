@@ -38,8 +38,8 @@ print(f"Train: {X_train.shape},  Test: {X_test.shape}")
 # networks (``NNPOM``, ``NNOP``, ``ELMOP``), a kernel discriminant
 # (``KDLOR``), support vector machines (``SVOR``, ``REDSVM``), boosting
 # (``ORBoost``) and the three meta-estimators that build an ordinal
-# classifier out of a scikit-learn one (``OrdinalDecomposition``,
-# ``RegressorWrapper``, ``CostSensitiveWrapper``). All run with their
+# classifier out of a scikit-learn one (``OrdinalDecompositionClassifier``,
+# ``RegressionClassifier``, ``CostSensitiveClassifier``). All run with their
 # defaults and a fixed seed, except that ``NNPOM`` gets enough
 # iterations to converge.
 
@@ -48,9 +48,9 @@ from skordinal.ensemble import ORBoost
 from skordinal.linear_model import POM, LogisticAT, LogisticIT
 from skordinal.neural_network import ELMOP, NNOP, NNPOM
 from skordinal.reduction import (
-    CostSensitiveWrapper,
-    OrdinalDecomposition,
-    RegressorWrapper,
+    CostSensitiveClassifier,
+    OrdinalDecompositionClassifier,
+    RegressionClassifier,
 )
 from skordinal.svm import REDSVM, SVOR
 
@@ -65,9 +65,9 @@ classifiers = {
     "SVOR": SVOR(),
     "REDSVM": REDSVM(),
     "ORBoost": ORBoost(),
-    "OrdinalDecomposition": OrdinalDecomposition(),
-    "RegressorWrapper": RegressorWrapper(),
-    "CostSensitiveWrapper": CostSensitiveWrapper(),
+    "OrdinalDecompositionClassifier": OrdinalDecompositionClassifier(),
+    "RegressionClassifier": RegressionClassifier(),
+    "CostSensitiveClassifier": CostSensitiveClassifier(),
 }
 
 # %%
@@ -86,14 +86,14 @@ for name, clf in classifiers.items():
     kap = weighted_kappa(y_test, y_pred)
     mae = mean_absolute_error(y_test, y_pred)
     results[name] = {"kappa": kap, "mae": mae}
-    print(f"{name:22s}  kappa={kap:.3f}  MAE={mae:.3f}")
+    print(f"{name:30s}  kappa={kap:.3f}  MAE={mae:.3f}")
 
 # %%
 # Ranking
 # -------
 # Sorted by kappa, highest first. Two pairs share their scores. ``SVOR``
 # and ``REDSVM`` predict the same label on every test sample. ``POM`` and
-# ``OrdinalDecomposition``, both linear logistic models, disagree on four
+# ``OrdinalDecompositionClassifier``, both linear logistic models, disagree on four
 # samples and tie by coincidence. ``LogisticAT`` and ``LogisticIT`` share
 # the cumulative-median rule but not the loss, so their fitted thresholds
 # differ and here they disagree on one sample.

@@ -13,7 +13,7 @@ from skordinal.neural_network import (
     MLPSoftmaxClassifier,
     MLPTriangularClassifier,
 )
-from skordinal.reduction import OrdinalDecomposition
+from skordinal.reduction import OrdinalDecompositionClassifier
 from skordinal.svm import REDSVM, SVOR
 
 RECIPE = {
@@ -38,7 +38,7 @@ RECIPE = {
             },
         ),
         "SVMOP": ModelConfig(
-            OrdinalDecomposition(
+            OrdinalDecompositionClassifier(
                 estimator=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
                 decomposition="ordered_partitions",
                 decision_method="frank_hall",
@@ -49,7 +49,7 @@ RECIPE = {
             },
         ),
         "LR": ModelConfig(
-            OrdinalDecomposition(
+            OrdinalDecompositionClassifier(
                 estimator=LogisticRegression(),
                 decision_method="exponential_loss",
             ),
