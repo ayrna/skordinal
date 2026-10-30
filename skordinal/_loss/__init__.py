@@ -1,8 +1,7 @@
 """Private losses of the threshold models, shared by the estimators."""
 
-from skordinal._loss.base import BaseLoss
+from skordinal._loss.loss import AllThresholdLoss, BaseLoss, ImmediateThresholdLoss
 from skordinal._loss.margin import ExponentialMargin, LogisticMargin, Margin, get_margin
-from skordinal._loss.threshold import AllThresholdLoss, ImmediateThresholdLoss
 
 __all__ = [
     "AllThresholdLoss",
