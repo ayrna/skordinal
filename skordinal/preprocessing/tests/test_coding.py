@@ -30,11 +30,11 @@ def test_coding_matrix_shape_dtype_and_values(K, decomposition):
         ),
         (
             "adjacent",
-            np.array([[1, 0], [-1, 1], [0, -1]]),
+            np.array([[-1, 0], [1, -1], [0, 1]]),
         ),
         (
             "sequential",
-            np.array([[1, 0], [-1, 1], [-1, -1]]),
+            np.array([[-1, 0], [1, -1], [1, 1]]),
         ),
         (
             "sequential_reverse",
@@ -59,23 +59,23 @@ def test_coding_matrix_cumulative_structural_property(K):
 
 @pytest.mark.parametrize("K", [3, 5, 10])
 def test_coding_matrix_adjacent_structural_property(K):
-    """In adjacent, each column has one +1, one -1 and zeros elsewhere."""
+    """In adjacent, column k is -1 at row k, +1 at row k+1 and 0 elsewhere."""
     coding = build_coding_matrix(K, "adjacent")
     for k in range(K - 1):
         col = coding[:, k]
-        assert (col == 1).sum() == 1, f"column {k} must have exactly one +1"
-        assert (col == -1).sum() == 1, f"column {k} must have exactly one -1"
-        assert (col == 0).sum() == K - 2, f"column {k} must have K-2 zeros"
+        assert col[k] == -1
+        assert col[k + 1] == 1
+        assert (col == 0).sum() == K - 2
 
 
 @pytest.mark.parametrize("K", [3, 5, 10])
 def test_coding_matrix_sequential_structural_property(K):
-    """In sequential, column k is +1 at row k, -1 at rows k+1..K-1 and 0 elsewhere."""
+    """In sequential, column k is -1 at row k, +1 at rows k+1..K-1 and 0 elsewhere."""
     coding = build_coding_matrix(K, "sequential")
     for k in range(K - 1):
         col = coding[:, k]
-        assert col[k] == 1
-        npt.assert_array_equal(col[k + 1 :], -1)
+        assert col[k] == -1
+        npt.assert_array_equal(col[k + 1 :], 1)
         npt.assert_array_equal(col[:k], 0)
 
 
@@ -101,8 +101,8 @@ def test_coding_matrix_raises_on_n_classes_below_two(invalid):
     "decomposition, expected",
     [
         ("cumulative", np.array([[-1], [1]])),
-        ("adjacent", np.array([[1], [-1]])),
-        ("sequential", np.array([[1], [-1]])),
+        ("adjacent", np.array([[-1], [1]])),
+        ("sequential", np.array([[-1], [1]])),
         ("sequential_reverse", np.array([[-1], [1]])),
     ],
 )

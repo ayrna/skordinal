@@ -377,19 +377,27 @@ def test_ordinal_decomposition_delegates_the_coding_matrix(
     )
 
 
-def test_ordinal_decomposition_asymmetric_estimator_follows_public_convention():
-    """Test the pinned predictions of a base estimator that breaks label symmetry."""
+@pytest.mark.parametrize(
+    "decomposition", ["cumulative", "adjacent", "sequential", "sequential_reverse"]
+)
+def test_ordinal_decomposition_upper_group_weight_raises_predictions(decomposition):
+    """Test that weighting the +1 group raises the predicted classes."""
     X, y = make_ordinal_classification(
-        n_samples=24, n_features=3, n_informative=3, n_classes=3, random_state=0
+        n_samples=200, n_features=4, n_informative=4, n_classes=4, random_state=0
     )
-    classifier = OrdinalDecompositionClassifier(
-        estimator=LogisticRegression(class_weight={-1: 5, 1: 1}),
-        decomposition="adjacent",
-        decision_method="exponential_loss",
-    ).fit(X, y)
+    mean_predictions = [
+        OrdinalDecompositionClassifier(
+            estimator=LogisticRegression(class_weight=class_weight),
+            decomposition=decomposition,
+            decision_method="exponential_loss",
+        )
+        .fit(X, y)
+        .predict(X)
+        .mean()
+        for class_weight in (None, {-1: 1, 1: 5})
+    ]
 
-    expected = [2, 1, 2, 2, 2, 1, 1, 1, 2, 0, 1, 0, 1, 2, 0, 2, 1, 2, 2, 2, 1, 0, 0, 1]
-    npt.assert_array_equal(classifier.predict(X), expected)
+    assert mean_predictions[1] > mean_predictions[0]
 
 
 def test_ordinal_decomposition_validates_nested_estimator_params(X, y):

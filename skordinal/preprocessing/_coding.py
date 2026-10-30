@@ -23,10 +23,9 @@ _VALID_DECOMPOSITIONS = (
 def build_coding_matrix(n_classes, decomposition):
     """Return the coding matrix for an ordinal decomposition strategy.
 
-    The resulting matrix has one row per class and one column per
-    binary subproblem. Each entry is in ``{-1, 0, +1}``: ``+1`` marks
-    the positive group of the subproblem, ``-1`` the negative group,
-    ``0`` excludes the class from that subproblem.
+    The matrix has one row per class and one column per binary subproblem, with
+    entries in ``{-1, 0, +1}``. ``+1`` always marks the upper group of the
+    subproblem, ``-1`` the lower group and ``0`` a class left out of it.
 
     Parameters
     ----------
@@ -37,11 +36,11 @@ def build_coding_matrix(n_classes, decomposition):
         Decomposition, named after the cumulative, sequential and adjacent
         categories models. Binary subproblem ``k`` compares the classes
         ``{k+1, ..., K-1}`` with ``{0, ..., k}`` in ``'cumulative'`` [1]_, class
-        ``k`` with class ``k+1`` in ``'adjacent'``, class ``k`` with the classes
-        ``{k+1, ..., K-1}`` in ``'sequential'``, and class ``k+1`` with
-        ``{0, ..., k}`` in ``'sequential_reverse'``, the sequential model with
-        the class order reversed. The other classes are left out of the
-        subproblem.
+        ``k+1`` with class ``k`` in ``'adjacent'``, the classes
+        ``{k+1, ..., K-1}`` with class ``k`` in ``'sequential'``, and class
+        ``k+1`` with ``{0, ..., k}`` in ``'sequential_reverse'``, the sequential
+        model with the class order reversed. The other classes are left out of
+        the subproblem.
 
     Returns
     -------
@@ -81,12 +80,12 @@ def build_coding_matrix(n_classes, decomposition):
             coding[k + 1 :, k] = 1
     elif decomposition == "adjacent":
         for k in range(K - 1):
-            coding[k, k] = 1
-            coding[k + 1, k] = -1
+            coding[k, k] = -1
+            coding[k + 1, k] = 1
     elif decomposition == "sequential":
         for k in range(K - 1):
-            coding[k, k] = 1
-            coding[k + 1 :, k] = -1
+            coding[k, k] = -1
+            coding[k + 1 :, k] = 1
     else:  # sequential_reverse
         for k in range(K - 1):
             coding[: k + 1, k] = -1

@@ -73,8 +73,8 @@ class OrdinalDecompositionClassifier(
         names that are all strings.
 
     coding_matrix_ : ndarray of shape (n_classes, n_classes - 1)
-        Matrix that defines which classes will be used to build the model of each
-        subproblem, and in which binary class they belong inside those new models.
+        Matrix that defines which classes build the model of each subproblem and
+        to which binary class they belong, with +1 for the upper group.
         Built by :func:`~skordinal.preprocessing.build_coding_matrix`.
 
     References
