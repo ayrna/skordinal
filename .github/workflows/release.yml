@@ -58,7 +58,7 @@ jobs:
         python-version: ["310", "311", "312", "313", "314"]
     steps:
       - uses: actions/checkout@v7
-      - uses: pypa/cibuildwheel@v4.2.0
+      - uses: pypa/cibuildwheel@v4.3.5
         env:
           CIBW_BUILD: cp${{ matrix.python-version }}-manylinux_x86_64
           CIBW_SKIP: "*-musllinux_*"
@@ -100,4 +100,4 @@ jobs:
           path: dist
           merge-multiple: true
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
