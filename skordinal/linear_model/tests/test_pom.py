@@ -65,7 +65,7 @@ def ordinal_data():
     ],
 )
 def test_pom_hyperparameter_value_validation(X, y, param_name, invalid_value):
-    """Test that POM raises ValueError for invalid hyperparameter values."""
+    """Invalid hyperparameter values raise ValueError."""
     classifier = POM(**{param_name: invalid_value})
 
     with pytest.raises(ValueError, match=rf"The '{param_name}' parameter.*"):
@@ -84,7 +84,7 @@ def test_pom_hyperparameter_value_validation(X, y, param_name, invalid_value):
     ],
 )
 def test_pom_hyperparameter_type_validation(X, y, param_name, invalid_value):
-    """Test that POM raises ValueError for invalid hyperparameter types."""
+    """Invalid hyperparameter types raise ValueError."""
     classifier = POM(**{param_name: invalid_value})
 
     with pytest.raises(ValueError, match=rf"The '{param_name}' parameter.*"):
@@ -92,14 +92,14 @@ def test_pom_hyperparameter_type_validation(X, y, param_name, invalid_value):
 
 
 def test_pom_fit_returns_self(X, y):
-    """fit should return self for sklearn compatibility."""
+    """fit returns self (sklearn contract)."""
     classifier = POM()
     model = classifier.fit(X, y)
     assert model is classifier
 
 
 def test_pom_fit_input_validation(X, y):
-    """Test that input data is validated."""
+    """fit rejects mismatched or empty X and y."""
     X_invalid = X[:-1, :-1]
     y_invalid = y[:-1]
 
@@ -118,7 +118,7 @@ def test_pom_fit_input_validation(X, y):
 
 
 def test_pom_sets_fitted_attributes_after_fit(X, y):
-    """Test that POM exposes fitted attributes aligned with sklearn style."""
+    """fit sets the sklearn fitted attributes."""
     clf = POM().fit(X, y)
 
     for attr in [
@@ -144,7 +144,7 @@ def test_pom_sets_fitted_attributes_after_fit(X, y):
 
 
 def test_pom_predict_invalid_input_raises_error(X, y):
-    """Test that invalid input raises an error."""
+    """predict rejects invalid input."""
     classifier = POM()
     classifier.fit(X, y)
 
@@ -162,7 +162,7 @@ def test_pom_predict_raises_if_not_fitted(X):
 
 
 def test_pom_feature_names_in_when_dataframe(X, y):
-    """Test that feature_names_in_ is set when X is a DataFrame."""
+    """feature_names_in_ is set when X is a DataFrame."""
     df = pd.DataFrame(X, columns=["f0", "f1"])
     classifier = POM().fit(df, y)
 
@@ -173,7 +173,7 @@ def test_pom_feature_names_in_when_dataframe(X, y):
 
 
 def test_pom_parameter_constraints_match_init_params():
-    """Test that _parameter_constraints keys match __init__ parameters."""
+    """_parameter_constraints keys match __init__ parameters."""
     init_params = set(inspect.signature(POM.__init__).parameters) - {"self"}
     assert set(POM._parameter_constraints) == init_params
 
@@ -197,7 +197,7 @@ def test_pom_predict_rejects_wrong_n_features(X, y):
     ],
 )
 def test_pom_label_roundtrip(labels):
-    """Test that POM preserves arbitrary ordinal labels through fit/predict."""
+    """fit and predict keep arbitrary ordinal labels."""
     labels_array = np.array(labels)
     X = np.array(
         [[i, i] for i, _ in enumerate(np.repeat(labels_array, 3))], dtype=float
@@ -220,22 +220,16 @@ def test_pom_deterministic_two_fits(X, y):
     np.testing.assert_array_equal(clf_a.thresholds_, clf_b.thresholds_)
 
 
-@pytest.mark.parametrize("link", _ALL_LINKS)
-def test_pom_link_fit_predict_thresholds_ordered(ordinal_data, link):
-    """fit converges without warning; predict is accurate; thresholds valid."""
+def test_pom_thresholds_non_decreasing(ordinal_data):
+    """thresholds_ are non-decreasing after fit."""
     X, y = ordinal_data
-    with warnings.catch_warnings():
-        warnings.simplefilter("error", ConvergenceWarning)
-        clf = POM(link=link).fit(X, y)
+    clf = POM().fit(X, y)
 
-    assert set(clf.predict(X)).issubset(set(clf.classes_))
     assert np.all(np.diff(clf.thresholds_) >= 0)
-    # the fixture is well-separated 3-class data; every link should fit it
-    # accurately, so a wrong predict path (e.g. flipped eta sign) stands out
-    assert (clf.predict(X) == y).mean() >= 0.85
+    assert set(clf.predict(X)).issubset(set(clf.classes_))
 
 
-def test_pom_alpha_regularisation_reduces_coef_norm(ordinal_data):
+def test_pom_alpha_shrinks_weights(ordinal_data):
     """Higher alpha yields a coef_ with a smaller L2 norm than alpha=0."""
     X, y = ordinal_data
     clf_noreg = POM(alpha=0.0).fit(X, y)
@@ -278,7 +272,7 @@ def test_pom_proba_and_cumproba_well_formed(ordinal_data):
 
     proba = clf.predict_proba(X)
     assert proba.shape == (X.shape[0], n_classes)
-    assert np.all(proba >= 0.0)
+    assert np.all(proba >= 0.0) and np.all(proba <= 1.0)
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
 
     cumproba = clf.predict_cumproba(X)
@@ -290,51 +284,23 @@ def test_pom_proba_and_cumproba_well_formed(ordinal_data):
     np.testing.assert_array_equal(clf.predict(X), expected_pred)
 
 
-def test_pom_solvers_reach_same_optimum(ordinal_data):
-    """newton-cg and bfgs converge to the same fit as the lbfgs reference."""
-    X, y = ordinal_data
-    ref = POM(solver="lbfgs", tol=1e-8, max_iter=5000).fit(X, y)
-
-    for solver in ("newton-cg", "bfgs"):
-        other = POM(solver=solver, tol=1e-8, max_iter=5000).fit(X, y)
-        np.testing.assert_allclose(other.coef_, ref.coef_, atol=1e-3)
-        np.testing.assert_allclose(other.thresholds_, ref.thresholds_, atol=1e-3)
-
-
-def test_pom_exact_proba_tie_predicts_lower_class(X, y):
-    """An exact predict_proba tie resolves to the lower class."""
-    clf = POM(link="logit").fit(X, y)
-    # Overwrite the fitted state with round numbers so a probe row lands on
-    # an exact floating-point tie, which a real fit cannot guarantee
-    clf.n_features_in_ = 1
-    clf.coef_ = np.array([1.0])
-    clf.thresholds_ = np.array([0.0])
-    clf.classes_ = np.array([0, 1])
-
-    probe = np.array([[0.0]])
-    proba = clf.predict_proba(probe)
-    np.testing.assert_allclose(proba, [[0.5, 0.5]], atol=0.0, rtol=0.0)
-    np.testing.assert_array_equal(clf.predict(probe), clf.classes_[[0]])
-
-
-def test_pom_loglog_matches_reversed_cloglog_fit(ordinal_data):
-    """POM('loglog') on y matches POM('cloglog') on reversed labels."""
-    X, y = ordinal_data
-    n_classes = len(np.unique(y))
-    y_reversed = (n_classes - 1) - y
-
-    # alpha=0.1 keeps both fits away from the flat near-separable regime; the
-    # L2 penalty is sign-symmetric so the reversal identity still holds
-    clf_loglog = POM(link="loglog", alpha=0.1, tol=1e-10, max_iter=5000).fit(X, y)
-    clf_cloglog = POM(link="cloglog", alpha=0.1, tol=1e-10, max_iter=5000).fit(
-        X, y_reversed
+def test_pom_binary_ordinal_data():
+    """POM fits and predicts on a 2-class ordinal dataset."""
+    X, y = make_ordinal_classification(
+        n_samples=60,
+        n_features=3,
+        n_classes=2,
+        n_informative=3,
+        noise=0.1,
+        random_state=2,
     )
+    clf = POM().fit(X, y)
 
-    mapped_coef = -clf_cloglog.coef_
-    mapped_thresholds = -clf_cloglog.thresholds_[::-1]
-
-    np.testing.assert_allclose(clf_loglog.coef_, mapped_coef, atol=1e-4)
-    np.testing.assert_allclose(clf_loglog.thresholds_, mapped_thresholds, atol=1e-4)
+    assert clf.thresholds_.shape == (1,)
+    assert set(clf.predict(X)).issubset(set(clf.classes_))
+    proba = clf.predict_proba(X)
+    assert proba.shape == (X.shape[0], 2)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
 
 
 def _build_pom_objective_callables(link, n, p, K, seed):
@@ -385,7 +351,7 @@ def test_pom_large_magnitude_x_finite_probabilities():
     )
     X = X * 1000.0
 
-    # no RuntimeWarning (e.g. log of a non-positive value) may escape fit
+    # Let no RuntimeWarning such as a log of a non-positive value escape fit
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         classifier = POM().fit(X, y)
@@ -434,3 +400,62 @@ def test_pom_projection_linear_in_convex_combination(ordinal_data):
         alpha * clf.predict_projection(a) + (1 - alpha) * clf.predict_projection(b),
         atol=1e-8,
     )
+
+
+@pytest.mark.parametrize("link", _ALL_LINKS)
+def test_pom_link_fit_predict_thresholds_ordered(ordinal_data, link):
+    """Every link converges, fits accurately and keeps thresholds ordered."""
+    X, y = ordinal_data
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConvergenceWarning)
+        clf = POM(link=link).fit(X, y)
+
+    assert set(clf.predict(X)).issubset(set(clf.classes_))
+    assert np.all(np.diff(clf.thresholds_) >= 0)
+    # Well-separated data exposes a wrong predict path such as a flipped eta sign
+    assert (clf.predict(X) == y).mean() >= 0.85
+
+
+def test_pom_solvers_reach_same_optimum(ordinal_data):
+    """newton-cg and bfgs converge to the same fit as the lbfgs reference."""
+    X, y = ordinal_data
+    ref = POM(solver="lbfgs", tol=1e-8, max_iter=5000).fit(X, y)
+
+    for solver in ("newton-cg", "bfgs"):
+        other = POM(solver=solver, tol=1e-8, max_iter=5000).fit(X, y)
+        np.testing.assert_allclose(other.coef_, ref.coef_, atol=1e-3)
+        np.testing.assert_allclose(other.thresholds_, ref.thresholds_, atol=1e-3)
+
+
+def test_pom_exact_proba_tie_predicts_lower_class(X, y):
+    """An exact predict_proba tie resolves to the lower class."""
+    clf = POM(link="logit").fit(X, y)
+    # Set round numbers so the probe lands on an exact floating-point tie
+    clf.n_features_in_ = 1
+    clf.coef_ = np.array([1.0])
+    clf.thresholds_ = np.array([0.0])
+    clf.classes_ = np.array([0, 1])
+
+    probe = np.array([[0.0]])
+    proba = clf.predict_proba(probe)
+    np.testing.assert_allclose(proba, [[0.5, 0.5]], atol=0.0, rtol=0.0)
+    np.testing.assert_array_equal(clf.predict(probe), clf.classes_[[0]])
+
+
+def test_pom_loglog_matches_reversed_cloglog_fit(ordinal_data):
+    """POM('loglog') on y matches POM('cloglog') on reversed labels."""
+    X, y = ordinal_data
+    n_classes = len(np.unique(y))
+    y_reversed = (n_classes - 1) - y
+
+    # alpha=0.1 avoids a flat near-separable optimum and L2 keeps the reversal identity
+    clf_loglog = POM(link="loglog", alpha=0.1, tol=1e-10, max_iter=5000).fit(X, y)
+    clf_cloglog = POM(link="cloglog", alpha=0.1, tol=1e-10, max_iter=5000).fit(
+        X, y_reversed
+    )
+
+    mapped_coef = -clf_cloglog.coef_
+    mapped_thresholds = -clf_cloglog.thresholds_[::-1]
+
+    np.testing.assert_allclose(clf_loglog.coef_, mapped_coef, atol=1e-4)
+    np.testing.assert_allclose(clf_loglog.thresholds_, mapped_thresholds, atol=1e-4)
