@@ -15,23 +15,16 @@ from sklearn.base import (
     clone,
     is_classifier,
 )
+from sklearn.exceptions import NotFittedError
 from sklearn.metrics import check_scoring
 from sklearn.model_selection import BaseCrossValidator, check_cv, cross_val_predict
 from sklearn.utils import Bunch, check_random_state, get_tags
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.metaestimators import _BaseComposition
-from sklearn.utils.validation import (
-    _num_samples,
-    check_is_fitted,
-    validate_data,
-)
+from sklearn.utils.validation import _num_samples, check_is_fitted, column_or_1d
 
 from skordinal.metrics import get_ordinal_scorer, get_ordinal_scorer_names
 from skordinal.utils.validation import check_ordinal_targets
-
-_X_CHECK_PARAMS = dict(
-    dtype=None, ensure_all_finite=False, accept_sparse=True, allow_nd=True
-)
 
 
 class _ProbabilityClassifier(ClassifierMixin, BaseEstimator):
@@ -100,10 +93,11 @@ class EBANO(ClassifierMixin, _BaseComposition):
     best_score_ : float
         Score achieved by ``weights_`` on the out-of-fold predictions.
     n_features_in_ : int
-        Number of features seen during fitting.
+        Number of features seen during fit. Only defined if the underlying
+        estimator exposes such an attribute when fit.
     feature_names_in_ : ndarray of shape (n_features_in_,)
-        Names of features seen during fitting. Defined only when ``X`` has
-        feature names that are all strings.
+        Names of features seen during fit. Only defined if the underlying
+        estimators expose such an attribute when fit.
 
     Notes
     -----
@@ -118,8 +112,8 @@ class EBANO(ClassifierMixin, _BaseComposition):
     overfit most. Pass data the estimators have not seen (e.g. a validation
     set) unless you intentionally want that behaviour.
 
-    ``X`` is not converted: validation is delegated to the base estimators,
-    so DataFrames, sparse matrices or missing values are accepted whenever
+    ``X`` is not validated or converted. The base estimators validate it, so
+    text, DataFrames, sparse matrices or missing values are accepted whenever
     the base estimators accept them.
 
     Examples
@@ -249,7 +243,7 @@ class EBANO(ClassifierMixin, _BaseComposition):
     @_fit_context(prefer_skip_nested_validation=False)
     def fit(self, X: ArrayLike, y: ArrayLike) -> EBANO:
         """Fit the ensemble and select its probability-blending weights."""
-        _, y = validate_data(self, X, y, reset=True, **_X_CHECK_PARAMS)
+        y = column_or_1d(y, warn=True)
         self.classes_, y_encoded = check_ordinal_targets(y)
         y_scoring = self.classes_[y_encoded]
         active = self._validate_estimators()
@@ -322,16 +316,32 @@ class EBANO(ClassifierMixin, _BaseComposition):
         self.best_score_ = best_score
         self.estimators_ = fitted_estimators
         self._estimator_names_ = names
+        # Delete the feature names of a previous fit, as validate_data does
+        if hasattr(self, "feature_names_in_"):
+            delattr(self, "feature_names_in_")
+        for estimator in fitted_estimators:
+            if hasattr(estimator, "feature_names_in_"):
+                self.feature_names_in_ = estimator.feature_names_in_
         fitted_by_name = dict(zip(self._estimator_names_, fitted_estimators))
         self.named_estimators_ = Bunch(
             **{name: fitted_by_name.get(name, "drop") for name, _ in self.estimators}
         )
         return self
 
+    @property
+    def n_features_in_(self) -> int:
+        """Number of features seen during fit, if the first estimator exposes it."""
+        try:
+            check_is_fitted(self)
+        except NotFittedError as nfe:
+            raise AttributeError(
+                f"{self.__class__.__name__} object has no attribute n_features_in_"
+            ) from nfe
+        return self.estimators_[0].n_features_in_
+
     def predict_proba(self, X: ArrayLike) -> NDArray:
         """Return the weighted sum of the base-estimator probabilities."""
         check_is_fitted(self)
-        validate_data(self, X, reset=False, **_X_CHECK_PARAMS)
         n_samples, n_classes = _num_samples(X), len(self.classes_)
         probabilities = [
             self._validate_probabilities(

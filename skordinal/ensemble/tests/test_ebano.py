@@ -4,11 +4,14 @@ from copy import deepcopy
 from unittest.mock import Mock
 
 import numpy as np
+import pandas as pd
 import pytest
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.exceptions import NotFittedError
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.frozen import FrozenEstimator
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import (
@@ -628,3 +631,71 @@ def test_ebano_stratify_default(dtype):
     clf = EBANO(_estimators(), n_iter=2)
     # Since y is sorted, each fold of a simple k-fold would hold a whole class
     clf.fit(X, y.astype(dtype))
+
+
+@pytest.mark.parametrize(
+    "make_data, preprocessor",
+    [
+        pytest.param(
+            lambda X, y: (
+                np.where(np.random.RandomState(0).rand(*X.shape) < 0.1, np.nan, X),
+                y,
+            ),
+            SimpleImputer,
+            id="missing-values",
+        ),
+        pytest.param(
+            lambda X, y: (
+                ["low low", "low mid", "mid mid", "mid high", "high high"] * 6,
+                np.array([0, 0, 1, 2, 2] * 6),
+            ),
+            CountVectorizer,
+            id="text",
+        ),
+    ],
+)
+def test_ebano_delegates_validation(ordinal_data, make_data, preprocessor):
+    """EBANO delegates the validation of X to the underlying estimators."""
+    X, y = make_data(*ordinal_data)
+    pipe = make_pipeline(preprocessor(), LogisticRegression())
+    ensemble = EBANO([("pipe1", pipe), ("pipe2", pipe)], n_iter=2)
+
+    ensemble.fit(X, y).score(X, y)
+
+
+def test_ebano_feature_names_in_refit(ordinal_data):
+    """A refit on an ndarray drops the feature names of a previous fit."""
+    X, y = ordinal_data
+    model = EBANO(_estimators(), n_iter=2)
+    model.fit(pd.DataFrame(X, columns=["f0", "f1", "f2", "f3"]), y)
+
+    model.fit(X, y)
+
+    assert not hasattr(model, "feature_names_in_")
+
+
+def test_ebano_without_n_features_in(ordinal_data):
+    """EBANO supports estimators without n_features_in_."""
+
+    class MyEstimator(LogisticRegression):
+        """Estimator without n_features_in_."""
+
+        def fit(self, X, y):
+            """Fit, then delete n_features_in_."""
+            super().fit(X, y)
+            del self.n_features_in_
+            return self
+
+    X, y = ordinal_data
+    ebano = EBANO([("lr", MyEstimator())], n_iter=2)
+
+    msg = "EBANO object has no attribute n_features_in_"
+    with pytest.raises(AttributeError, match=msg):
+        ebano.n_features_in_
+
+    # Does not raise
+    ebano.fit(X, y)
+
+    msg = "'MyEstimator' object has no attribute 'n_features_in_'"
+    with pytest.raises(AttributeError, match=msg):
+        ebano.n_features_in_
