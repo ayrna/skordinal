@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from copy import deepcopy
 from numbers import Integral
 
 import numpy as np
@@ -15,7 +16,7 @@ from sklearn.base import (
     is_classifier,
 )
 from sklearn.metrics import check_scoring
-from sklearn.model_selection import BaseCrossValidator, cross_val_predict
+from sklearn.model_selection import BaseCrossValidator, check_cv, cross_val_predict
 from sklearn.utils import Bunch, check_random_state, get_tags
 from sklearn.utils._param_validation import HasMethods, Interval, StrOptions
 from sklearn.utils.metaestimators import _BaseComposition
@@ -226,15 +227,15 @@ class EBANO(ClassifierMixin, _BaseComposition):
 
     @staticmethod
     def _check_classes(
-        names: list[str], estimators: list, expected_classes: NDArray
+        names: list[str], estimators: list, *expected_classes: NDArray
     ) -> None:
-        """Raise if a fitted estimator does not predict the expected classes."""
+        """Raise if a fitted estimator predicts none of the expected class sets."""
         for name, estimator in zip(names, estimators):
             estimator_classes = np.asarray(estimator.classes_)
-            if not np.array_equal(estimator_classes, expected_classes):
+            if not any(np.array_equal(estimator_classes, c) for c in expected_classes):
                 raise ValueError(
                     f"Estimator {name!r} has classes {estimator_classes.tolist()}, "
-                    f"but EBANO expects {expected_classes.tolist()}."
+                    f"but EBANO expects {expected_classes[0].tolist()}."
                 )
 
     @staticmethod
@@ -264,7 +265,15 @@ class EBANO(ClassifierMixin, _BaseComposition):
             fitted_estimators = [estimator for _, estimator in active]
             for estimator in fitted_estimators:
                 check_is_fitted(estimator)
-            self._check_classes(names, fitted_estimators, self.classes_)
+            # An EBANO's own estimators_ were fitted on the class positions
+            self._check_classes(
+                names, fitted_estimators, self.classes_, np.arange(n_classes)
+            )
+        else:
+            cv = deepcopy(check_cv(self.cv, y_encoded, classifier=True))
+            # Seed the copy so that every estimator gets the same folds
+            if hasattr(cv, "random_state") and cv.random_state is None:
+                cv.random_state = np.random.RandomState()
         oof_probabilities = []
         for name, estimator in active:
             if prefit:
@@ -273,8 +282,8 @@ class EBANO(ClassifierMixin, _BaseComposition):
                 probabilities = cross_val_predict(
                     estimator,
                     X,
-                    y,
-                    cv=self.cv,
+                    y_encoded,
+                    cv=deepcopy(cv),
                     method="predict_proba",
                     n_jobs=self.n_jobs,
                     verbose=self.verbose,
@@ -305,8 +314,13 @@ class EBANO(ClassifierMixin, _BaseComposition):
                 best_weights = weights
 
         if not prefit:
-            fitted_estimators = [clone(estimator).fit(X, y) for _, estimator in active]
-            self._check_classes(names, fitted_estimators, self.classes_)
+            fitted_estimators = [
+                clone(estimator).fit(X, y_encoded) for _, estimator in active
+            ]
+            # A frozen estimator keeps the labels it was fitted on
+            self._check_classes(
+                names, fitted_estimators, self.classes_, np.arange(n_classes)
+            )
 
         self.weights_ = best_weights
         self.best_score_ = best_score

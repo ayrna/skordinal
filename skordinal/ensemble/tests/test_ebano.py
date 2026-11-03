@@ -1,5 +1,6 @@
 """Tests for the EBANO probability-averaging classifier."""
 
+from copy import deepcopy
 from unittest.mock import Mock
 
 import numpy as np
@@ -521,6 +522,32 @@ def test_ebano_prefit(ordinal_data):
         pytest.param(FrozenEstimator, 3, id="frozen"),
     ],
 )
+@pytest.mark.parametrize(
+    "encode",
+    [
+        pytest.param(lambda y: np.array([10, 30, 80])[y], id="labels"),
+        pytest.param(lambda y: y, id="positions"),
+    ],
+)
+def test_ebano_prefit_classes(ordinal_data, wrap, cv, encode):
+    """An estimator EBANO does not fit may know the labels of y or their positions."""
+    X, y = ordinal_data
+    labels = np.array([10, 30, 80])[y]
+    fitted = LogisticRegression().fit(X[::2], encode(y[::2]))
+    model = EBANO([("lr", wrap(fitted))], n_iter=2, cv=cv)
+
+    model.fit(X[1::2], labels[1::2])
+
+    np.testing.assert_allclose(model.predict_proba(X), fitted.predict_proba(X))
+
+
+@pytest.mark.parametrize(
+    "wrap, cv",
+    [
+        pytest.param(lambda estimator: estimator, "prefit", id="prefit"),
+        pytest.param(FrozenEstimator, 3, id="frozen"),
+    ],
+)
 def test_ebano_prefit_classes_error(ordinal_data, wrap, cv):
     """An estimator EBANO does not fit that knows other classes raises ValueError."""
     X, y = ordinal_data
@@ -529,3 +556,44 @@ def test_ebano_prefit_classes_error(ordinal_data, wrap, cv):
 
     with pytest.raises(ValueError, match="has classes"):
         model.fit(X, np.array([10, 30, 80])[y])
+
+
+def test_ebano_class_positions(ordinal_data):
+    """EBANO fits its estimators on the positions of the classes, as stacking does."""
+    X, y = ordinal_data
+    labels = np.array([10, 30, 80])[y]
+
+    model = EBANO(_estimators(), n_iter=2, cv=3, random_state=0).fit(X, labels)
+
+    for estimator in model.estimators_:
+        np.testing.assert_array_equal(estimator.classes_, [0, 1, 2])
+
+
+def test_ebano_shuffled_cv(ordinal_data, monkeypatch):
+    """An unseeded shuffling cv gives all estimators the same folds and stays intact."""
+    X, y = ordinal_data
+    cv = StratifiedKFold(3, shuffle=True)
+    folds = []
+    original = _ebano.cross_val_predict
+
+    def _recording_cross_val_predict(estimator, X, y, *, cv, **kwargs):
+        """Record the test folds of the splitter, then predict."""
+        folds.append([test.tolist() for _, test in deepcopy(cv).split(X, y)])
+        return original(estimator, X, y, cv=cv, **kwargs)
+
+    monkeypatch.setattr(_ebano, "cross_val_predict", _recording_cross_val_predict)
+    EBANO(_estimators(), n_iter=2, cv=cv).fit(X, y)
+
+    assert folds[0] == folds[1]
+    assert cv.random_state is None
+
+
+@pytest.mark.filterwarnings("error::RuntimeWarning")
+@pytest.mark.parametrize("dtype", [int, object])
+def test_ebano_stratify_default(dtype):
+    """Check that we stratify the classes for the default cv."""
+    y = np.repeat(np.arange(5), 20)
+    X = y[:, np.newaxis] + np.random.RandomState(0).normal(size=(100, 2))
+    clf = EBANO(_estimators(), n_iter=2)
+    # Since y is sorted, each fold of a simple k-fold would hold a whole class
+    clf.fit(X, y.astype(dtype))
