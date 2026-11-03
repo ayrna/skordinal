@@ -1,5 +1,7 @@
 """Tests for the EBANO probability-averaging classifier."""
 
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 from sklearn.base import BaseEstimator, ClassifierMixin
@@ -8,7 +10,13 @@ from sklearn.exceptions import NotFittedError
 from sklearn.frozen import FrozenEstimator
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import GridSearchCV, KFold, ShuffleSplit, StratifiedKFold
+from sklearn.model_selection import (
+    GridSearchCV,
+    KFold,
+    ShuffleSplit,
+    StratifiedKFold,
+    train_test_split,
+)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -481,3 +489,43 @@ def test_fit_rejects_invalid_estimators(estimators, ordinal_data):
 
     with pytest.raises(ValueError):
         model.fit(X, y)
+
+
+def test_ebano_prefit(ordinal_data):
+    """Check the behaviour of EBANO when cv="prefit"."""
+    X, y = ordinal_data
+    X_train1, X_train2, y_train1, y_train2 = train_test_split(
+        X, y, random_state=42, test_size=0.5
+    )
+    estimators = [
+        ("lr1", LogisticRegression().fit(X_train1, y_train1)),
+        ("lr2", LogisticRegression(C=0.1).fit(X_train1, y_train1)),
+    ]
+    for _, estimator in estimators:
+        estimator.fit = Mock(name="fit")
+        estimator.predict_proba = Mock(side_effect=estimator.predict_proba)
+
+    model = EBANO(estimators, n_iter=5, cv="prefit", random_state=0)
+    model.fit(X_train2, y_train2)
+
+    assert model.estimators_ == [estimator for _, estimator in estimators]
+    assert all(estimator.fit.call_count == 0 for estimator in model.estimators_)
+    for estimator in model.estimators_:
+        estimator.predict_proba.assert_called_with(X_train2)
+
+
+@pytest.mark.parametrize(
+    "wrap, cv",
+    [
+        pytest.param(lambda estimator: estimator, "prefit", id="prefit"),
+        pytest.param(FrozenEstimator, 3, id="frozen"),
+    ],
+)
+def test_ebano_prefit_classes_error(ordinal_data, wrap, cv):
+    """An estimator EBANO does not fit that knows other classes raises ValueError."""
+    X, y = ordinal_data
+    fitted = wrap(LogisticRegression().fit(X, y + 1))
+    model = EBANO([("lr", fitted)], n_iter=2, cv=cv)
+
+    with pytest.raises(ValueError, match="has classes"):
+        model.fit(X, np.array([10, 30, 80])[y])

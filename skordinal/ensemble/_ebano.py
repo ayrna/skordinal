@@ -55,8 +55,9 @@ class EBANO(ClassifierMixin, _BaseComposition):
     ``scoring`` value is retained, then the base estimators are fitted on all
     the training data.
 
-    To use already-fitted estimators, wrap each one in
-    :class:`sklearn.frozen.FrozenEstimator` and set ``cv="prefit"``.
+    Already-fitted estimators can be wrapped in
+    :class:`sklearn.frozen.FrozenEstimator`, which ``clone`` keeps fitted, or
+    passed bare with ``cv="prefit"``, which uses them as fitted.
 
     Parameters
     ----------
@@ -85,8 +86,10 @@ class EBANO(ClassifierMixin, _BaseComposition):
     classes_ : ndarray of shape (n_classes,)
         The sorted class labels observed during fitting.
     estimators_ : list of fitted estimators
-        Fitted estimators in the same order as the non-dropped entries in
-        ``estimators``.
+        The elements of the ``estimators`` parameter, having been fitted on the
+        training data. If an estimator has been set to ``"drop"``, it will not
+        appear in ``estimators_``. When ``cv="prefit"``, ``estimators_`` is set
+        to ``estimators`` and is not fitted again.
     named_estimators_ : Bunch
         Fitted estimators accessed by their names. Dropped estimators appear
         as ``"drop"``.
@@ -222,6 +225,19 @@ class EBANO(ClassifierMixin, _BaseComposition):
         return check_scoring(self, scoring=self.scoring)
 
     @staticmethod
+    def _check_classes(
+        names: list[str], estimators: list, expected_classes: NDArray
+    ) -> None:
+        """Raise if a fitted estimator does not predict the expected classes."""
+        for name, estimator in zip(names, estimators):
+            estimator_classes = np.asarray(estimator.classes_)
+            if not np.array_equal(estimator_classes, expected_classes):
+                raise ValueError(
+                    f"Estimator {name!r} has classes {estimator_classes.tolist()}, "
+                    f"but EBANO expects {expected_classes.tolist()}."
+                )
+
+    @staticmethod
     def _validate_probabilities(
         probabilities: ArrayLike, n_samples: int, n_classes: int, name: str
     ) -> NDArray:
@@ -242,11 +258,16 @@ class EBANO(ClassifierMixin, _BaseComposition):
         active = self._validate_estimators()
         n_samples, n_classes = _num_samples(X), len(self.classes_)
 
+        names = [name for name, _ in active]
         prefit = isinstance(self.cv, str) and self.cv == "prefit"
+        if prefit:
+            fitted_estimators = [estimator for _, estimator in active]
+            for estimator in fitted_estimators:
+                check_is_fitted(estimator)
+            self._check_classes(names, fitted_estimators, self.classes_)
         oof_probabilities = []
         for name, estimator in active:
             if prefit:
-                check_is_fitted(estimator)
                 probabilities = estimator.predict_proba(X)
             else:
                 probabilities = cross_val_predict(
@@ -266,7 +287,7 @@ class EBANO(ClassifierMixin, _BaseComposition):
         rng = check_random_state(self.random_state)
         scorer = self._get_scorer()
         best_score = -np.inf
-        best_weights = None
+        best_weights: NDArray
 
         for _ in range(self.n_iter):
             weights = rng.uniform(size=len(active))
@@ -283,21 +304,14 @@ class EBANO(ClassifierMixin, _BaseComposition):
                 best_score = score
                 best_weights = weights
 
-        fitted_estimators = []
-        for name, estimator in active:
-            fitted_estimator = clone(estimator).fit(X, y)
-            estimator_classes = np.asarray(fitted_estimator.classes_)
-            if not np.array_equal(estimator_classes, self.classes_):
-                raise ValueError(
-                    f"Estimator {name!r} has classes {estimator_classes.tolist()}, "
-                    f"but EBANO expects {self.classes_.tolist()}."
-                )
-            fitted_estimators.append(fitted_estimator)
+        if not prefit:
+            fitted_estimators = [clone(estimator).fit(X, y) for _, estimator in active]
+            self._check_classes(names, fitted_estimators, self.classes_)
 
         self.weights_ = best_weights
         self.best_score_ = best_score
         self.estimators_ = fitted_estimators
-        self._estimator_names_ = [name for name, _ in active]
+        self._estimator_names_ = names
         fitted_by_name = dict(zip(self._estimator_names_, fitted_estimators))
         self.named_estimators_ = Bunch(
             **{name: fitted_by_name.get(name, "drop") for name, _ in self.estimators}
