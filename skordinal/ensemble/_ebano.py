@@ -18,7 +18,7 @@ from sklearn.base import (
 from sklearn.metrics import check_scoring
 from sklearn.model_selection import BaseCrossValidator, check_cv, cross_val_predict
 from sklearn.utils import Bunch, check_random_state, get_tags
-from sklearn.utils._param_validation import HasMethods, Interval, StrOptions
+from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.metaestimators import _BaseComposition
 from sklearn.utils.validation import (
     _num_samples,
@@ -67,10 +67,11 @@ class EBANO(ClassifierMixin, _BaseComposition):
         estimator can be set to ``"drop"`` to exclude it.
     n_iter : int, default=1000
         Number of random weight vectors to evaluate.
-    cv : int, cross-validation splitter, iterable or "prefit", default=5
-        Cross-validation strategy for the out-of-fold probabilities.
-        With ``"prefit"``, probabilities are obtained directly from the
-        supplied fitted estimators.
+    cv : int, cross-validation generator, iterable, "prefit" or None, default=None
+        Determines the cross-validation splitting strategy used in
+        ``cross_val_predict`` to choose the weights. ``None`` uses 5-fold
+        stratified cross-validation. ``"prefit"`` assumes that the
+        ``estimators`` are already fitted and chooses the weights on ``X``.
     scoring : str or callable, default="neg_average_mean_absolute_error"
         Scorer used to select the weights. Scorers
         registered by :mod:`skordinal.metrics` are also supported.
@@ -80,7 +81,7 @@ class EBANO(ClassifierMixin, _BaseComposition):
     random_state : int, RandomState instance or None, default=None
         Controls random weight generation.
     verbose : int, default=0
-        Verbosity level passed to :func:`sklearn.model_selection.cross_val_predict`.
+        Verbosity level.
 
     Attributes
     ----------
@@ -131,16 +132,11 @@ class EBANO(ClassifierMixin, _BaseComposition):
     _parameter_constraints: dict = {
         "estimators": [list],
         "n_iter": [Interval(Integral, 1, None, closed="left")],
-        "cv": [
-            Interval(Integral, 2, None, closed="left"),
-            HasMethods(["split"]),
-            StrOptions({"prefit"}),
-            "array-like",
-        ],
+        "cv": ["cv_object", StrOptions({"prefit"})],
         "scoring": [str, callable],
         "n_jobs": [Integral, None],
         "random_state": ["random_state", None],
-        "verbose": [Interval(Integral, 0, None, closed="left")],
+        "verbose": ["verbose"],
     }
 
     def __init__(
@@ -148,7 +144,7 @@ class EBANO(ClassifierMixin, _BaseComposition):
         estimators: list[tuple[str, BaseEstimator]],
         *,
         n_iter: int = 1000,
-        cv: int | str | BaseCrossValidator | Iterable = 5,
+        cv: int | str | BaseCrossValidator | Iterable | None = None,
         scoring: str = "neg_average_mean_absolute_error",
         n_jobs: int | None = None,
         random_state: int | np.random.RandomState | None = None,

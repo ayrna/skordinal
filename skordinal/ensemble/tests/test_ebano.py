@@ -492,6 +492,37 @@ def test_fit_rejects_invalid_estimators(estimators, ordinal_data):
         model.fit(X, y)
 
 
+@pytest.mark.parametrize(
+    "make_cv",
+    [
+        pytest.param(lambda X, y: None, id="none"),
+        pytest.param(lambda X, y: 3, id="int"),
+        pytest.param(
+            lambda X, y: StratifiedKFold(3, shuffle=True, random_state=0),
+            id="splitter",
+        ),
+        pytest.param(lambda X, y: StratifiedKFold(3).split(X, y), id="generator"),
+        pytest.param(lambda X, y: list(StratifiedKFold(3).split(X, y)), id="iterable"),
+        pytest.param(
+            lambda X, y: np.array(list(StratifiedKFold(3).split(X, y)), dtype=object),
+            id="array",
+        ),
+    ],
+)
+def test_ebano_predict_proba(ordinal_data, make_cv):
+    """predict_proba averages the estimator probabilities with weights_, for any cv."""
+    X, y = ordinal_data
+    model = EBANO(_estimators(), n_iter=25, cv=make_cv(X, y), random_state=7)
+
+    model.fit(X, y)
+
+    expected = sum(
+        weight * estimator.predict_proba(X)
+        for weight, estimator in zip(model.weights_, model.estimators_)
+    )
+    np.testing.assert_allclose(model.predict_proba(X), expected)
+
+
 def test_ebano_prefit(ordinal_data):
     """Check the behaviour of EBANO when cv="prefit"."""
     X, y = ordinal_data
