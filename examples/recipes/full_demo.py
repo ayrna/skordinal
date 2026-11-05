@@ -40,7 +40,7 @@ RECIPE = {
         "SVMOP": ModelConfig(
             OrdinalDecompositionClassifier(
                 estimator=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
-                decomposition="ordered_partitions",
+                decomposition="cumulative",
                 decision_method="frank_hall",
             ),
             param_grid={
@@ -54,7 +54,7 @@ RECIPE = {
                 decision_method="exponential_loss",
             ),
             param_grid={
-                "decomposition": ["ordered_partitions", "one_vs_next"],
+                "decomposition": ["cumulative", "adjacent"],
                 "estimator__C": [0.01, 0.1, 1, 10],
             },
         ),

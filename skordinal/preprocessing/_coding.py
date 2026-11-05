@@ -6,10 +6,10 @@ import numpy as np
 from sklearn.utils._param_validation import Interval, StrOptions, validate_params
 
 _VALID_DECOMPOSITIONS = (
-    "ordered_partitions",
-    "one_vs_next",
-    "one_vs_followers",
-    "one_vs_previous",
+    "cumulative",
+    "adjacent",
+    "sequential",
+    "sequential_reverse",
 )
 
 
@@ -33,17 +33,15 @@ def build_coding_matrix(n_classes, decomposition):
     n_classes : int
         Number of ordinal classes (must be ``>= 2``).
 
-    decomposition : {'ordered_partitions', 'one_vs_next', 'one_vs_followers', 'one_vs_previous'}
-        Decomposition strategy.
-
-        - ``'ordered_partitions'``: subproblem ``k`` is
-          ``{k+1, ..., K-1} vs {0, ..., k}``. See [1]_.
-        - ``'one_vs_next'``: subproblem ``k`` is class ``k`` vs class
-          ``k+1`` (other classes excluded).
-        - ``'one_vs_followers'``: subproblem ``k`` is class ``k`` vs
-          ``{k+1, ..., K-1}`` (preceding classes excluded).
-        - ``'one_vs_previous'``: subproblem ``k`` is class ``k+1`` vs
-          ``{0, ..., k}`` (following classes excluded).
+    decomposition : {'cumulative', 'adjacent', 'sequential', 'sequential_reverse'}
+        Decomposition, named after the cumulative, sequential and adjacent
+        categories models. Binary subproblem ``k`` compares the classes
+        ``{k+1, ..., K-1}`` with ``{0, ..., k}`` in ``'cumulative'`` [1]_, class
+        ``k`` with class ``k+1`` in ``'adjacent'``, class ``k`` with the classes
+        ``{k+1, ..., K-1}`` in ``'sequential'``, and class ``k+1`` with
+        ``{0, ..., k}`` in ``'sequential_reverse'``, the sequential model with
+        the class order reversed. The other classes are left out of the
+        subproblem.
 
     Returns
     -------
@@ -59,10 +57,10 @@ def build_coding_matrix(n_classes, decomposition):
     Examples
     --------
     >>> from skordinal.preprocessing import build_coding_matrix
-    >>> build_coding_matrix(2, "ordered_partitions")
+    >>> build_coding_matrix(2, "cumulative")
     array([[-1],
            [ 1]])
-    >>> build_coding_matrix(4, "ordered_partitions")
+    >>> build_coding_matrix(4, "cumulative")
     array([[-1, -1, -1],
            [ 1, -1, -1],
            [ 1,  1, -1],
@@ -77,19 +75,19 @@ def build_coding_matrix(n_classes, decomposition):
     K = int(n_classes)
     coding = np.zeros((K, K - 1), dtype=np.intp)
 
-    if decomposition == "ordered_partitions":
+    if decomposition == "cumulative":
         for k in range(K - 1):
             coding[: k + 1, k] = -1
             coding[k + 1 :, k] = 1
-    elif decomposition == "one_vs_next":
+    elif decomposition == "adjacent":
         for k in range(K - 1):
             coding[k, k] = 1
             coding[k + 1, k] = -1
-    elif decomposition == "one_vs_followers":
+    elif decomposition == "sequential":
         for k in range(K - 1):
             coding[k, k] = 1
             coding[k + 1 :, k] = -1
-    else:  # one_vs_previous
+    else:  # sequential_reverse
         for k in range(K - 1):
             coding[: k + 1, k] = -1
             coding[k + 1, k] = 1

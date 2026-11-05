@@ -64,7 +64,7 @@ def test_ordinal_decomposition(X, y):
     """Check if this algorithm can correctly classify a toy problem."""
     classifier = OrdinalDecompositionClassifier(
         estimator=KNeighborsClassifier(n_neighbors=1),
-        decomposition="ordered_partitions",
+        decomposition="cumulative",
         decision_method="frank_hall",
     )
 
@@ -78,7 +78,7 @@ def test_ordinal_decomposition(X, y):
         ("decomposition", "one_vs_all"),
         ("decomposition", "frank_hall"),
         ("decision_method", "invalid"),
-        ("decision_method", "one_vs_next"),
+        ("decision_method", "adjacent"),
     ],
 )
 def test_ordinal_decomposition_hyperparameter_value_validation(
@@ -94,7 +94,7 @@ def test_ordinal_decomposition_hyperparameter_value_validation(
 @pytest.mark.parametrize(
     "param_name, invalid_value",
     [
-        ("decomposition", ["ordered_partitions"]),
+        ("decomposition", ["cumulative"]),
         ("decision_method", 0),
         ("estimator", 3),
         ("estimator", SVC()),
@@ -124,8 +124,8 @@ def test_ordinal_decomposition_fit_input_validation(X, y):
 def test_frank_hall_method(binary_predictions):
     """Test that frank and hall method returns expected values for one toy problem
     (starting off predicted probabilities given by each binary classifier)."""
-    classifier = OrdinalDecompositionClassifier(decomposition="ordered_partitions")
-    classifier.coding_matrix_ = build_coding_matrix(5, "ordered_partitions")
+    classifier = OrdinalDecompositionClassifier(decomposition="cumulative")
+    classifier.coding_matrix_ = build_coding_matrix(5, "cumulative")
 
     y_proba = classifier._frank_hall_method(binary_predictions)
     expected_y_proba = np.array(
@@ -212,8 +212,8 @@ def test_frank_hall_method(binary_predictions):
 )
 def test_loss_methods(binary_predictions, loss_method, expected):
     """Test that each loss decoder returns expected values for one toy problem."""
-    classifier = OrdinalDecompositionClassifier(decomposition="ordered_partitions")
-    classifier.coding_matrix_ = build_coding_matrix(5, "ordered_partitions")
+    classifier = OrdinalDecompositionClassifier(decomposition="cumulative")
+    classifier.coding_matrix_ = build_coding_matrix(5, "cumulative")
 
     losses = getattr(classifier, loss_method)((2 * binary_predictions) - 1)
 
@@ -230,11 +230,11 @@ def test_ordinal_decomposition_predict_invalid_input_raises_error(X, y):
 
 
 def test_frank_hall_method_raises_error(X, y):
-    """Test that frank_hall over a non-ordered_partitions matrix raises a ValueError."""
+    """Test that frank_hall over a non-cumulative matrix raises a ValueError."""
     classifier = OrdinalDecompositionClassifier(
-        decomposition="one_vs_next", decision_method="frank_hall"
+        decomposition="adjacent", decision_method="frank_hall"
     )
-    with pytest.raises(ValueError, match="ordered_partitions must be used"):
+    with pytest.raises(ValueError, match='requires decomposition="cumulative"'):
         classifier.fit(X, y)
 
 
@@ -323,16 +323,16 @@ def test_ordinal_decomposition_decision_method_frozen_after_fit(X, y):
 
 
 def test_ordinal_decomposition_frank_hall_unreachable_by_set_params(X, y):
-    """Test that set_params cannot reach frank_hall over a one_vs_next coding matrix."""
+    """Test that set_params cannot reach frank_hall over an adjacent coding matrix."""
     classifier = OrdinalDecompositionClassifier(
-        decomposition="one_vs_next", decision_method="hinge_loss"
+        decomposition="adjacent", decision_method="hinge_loss"
     ).fit(X, y)
     y_proba_before = classifier.predict_proba(X)
 
     classifier.set_params(decision_method="frank_hall")
     npt.assert_allclose(classifier.predict_proba(X), y_proba_before)
 
-    with pytest.raises(ValueError, match="ordered_partitions must be used"):
+    with pytest.raises(ValueError, match='requires decomposition="cumulative"'):
         classifier.fit(X, y)
 
 
@@ -361,7 +361,7 @@ def test_ordinal_decomposition_grid_search_tunes_nested_estimator(X_3class, y_3c
 
 @pytest.mark.parametrize(
     "decomposition",
-    ["ordered_partitions", "one_vs_next", "one_vs_followers", "one_vs_previous"],
+    ["cumulative", "adjacent", "sequential", "sequential_reverse"],
 )
 def test_ordinal_decomposition_delegates_the_coding_matrix(
     X_3class, y_3class, decomposition
@@ -384,7 +384,7 @@ def test_ordinal_decomposition_asymmetric_estimator_follows_public_convention():
     )
     classifier = OrdinalDecompositionClassifier(
         estimator=LogisticRegression(class_weight={-1: 5, 1: 1}),
-        decomposition="one_vs_next",
+        decomposition="adjacent",
         decision_method="exponential_loss",
     ).fit(X, y)
 

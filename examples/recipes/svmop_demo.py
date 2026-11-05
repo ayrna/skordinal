@@ -23,7 +23,7 @@ RECIPE = {
         "SVMOP": ModelConfig(
             OrdinalDecompositionClassifier(
                 estimator=CalibratedClassifierCV(estimator=SVC(), ensemble=False),
-                decomposition="ordered_partitions",
+                decomposition="cumulative",
                 decision_method="frank_hall",
             ),
             param_grid={
