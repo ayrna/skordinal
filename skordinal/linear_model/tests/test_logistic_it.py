@@ -366,6 +366,15 @@ def test_logistic_it_convergence_warning(ordinal_data):
     assert np.isfinite(clf.loss_)
 
 
+def test_logistic_it_default_tol_reaches_the_optimum(ordinal_data):
+    """The default tol stops at the optimum a far tighter tol reaches."""
+    X, y = ordinal_data
+    clf = LogisticIT(alpha=0.01).fit(X, y)
+    tight = LogisticIT(alpha=0.01, tol=1e-10, max_iter=5000).fit(X, y)
+
+    assert clf.loss_ <= tight.loss_ + 1e-8
+
+
 def test_logistic_it_projection_well_formed(ordinal_data):
     """predict_projection is well-formed and consistent with predict."""
     X, y = ordinal_data
