@@ -8,7 +8,10 @@
 #endif
 
 static PyMethodDef svmMethods[] = {
-	{ "fit", fit, METH_VARARGS, "Fits a model" },
+	{ "fit", (PyCFunction)(void(*)(void))fit, METH_VARARGS | METH_KEYWORDS,
+		"fit($module, labels, features, /, kernel, degree, gamma, coef0, tol, C, "
+		"shrinking, cache_size)\n--\n\n"
+		"Train the model using libsvm-rank (low-level method)." },
     { "predict", predict, METH_VARARGS, "Predict labels" },
 	{ NULL, NULL, 0, NULL }
 };

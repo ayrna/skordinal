@@ -190,18 +190,18 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         }
         kernel_type = kernel_type_mapping[self.kernel]
 
-        # Fit the model
-        options = "-s 5 -t {} -d {} -g {} -r {} -c {} -m {} -e {} -h {} -q".format(
-            str(kernel_type),
-            str(self.degree),
-            str(gamma_value),
-            str(self.coef0),
-            str(self.C),
-            str(self.cache_size),
-            str(self.tol),
-            str(1 if self.shrinking else 0),
+        self.model_ = svm.fit(
+            (y_encoded + 1).tolist(),
+            X.tolist(),
+            kernel=kernel_type,
+            degree=self.degree,
+            gamma=gamma_value,
+            coef0=self.coef0,
+            tol=self.tol,
+            C=self.C,
+            shrinking=self.shrinking,
+            cache_size=self.cache_size,
         )
-        self.model_ = svm.fit((y_encoded + 1).tolist(), X.tolist(), options)
         # the backend folds rho[0] into the projection; rho[1:] are the cutpoints
         self.thresholds_ = np.asarray(self.model_["rho"][1:], dtype=np.float64)
 

@@ -151,15 +151,9 @@ class SVOR(ClassifierMixin, BaseEstimator):
         X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
 
-        arg = ""
-        if self.kernel == "linear":
-            arg = "-L"
-        elif self.kernel == "poly":
-            arg = "-P {}".format(self.degree)
-        # kernel == "rbf" maps to the C core's default Gaussian kernel, no flag emitted
-
-        # constraints == "explicit" maps to the C core's default, no flag emitted
-        mode = "-I" if self.constraints == "implicit" else ""
+        # Map the kernel and the constraints to the C core's enum codes
+        kernel_type = {"rbf": 0, "poly": 1, "linear": 2}[self.kernel]
+        constraints = {"explicit": 0, "implicit": 1}[self.constraints]
 
         # Resolve gamma to a scalar before passing it to the C backend
         n_features = X.shape[1]
@@ -171,10 +165,16 @@ class SVOR(ClassifierMixin, BaseEstimator):
         else:
             gamma_value = float(self.gamma)
 
-        options = "svor {} {} -T {} -K {} -C {}".format(
-            arg, mode, str(self.tol), str(gamma_value), str(self.C)
+        self.model_ = svor.fit(
+            (y_encoded + 1).tolist(),
+            X.tolist(),
+            kernel=kernel_type,
+            degree=self.degree,
+            gamma=gamma_value,
+            tol=self.tol,
+            C=self.C,
+            constraints=constraints,
         )
-        self.model_ = svor.fit((y_encoded + 1).tolist(), X.tolist(), options)
         if self.model_["convergence_failed"]:
             warnings.warn(
                 self.model_["convergence_message"],
