@@ -7,7 +7,7 @@ name = "skordinal"
 version = "0.2.0"
 description = "Ordinal classification for Python, scikit-learn compatible"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [
@@ -32,11 +32,11 @@ classifiers = [
     "Programming Language :: C",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries",
 ]
@@ -160,7 +160,7 @@ markers = [
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py311"
 exclude = [
     ".eggs",
     ".git",
@@ -181,7 +181,7 @@ ignore = ["E501"]
 "examples/**" = ["E402"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 allow_redefinition = true
 exclude = ["skordinal/svm/src/libsvmrank/", "skordinal/svm/src/svor/"]
