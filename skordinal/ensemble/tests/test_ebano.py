@@ -1,14 +1,26 @@
 """Tests for the EBANO probability-averaging classifier."""
 
+from copy import deepcopy
+from unittest.mock import Mock
+
 import numpy as np
+import pandas as pd
 import pytest
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.exceptions import NotFittedError
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.frozen import FrozenEstimator
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import GridSearchCV, KFold, ShuffleSplit, StratifiedKFold
+from sklearn.model_selection import (
+    GridSearchCV,
+    KFold,
+    ShuffleSplit,
+    StratifiedKFold,
+    train_test_split,
+)
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -481,3 +493,209 @@ def test_fit_rejects_invalid_estimators(estimators, ordinal_data):
 
     with pytest.raises(ValueError):
         model.fit(X, y)
+
+
+@pytest.mark.parametrize(
+    "make_cv",
+    [
+        pytest.param(lambda X, y: None, id="none"),
+        pytest.param(lambda X, y: 3, id="int"),
+        pytest.param(
+            lambda X, y: StratifiedKFold(3, shuffle=True, random_state=0),
+            id="splitter",
+        ),
+        pytest.param(lambda X, y: StratifiedKFold(3).split(X, y), id="generator"),
+        pytest.param(lambda X, y: list(StratifiedKFold(3).split(X, y)), id="iterable"),
+        pytest.param(
+            lambda X, y: np.array(list(StratifiedKFold(3).split(X, y)), dtype=object),
+            id="array",
+        ),
+    ],
+)
+def test_ebano_predict_proba(ordinal_data, make_cv):
+    """predict_proba averages the estimator probabilities with weights_, for any cv."""
+    X, y = ordinal_data
+    model = EBANO(_estimators(), n_iter=25, cv=make_cv(X, y), random_state=7)
+
+    model.fit(X, y)
+
+    expected = sum(
+        weight * estimator.predict_proba(X)
+        for weight, estimator in zip(model.weights_, model.estimators_)
+    )
+    np.testing.assert_allclose(model.predict_proba(X), expected)
+
+
+def test_ebano_prefit(ordinal_data):
+    """Check the behaviour of EBANO when cv="prefit"."""
+    X, y = ordinal_data
+    X_train1, X_train2, y_train1, y_train2 = train_test_split(
+        X, y, random_state=42, test_size=0.5
+    )
+    estimators = [
+        ("lr1", LogisticRegression().fit(X_train1, y_train1)),
+        ("lr2", LogisticRegression(C=0.1).fit(X_train1, y_train1)),
+    ]
+    for _, estimator in estimators:
+        estimator.fit = Mock(name="fit")
+        estimator.predict_proba = Mock(side_effect=estimator.predict_proba)
+
+    model = EBANO(estimators, n_iter=5, cv="prefit", random_state=0)
+    model.fit(X_train2, y_train2)
+
+    assert model.estimators_ == [estimator for _, estimator in estimators]
+    assert all(estimator.fit.call_count == 0 for estimator in model.estimators_)
+    for estimator in model.estimators_:
+        estimator.predict_proba.assert_called_with(X_train2)
+
+
+@pytest.mark.parametrize(
+    "wrap, cv",
+    [
+        pytest.param(lambda estimator: estimator, "prefit", id="prefit"),
+        pytest.param(FrozenEstimator, 3, id="frozen"),
+    ],
+)
+@pytest.mark.parametrize(
+    "encode",
+    [
+        pytest.param(lambda y: np.array([10, 30, 80])[y], id="labels"),
+        pytest.param(lambda y: y, id="positions"),
+    ],
+)
+def test_ebano_prefit_classes(ordinal_data, wrap, cv, encode):
+    """An estimator EBANO does not fit may know the labels of y or their positions."""
+    X, y = ordinal_data
+    labels = np.array([10, 30, 80])[y]
+    fitted = LogisticRegression().fit(X[::2], encode(y[::2]))
+    model = EBANO([("lr", wrap(fitted))], n_iter=2, cv=cv)
+
+    model.fit(X[1::2], labels[1::2])
+
+    np.testing.assert_allclose(model.predict_proba(X), fitted.predict_proba(X))
+
+
+@pytest.mark.parametrize(
+    "wrap, cv",
+    [
+        pytest.param(lambda estimator: estimator, "prefit", id="prefit"),
+        pytest.param(FrozenEstimator, 3, id="frozen"),
+    ],
+)
+def test_ebano_prefit_classes_error(ordinal_data, wrap, cv):
+    """An estimator EBANO does not fit that knows other classes raises ValueError."""
+    X, y = ordinal_data
+    fitted = wrap(LogisticRegression().fit(X, y + 1))
+    model = EBANO([("lr", fitted)], n_iter=2, cv=cv)
+
+    with pytest.raises(ValueError, match="has classes"):
+        model.fit(X, np.array([10, 30, 80])[y])
+
+
+def test_ebano_class_positions(ordinal_data):
+    """EBANO fits its estimators on the positions of the classes, as stacking does."""
+    X, y = ordinal_data
+    labels = np.array([10, 30, 80])[y]
+
+    model = EBANO(_estimators(), n_iter=2, cv=3, random_state=0).fit(X, labels)
+
+    for estimator in model.estimators_:
+        np.testing.assert_array_equal(estimator.classes_, [0, 1, 2])
+
+
+def test_ebano_shuffled_cv(ordinal_data, monkeypatch):
+    """An unseeded shuffling cv gives all estimators the same folds and stays intact."""
+    X, y = ordinal_data
+    cv = StratifiedKFold(3, shuffle=True)
+    folds = []
+    original = _ebano.cross_val_predict
+
+    def _recording_cross_val_predict(estimator, X, y, *, cv, **kwargs):
+        """Record the test folds of the splitter, then predict."""
+        folds.append([test.tolist() for _, test in deepcopy(cv).split(X, y)])
+        return original(estimator, X, y, cv=cv, **kwargs)
+
+    monkeypatch.setattr(_ebano, "cross_val_predict", _recording_cross_val_predict)
+    EBANO(_estimators(), n_iter=2, cv=cv).fit(X, y)
+
+    assert folds[0] == folds[1]
+    assert cv.random_state is None
+
+
+@pytest.mark.filterwarnings("error::RuntimeWarning")
+@pytest.mark.parametrize("dtype", [int, object])
+def test_ebano_stratify_default(dtype):
+    """Check that we stratify the classes for the default cv."""
+    y = np.repeat(np.arange(5), 20)
+    X = y[:, np.newaxis] + np.random.RandomState(0).normal(size=(100, 2))
+    clf = EBANO(_estimators(), n_iter=2)
+    # Since y is sorted, each fold of a simple k-fold would hold a whole class
+    clf.fit(X, y.astype(dtype))
+
+
+@pytest.mark.parametrize(
+    "make_data, preprocessor",
+    [
+        pytest.param(
+            lambda X, y: (
+                np.where(np.random.RandomState(0).rand(*X.shape) < 0.1, np.nan, X),
+                y,
+            ),
+            SimpleImputer,
+            id="missing-values",
+        ),
+        pytest.param(
+            lambda X, y: (
+                ["low low", "low mid", "mid mid", "mid high", "high high"] * 6,
+                np.array([0, 0, 1, 2, 2] * 6),
+            ),
+            CountVectorizer,
+            id="text",
+        ),
+    ],
+)
+def test_ebano_delegates_validation(ordinal_data, make_data, preprocessor):
+    """EBANO delegates the validation of X to the underlying estimators."""
+    X, y = make_data(*ordinal_data)
+    pipe = make_pipeline(preprocessor(), LogisticRegression())
+    ensemble = EBANO([("pipe1", pipe), ("pipe2", pipe)], n_iter=2)
+
+    ensemble.fit(X, y).score(X, y)
+
+
+def test_ebano_feature_names_in_refit(ordinal_data):
+    """A refit on an ndarray drops the feature names of a previous fit."""
+    X, y = ordinal_data
+    model = EBANO(_estimators(), n_iter=2)
+    model.fit(pd.DataFrame(X, columns=["f0", "f1", "f2", "f3"]), y)
+
+    model.fit(X, y)
+
+    assert not hasattr(model, "feature_names_in_")
+
+
+def test_ebano_without_n_features_in(ordinal_data):
+    """EBANO supports estimators without n_features_in_."""
+
+    class MyEstimator(LogisticRegression):
+        """Estimator without n_features_in_."""
+
+        def fit(self, X, y):
+            """Fit, then delete n_features_in_."""
+            super().fit(X, y)
+            del self.n_features_in_
+            return self
+
+    X, y = ordinal_data
+    ebano = EBANO([("lr", MyEstimator())], n_iter=2)
+
+    msg = "EBANO object has no attribute n_features_in_"
+    with pytest.raises(AttributeError, match=msg):
+        ebano.n_features_in_
+
+    # Does not raise
+    ebano.fit(X, y)
+
+    msg = "'MyEstimator' object has no attribute 'n_features_in_'"
+    with pytest.raises(AttributeError, match=msg):
+        ebano.n_features_in_

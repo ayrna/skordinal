@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from copy import deepcopy
 from numbers import Integral
 
 import numpy as np
@@ -14,23 +15,16 @@ from sklearn.base import (
     clone,
     is_classifier,
 )
+from sklearn.exceptions import NotFittedError
 from sklearn.metrics import check_scoring
-from sklearn.model_selection import BaseCrossValidator, cross_val_predict
+from sklearn.model_selection import BaseCrossValidator, check_cv, cross_val_predict
 from sklearn.utils import Bunch, check_random_state, get_tags
-from sklearn.utils._param_validation import HasMethods, Interval, StrOptions
+from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.metaestimators import _BaseComposition
-from sklearn.utils.validation import (
-    _num_samples,
-    check_is_fitted,
-    validate_data,
-)
+from sklearn.utils.validation import _num_samples, check_is_fitted, column_or_1d
 
 from skordinal.metrics import get_ordinal_scorer, get_ordinal_scorer_names
 from skordinal.utils.validation import check_ordinal_targets
-
-_X_CHECK_PARAMS = dict(
-    dtype=None, ensure_all_finite=False, accept_sparse=True, allow_nd=True
-)
 
 
 class _ProbabilityClassifier(ClassifierMixin, BaseEstimator):
@@ -55,8 +49,9 @@ class EBANO(ClassifierMixin, _BaseComposition):
     ``scoring`` value is retained, then the base estimators are fitted on all
     the training data.
 
-    To use already-fitted estimators, wrap each one in
-    :class:`sklearn.frozen.FrozenEstimator` and set ``cv="prefit"``.
+    Already-fitted estimators can be wrapped in
+    :class:`sklearn.frozen.FrozenEstimator`, which ``clone`` keeps fitted, or
+    passed bare with ``cv="prefit"``, which uses them as fitted.
 
     Parameters
     ----------
@@ -65,10 +60,11 @@ class EBANO(ClassifierMixin, _BaseComposition):
         estimator can be set to ``"drop"`` to exclude it.
     n_iter : int, default=1000
         Number of random weight vectors to evaluate.
-    cv : int, cross-validation splitter, iterable or "prefit", default=5
-        Cross-validation strategy for the out-of-fold probabilities.
-        With ``"prefit"``, probabilities are obtained directly from the
-        supplied fitted estimators.
+    cv : int, cross-validation generator, iterable, "prefit" or None, default=None
+        Determines the cross-validation splitting strategy used in
+        ``cross_val_predict`` to choose the weights. ``None`` uses 5-fold
+        stratified cross-validation. ``"prefit"`` assumes that the
+        ``estimators`` are already fitted and chooses the weights on ``X``.
     scoring : str or callable, default="neg_average_mean_absolute_error"
         Scorer used to select the weights. Scorers
         registered by :mod:`skordinal.metrics` are also supported.
@@ -78,15 +74,17 @@ class EBANO(ClassifierMixin, _BaseComposition):
     random_state : int, RandomState instance or None, default=None
         Controls random weight generation.
     verbose : int, default=0
-        Verbosity level passed to :func:`sklearn.model_selection.cross_val_predict`.
+        Verbosity level.
 
     Attributes
     ----------
     classes_ : ndarray of shape (n_classes,)
         The sorted class labels observed during fitting.
     estimators_ : list of fitted estimators
-        Fitted estimators in the same order as the non-dropped entries in
-        ``estimators``.
+        The elements of the ``estimators`` parameter, having been fitted on the
+        training data. If an estimator has been set to ``"drop"``, it will not
+        appear in ``estimators_``. When ``cv="prefit"``, ``estimators_`` is set
+        to ``estimators`` and is not fitted again.
     named_estimators_ : Bunch
         Fitted estimators accessed by their names. Dropped estimators appear
         as ``"drop"``.
@@ -95,10 +93,11 @@ class EBANO(ClassifierMixin, _BaseComposition):
     best_score_ : float
         Score achieved by ``weights_`` on the out-of-fold predictions.
     n_features_in_ : int
-        Number of features seen during fitting.
+        Number of features seen during fit. Only defined if the underlying
+        estimator exposes such an attribute when fit.
     feature_names_in_ : ndarray of shape (n_features_in_,)
-        Names of features seen during fitting. Defined only when ``X`` has
-        feature names that are all strings.
+        Names of features seen during fit. Only defined if the underlying
+        estimators expose such an attribute when fit.
 
     Notes
     -----
@@ -113,8 +112,8 @@ class EBANO(ClassifierMixin, _BaseComposition):
     overfit most. Pass data the estimators have not seen (e.g. a validation
     set) unless you intentionally want that behaviour.
 
-    ``X`` is not converted: validation is delegated to the base estimators,
-    so DataFrames, sparse matrices or missing values are accepted whenever
+    ``X`` is not validated or converted. The base estimators validate it, so
+    text, DataFrames, sparse matrices or missing values are accepted whenever
     the base estimators accept them.
 
     Examples
@@ -127,16 +126,11 @@ class EBANO(ClassifierMixin, _BaseComposition):
     _parameter_constraints: dict = {
         "estimators": [list],
         "n_iter": [Interval(Integral, 1, None, closed="left")],
-        "cv": [
-            Interval(Integral, 2, None, closed="left"),
-            HasMethods(["split"]),
-            StrOptions({"prefit"}),
-            "array-like",
-        ],
+        "cv": ["cv_object", StrOptions({"prefit"})],
         "scoring": [str, callable],
         "n_jobs": [Integral, None],
         "random_state": ["random_state", None],
-        "verbose": [Interval(Integral, 0, None, closed="left")],
+        "verbose": ["verbose"],
     }
 
     def __init__(
@@ -144,7 +138,7 @@ class EBANO(ClassifierMixin, _BaseComposition):
         estimators: list[tuple[str, BaseEstimator]],
         *,
         n_iter: int = 1000,
-        cv: int | str | BaseCrossValidator | Iterable = 5,
+        cv: int | str | BaseCrossValidator | Iterable | None = None,
         scoring: str = "neg_average_mean_absolute_error",
         n_jobs: int | None = None,
         random_state: int | np.random.RandomState | None = None,
@@ -222,6 +216,19 @@ class EBANO(ClassifierMixin, _BaseComposition):
         return check_scoring(self, scoring=self.scoring)
 
     @staticmethod
+    def _check_classes(
+        names: list[str], estimators: list, *expected_classes: NDArray
+    ) -> None:
+        """Raise if a fitted estimator predicts none of the expected class sets."""
+        for name, estimator in zip(names, estimators):
+            estimator_classes = np.asarray(estimator.classes_)
+            if not any(np.array_equal(estimator_classes, c) for c in expected_classes):
+                raise ValueError(
+                    f"Estimator {name!r} has classes {estimator_classes.tolist()}, "
+                    f"but EBANO expects {expected_classes[0].tolist()}."
+                )
+
+    @staticmethod
     def _validate_probabilities(
         probabilities: ArrayLike, n_samples: int, n_classes: int, name: str
     ) -> NDArray:
@@ -236,24 +243,37 @@ class EBANO(ClassifierMixin, _BaseComposition):
     @_fit_context(prefer_skip_nested_validation=False)
     def fit(self, X: ArrayLike, y: ArrayLike) -> EBANO:
         """Fit the ensemble and select its probability-blending weights."""
-        _, y = validate_data(self, X, y, reset=True, **_X_CHECK_PARAMS)
+        y = column_or_1d(y, warn=True)
         self.classes_, y_encoded = check_ordinal_targets(y)
         y_scoring = self.classes_[y_encoded]
         active = self._validate_estimators()
         n_samples, n_classes = _num_samples(X), len(self.classes_)
 
+        names = [name for name, _ in active]
         prefit = isinstance(self.cv, str) and self.cv == "prefit"
+        if prefit:
+            fitted_estimators = [estimator for _, estimator in active]
+            for estimator in fitted_estimators:
+                check_is_fitted(estimator)
+            # An EBANO's own estimators_ were fitted on the class positions
+            self._check_classes(
+                names, fitted_estimators, self.classes_, np.arange(n_classes)
+            )
+        else:
+            cv = deepcopy(check_cv(self.cv, y_encoded, classifier=True))
+            # Seed the copy so that every estimator gets the same folds
+            if hasattr(cv, "random_state") and cv.random_state is None:
+                cv.random_state = np.random.RandomState()
         oof_probabilities = []
         for name, estimator in active:
             if prefit:
-                check_is_fitted(estimator)
                 probabilities = estimator.predict_proba(X)
             else:
                 probabilities = cross_val_predict(
                     estimator,
                     X,
-                    y,
-                    cv=self.cv,
+                    y_encoded,
+                    cv=deepcopy(cv),
                     method="predict_proba",
                     n_jobs=self.n_jobs,
                     verbose=self.verbose,
@@ -266,7 +286,7 @@ class EBANO(ClassifierMixin, _BaseComposition):
         rng = check_random_state(self.random_state)
         scorer = self._get_scorer()
         best_score = -np.inf
-        best_weights = None
+        best_weights: NDArray
 
         for _ in range(self.n_iter):
             weights = rng.uniform(size=len(active))
@@ -283,31 +303,45 @@ class EBANO(ClassifierMixin, _BaseComposition):
                 best_score = score
                 best_weights = weights
 
-        fitted_estimators = []
-        for name, estimator in active:
-            fitted_estimator = clone(estimator).fit(X, y)
-            estimator_classes = np.asarray(fitted_estimator.classes_)
-            if not np.array_equal(estimator_classes, self.classes_):
-                raise ValueError(
-                    f"Estimator {name!r} has classes {estimator_classes.tolist()}, "
-                    f"but EBANO expects {self.classes_.tolist()}."
-                )
-            fitted_estimators.append(fitted_estimator)
+        if not prefit:
+            fitted_estimators = [
+                clone(estimator).fit(X, y_encoded) for _, estimator in active
+            ]
+            # A frozen estimator keeps the labels it was fitted on
+            self._check_classes(
+                names, fitted_estimators, self.classes_, np.arange(n_classes)
+            )
 
         self.weights_ = best_weights
         self.best_score_ = best_score
         self.estimators_ = fitted_estimators
-        self._estimator_names_ = [name for name, _ in active]
+        self._estimator_names_ = names
+        # Delete the feature names of a previous fit, as validate_data does
+        if hasattr(self, "feature_names_in_"):
+            delattr(self, "feature_names_in_")
+        for estimator in fitted_estimators:
+            if hasattr(estimator, "feature_names_in_"):
+                self.feature_names_in_ = estimator.feature_names_in_
         fitted_by_name = dict(zip(self._estimator_names_, fitted_estimators))
         self.named_estimators_ = Bunch(
             **{name: fitted_by_name.get(name, "drop") for name, _ in self.estimators}
         )
         return self
 
+    @property
+    def n_features_in_(self) -> int:
+        """Number of features seen during fit, if the first estimator exposes it."""
+        try:
+            check_is_fitted(self)
+        except NotFittedError as nfe:
+            raise AttributeError(
+                f"{self.__class__.__name__} object has no attribute n_features_in_"
+            ) from nfe
+        return self.estimators_[0].n_features_in_
+
     def predict_proba(self, X: ArrayLike) -> NDArray:
         """Return the weighted sum of the base-estimator probabilities."""
         check_is_fitted(self)
-        validate_data(self, X, reset=False, **_X_CHECK_PARAMS)
         n_samples, n_classes = _num_samples(X), len(self.classes_)
         probabilities = [
             self._validate_probabilities(
