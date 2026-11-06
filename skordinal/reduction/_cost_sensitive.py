@@ -1,4 +1,4 @@
-"""Cost-sensitive wrapper meta-estimator for ordinal classification."""
+"""Cost-sensitive one-vs-rest meta-estimator for ordinal classification."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _estimators_has(attr):
     return check
 
 
-class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
+class CostSensitiveClassifier(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
     """Cost-sensitive one-vs-rest meta-estimator for ordinal classification.
 
     Trains one binary one-vs-rest sub-classifier per ordinal class, reweighting
@@ -110,7 +110,7 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         self.estimator = estimator
 
     @_fit_context(prefer_skip_nested_validation=True)
-    def fit(self, X: ArrayLike, y: ArrayLike) -> CostSensitiveWrapper:
+    def fit(self, X: ArrayLike, y: ArrayLike) -> CostSensitiveClassifier:
         """Fit one cost-sensitive binary classifier per ordinal class.
 
         Parameters
@@ -150,7 +150,7 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         if "sample_weight" not in inspect.signature(base.fit).parameters:
             raise ValueError(
                 f"Estimator {type(base).__name__} does not accept sample_weight "
-                f"in fit; CostSensitiveWrapper requires it."
+                f"in fit; CostSensitiveClassifier requires it."
             )
 
         self.estimators_ = []
@@ -196,7 +196,7 @@ class CostSensitiveWrapper(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         if not use_df and not use_proba:
             raise AttributeError(
                 "Base estimators expose neither decision_function nor "
-                "predict_proba; CostSensitiveWrapper.predict requires one of them."
+                "predict_proba; CostSensitiveClassifier.predict requires one of them."
             )
 
         S = np.empty((n, K), dtype=np.float64)

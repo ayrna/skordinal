@@ -26,7 +26,7 @@ for :class:`~sklearn.model_selection.GridSearchCV`.
    mean_zero_one_error
    accuracy_score
    accuracy_off1_score
-   geometric_mean
+   geometric_mean_score
    gmsec
    minimum_sensitivity
    mean_extreme_sensitivity

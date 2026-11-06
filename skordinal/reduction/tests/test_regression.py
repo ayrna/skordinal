@@ -1,4 +1,4 @@
-"""Tests for the RegressorWrapper classifier."""
+"""Tests for RegressionClassifier."""
 
 import inspect
 
@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
-from skordinal.reduction import RegressorWrapper
+from skordinal.reduction import RegressionClassifier
 
 
 @pytest.fixture
@@ -23,27 +23,27 @@ def y():
     return np.array([0, 1, 1, 0, 1])
 
 
-def test_regressor_wrapper_predict_matches_expected():
+def test_regression_predict_matches_expected():
     """Test that predictions match expected values."""
     X = np.array([[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]])
     y = np.array([0, 0, 1, 1, 2, 2])
 
-    classifier = RegressorWrapper(LinearRegression()).fit(X, y)
+    classifier = RegressionClassifier(LinearRegression()).fit(X, y)
     npt.assert_array_equal(classifier.predict(X), y)
 
 
 @pytest.mark.parametrize("invalid_value", [5, "svr", object()])
-def test_regressor_wrapper_hyperparameter_type_validation(X, y, invalid_value):
-    """Test that RegressorWrapper raises ValueError for invalid types of hyperparameters."""
-    classifier = RegressorWrapper(estimator=invalid_value)
+def test_regression_hyperparameter_type_validation(X, y, invalid_value):
+    """Invalid hyperparameter types raise ValueError."""
+    classifier = RegressionClassifier(estimator=invalid_value)
 
     with pytest.raises(ValueError, match=r"The 'estimator' parameter.*"):
         classifier.fit(X, y)
 
 
-def test_regressor_wrapper_fit_input_validation(X, y):
+def test_regression_fit_input_validation(X, y):
     """Test that input data is validated."""
-    classifier = RegressorWrapper()
+    classifier = RegressionClassifier()
 
     with pytest.raises(ValueError):
         classifier.fit(X, y[:-1])
@@ -55,25 +55,25 @@ def test_regressor_wrapper_fit_input_validation(X, y):
         classifier.fit(X, [])
 
 
-def test_regressor_wrapper_rejects_non_regressor(X, y):
+def test_regression_rejects_non_regressor(X, y):
     """Test that a base estimator that is not a regressor is rejected."""
-    classifier = RegressorWrapper(LogisticRegression())
+    classifier = RegressionClassifier(LogisticRegression())
 
     with pytest.raises(ValueError, match="must be a regressor"):
         classifier.fit(X, y)
 
 
-def test_regressor_wrapper_predict_invalid_input_raises_error(X, y):
+def test_regression_predict_invalid_input_raises_error(X, y):
     """Test that invalid input raises an error."""
-    classifier = RegressorWrapper().fit(X, y)
+    classifier = RegressionClassifier().fit(X, y)
 
     with pytest.raises(ValueError):
         classifier.predict([])
 
 
-def test_regressor_wrapper_sets_classes_and_n_features_in_after_fit(X, y):
+def test_regression_sets_classes_and_n_features_in_after_fit(X, y):
     """Test that classes_ and n_features_in_ are set after fit."""
-    classifier = RegressorWrapper().fit(X, y)
+    classifier = RegressionClassifier().fit(X, y)
 
     assert isinstance(classifier.classes_, np.ndarray)
     np.testing.assert_array_equal(classifier.classes_, np.unique(y))
@@ -81,19 +81,19 @@ def test_regressor_wrapper_sets_classes_and_n_features_in_after_fit(X, y):
     assert classifier.n_features_in_ == X.shape[1]
 
 
-def test_regressor_wrapper_predict_raises_if_not_fitted(X):
+def test_regression_predict_raises_if_not_fitted(X):
     """Test that predict raises when the model is not fitted."""
     from sklearn.exceptions import NotFittedError
 
-    classifier = RegressorWrapper()
+    classifier = RegressionClassifier()
     with pytest.raises(NotFittedError):
         classifier.predict(X)
 
 
-def test_regressor_wrapper_feature_names_in_when_dataframe(X, y):
+def test_regression_feature_names_in_when_dataframe(X, y):
     """Test that feature_names_in_ is set when X is a DataFrame."""
     df = pd.DataFrame(X, columns=["f0", "f1"])
-    classifier = RegressorWrapper().fit(df, y)
+    classifier = RegressionClassifier().fit(df, y)
 
     assert hasattr(classifier, "feature_names_in_")
     np.testing.assert_array_equal(
@@ -101,17 +101,17 @@ def test_regressor_wrapper_feature_names_in_when_dataframe(X, y):
     )
 
 
-def test_regressor_wrapper_parameter_constraints_match_init_params():
+def test_regression_parameter_constraints_match_init_params():
     """Test that _parameter_constraints keys match __init__ parameters."""
-    init_params = set(inspect.signature(RegressorWrapper.__init__).parameters) - {
+    init_params = set(inspect.signature(RegressionClassifier.__init__).parameters) - {
         "self"
     }
-    assert set(RegressorWrapper._parameter_constraints) == init_params
+    assert set(RegressionClassifier._parameter_constraints) == init_params
 
 
-def test_regressor_wrapper_predict_rejects_wrong_n_features(X, y):
+def test_regression_predict_rejects_wrong_n_features(X, y):
     """predict and predict_projection reject a mismatched n_features."""
-    classifier = RegressorWrapper().fit(X, y)
+    classifier = RegressionClassifier().fit(X, y)
     with pytest.raises(ValueError):
         classifier.predict(X[:, :-1])
     with pytest.raises(ValueError):
@@ -127,28 +127,28 @@ def test_regressor_wrapper_predict_rejects_wrong_n_features(X, y):
         [3, 5, 7],  # non-contiguous with gaps
     ],
 )
-def test_regressor_wrapper_label_roundtrip(labels):
-    """Test that RegressorWrapper preserves arbitrary ordinal label sets through fit/predict."""
+def test_regression_label_roundtrip(labels):
+    """RegressionClassifier keeps arbitrary labels through fit and predict."""
     labels_array = np.array(labels)
     X = np.array(
         [[i, i] for i, _ in enumerate(np.repeat(labels_array, 3))], dtype=float
     )
     y = np.repeat(labels_array, 3)
 
-    classifier = RegressorWrapper(LinearRegression()).fit(X, y)
+    classifier = RegressionClassifier(LinearRegression()).fit(X, y)
 
     assert np.array_equal(classifier.classes_, np.unique(labels_array))
     assert set(classifier.predict(X)).issubset(set(np.unique(labels_array)))
 
 
-def test_regressor_wrapper_predict_raises_on_nan_output(X, y, monkeypatch):
+def test_regression_predict_raises_on_nan_output(X, y, monkeypatch):
     """Test that a NaN regressor prediction raises a ValueError."""
 
     def predict_nan(self, X):
         return np.full(len(X), np.nan)
 
     monkeypatch.setattr(LinearRegression, "predict", predict_nan)
-    classifier = RegressorWrapper(LinearRegression()).fit(X, y)
+    classifier = RegressionClassifier(LinearRegression()).fit(X, y)
 
     with pytest.raises(ValueError, match="cannot map NaN to a rank"):
         classifier.predict(X)
@@ -161,7 +161,7 @@ def test_regressor_wrapper_predict_raises_on_nan_output(X, y, monkeypatch):
         (-np.inf, lambda classes: classes.min()),
     ],
 )
-def test_regressor_wrapper_predict_clips_infinite_output_to_extreme_class(
+def test_regression_predict_clips_infinite_output_to_extreme_class(
     X, y, monkeypatch, raw_output, expected_class_fn
 ):
     """Test that an infinite regressor prediction maps to the nearest extreme class."""
@@ -170,7 +170,7 @@ def test_regressor_wrapper_predict_clips_infinite_output_to_extreme_class(
         return np.full(len(X), raw_output)
 
     monkeypatch.setattr(LinearRegression, "predict", predict_constant)
-    classifier = RegressorWrapper(LinearRegression()).fit(X, y)
+    classifier = RegressionClassifier(LinearRegression()).fit(X, y)
 
     predictions = classifier.predict(X)
 
@@ -179,9 +179,9 @@ def test_regressor_wrapper_predict_clips_infinite_output_to_extreme_class(
     )
 
 
-def test_regressor_wrapper_projection_is_the_wrapped_regressor_output(X, y):
+def test_regression_projection_is_the_wrapped_regressor_output(X, y):
     """predict_projection returns the wrapped regressor's own output."""
-    clf = RegressorWrapper(LinearRegression()).fit(X, y)
+    clf = RegressionClassifier(LinearRegression()).fit(X, y)
 
     projection = clf.predict_projection(X)
     assert projection.shape == (len(X),)

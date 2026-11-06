@@ -5,7 +5,7 @@ from sklearn.metrics import accuracy_score, mean_absolute_error
 from ._metrics import (
     accuracy_off1_score,
     average_mean_absolute_error,
-    geometric_mean,
+    geometric_mean_score,
     gmsec,
     kendalls_tau,
     maximum_mean_absolute_error,
@@ -22,7 +22,7 @@ __all__ = [
     "accuracy_off1_score",
     "accuracy_score",
     "average_mean_absolute_error",
-    "geometric_mean",
+    "geometric_mean_score",
     "get_ordinal_scorer",
     "get_ordinal_scorer_names",
     "gmsec",

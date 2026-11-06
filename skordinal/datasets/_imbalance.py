@@ -31,7 +31,7 @@ def _class_imbalance_ratios(class_counts: dict[object, int]) -> list[float]:
 
 
 @validate_params({"y": ["array-like"]}, prefer_skip_nested_validation=True)
-def compute_dataset_air(y) -> float:
+def average_imbalance_ratio(y) -> float:
     """Compute the Average Imbalance Ratio (AIR) from class labels.
 
     For each class :math:`j`, its imbalance ratio is
@@ -78,9 +78,9 @@ def compute_dataset_air(y) -> float:
 
     Examples
     --------
-    >>> from skordinal.datasets import compute_dataset_air, load_dataset
+    >>> from skordinal.datasets import average_imbalance_ratio, load_dataset
     >>> dataset = load_dataset("balance_scale")
-    >>> air = compute_dataset_air(dataset.target)
+    >>> air = average_imbalance_ratio(dataset.target)
     """
     class_counts = _class_counts(y)
     class_irs = _class_imbalance_ratios(class_counts)
@@ -88,7 +88,7 @@ def compute_dataset_air(y) -> float:
 
 
 @validate_params({"y": ["array-like"]}, prefer_skip_nested_validation=True)
-def compute_dataset_mir(y) -> float:
+def maximum_imbalance_ratio(y) -> float:
     """Compute the Maximum Imbalance Ratio (MIR) from class labels.
 
     MIR is the number of samples in the majority class divided by the number
@@ -126,9 +126,9 @@ def compute_dataset_mir(y) -> float:
 
     Examples
     --------
-    >>> from skordinal.datasets import compute_dataset_mir, load_dataset
+    >>> from skordinal.datasets import maximum_imbalance_ratio, load_dataset
     >>> dataset = load_dataset("balance_scale")
-    >>> mir = compute_dataset_mir(dataset.target)
+    >>> mir = maximum_imbalance_ratio(dataset.target)
     """
     class_counts = _class_counts(y)
     return max(class_counts.values()) / min(class_counts.values())

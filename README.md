@@ -16,7 +16,7 @@ Binary wheels are published for Linux x86-64. On every other platform pip builds
 
 ## What is inside
 
-- **Classifiers**: ten ordinal methods, from threshold models (`POM`, `LogisticAT`, `LogisticIT`) and neural networks (`NNPOM`, `NNOP`, `ELMOP`) to a kernel discriminant (`KDLOR`), support vector machines (`SVOR`, `REDSVM`) and boosting (`ORBoost`), plus three meta-estimators (`OrdinalDecomposition`, `RegressorWrapper`, `CostSensitiveWrapper`) that build an ordinal classifier out of any scikit-learn one.
+- **Classifiers**: ten ordinal methods, from threshold models (`POM`, `LogisticAT`, `LogisticIT`) and neural networks (`NNPOM`, `NNOP`, `ELMOP`) to a kernel discriminant (`KDLOR`), support vector machines (`SVOR`, `REDSVM`) and boosting (`ORBoost`), plus three meta-estimators (`OrdinalDecompositionClassifier`, `RegressionClassifier`, `CostSensitiveClassifier`) that build an ordinal classifier out of any scikit-learn one.
 - **Metrics**: thirteen ways to judge an ordinal prediction, including distance to the true class (MAE, AMAE, MMAE), exact and off-by-one accuracy, per-class sensitivity, weighted kappa, rank correlation and the ranked probability score. All but the last are available as scikit-learn scorers through `get_ordinal_scorer`.
 - **Datasets and experiments**: five bundled ordinal benchmark datasets, a loader for your own CSV files with reproducible resamples, and a `Benchmark` that fits every combination of model, dataset and resample and writes the aggregated results to disk.
 

@@ -294,7 +294,7 @@ def average_mean_absolute_error(y_true, y_pred, *, labels=None, sample_weight=No
     },
     prefer_skip_nested_validation=True,
 )
-def geometric_mean(y_true, y_pred, *, sample_weight=None):
+def geometric_mean_score(y_true, y_pred, *, sample_weight=None):
     """Compute the geometric mean of per-class sensitivities.
 
     Sensitivity (recall) is computed for every class present in
@@ -326,10 +326,10 @@ def geometric_mean(y_true, y_pred, *, sample_weight=None):
     Examples
     --------
     >>> import numpy as np
-    >>> from skordinal.metrics import geometric_mean
+    >>> from skordinal.metrics import geometric_mean_score
     >>> y_true = np.array([0, 0, 1, 2, 3, 0, 0])
     >>> y_pred = np.array([0, 1, 1, 2, 3, 0, 1])
-    >>> geometric_mean(y_true, y_pred)
+    >>> geometric_mean_score(y_true, y_pred)
     0.8408964152537145
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
@@ -931,7 +931,7 @@ _LABEL_METRICS = {
     "accuracy_off1_score": accuracy_off1_score,
     "accuracy_score": accuracy_score,
     "average_mean_absolute_error": average_mean_absolute_error,
-    "geometric_mean": geometric_mean,
+    "geometric_mean_score": geometric_mean_score,
     "gmsec": gmsec,
     "kendalls_tau": kendalls_tau,
     "maximum_mean_absolute_error": maximum_mean_absolute_error,

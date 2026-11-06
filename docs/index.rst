@@ -32,9 +32,9 @@ At a glance
 :class:`~skordinal.svm.SVOR`), boosting
 (:class:`~skordinal.ensemble.ORBoost`) and four meta-estimators
 (:class:`~skordinal.ensemble.EBANO`,
-:class:`~skordinal.reduction.OrdinalDecomposition`,
-:class:`~skordinal.reduction.RegressorWrapper`,
-:class:`~skordinal.reduction.CostSensitiveWrapper`) that combine ordinal
+:class:`~skordinal.reduction.OrdinalDecompositionClassifier`,
+:class:`~skordinal.reduction.RegressionClassifier`,
+:class:`~skordinal.reduction.CostSensitiveClassifier`) that combine ordinal
 classifiers or build one from an ordinary estimator.
 
 **Fourteen metrics** spanning the ways an ordinal prediction can be judged:

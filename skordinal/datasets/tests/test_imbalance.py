@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 from skordinal.datasets import (
-    compute_dataset_air,
-    compute_dataset_mir,
+    average_imbalance_ratio,
     load_dataset,
+    maximum_imbalance_ratio,
 )
 
 
@@ -16,8 +16,8 @@ def test_imbalance_metrics_from_target_counts():
 
     # Counts [4, 2, 1] yield class IRs [3/8, 5/4, 3]: AIR is their mean,
     # (3/8 + 5/4 + 3) / 3 = 37/24. MIR is 4 / 1 = 4.
-    assert compute_dataset_air(y) == pytest.approx(37 / 24)
-    assert compute_dataset_mir(y) == pytest.approx(4)
+    assert average_imbalance_ratio(y) == pytest.approx(37 / 24)
+    assert maximum_imbalance_ratio(y) == pytest.approx(4)
 
 
 def test_imbalance_metrics_support_string_labels():
@@ -25,8 +25,8 @@ def test_imbalance_metrics_support_string_labels():
     y = ["small", "small", "large", "large"]
 
     # With two balanced classes, both class IRs are 1.
-    assert compute_dataset_air(y) == pytest.approx(1)
-    assert compute_dataset_mir(y) == pytest.approx(1)
+    assert average_imbalance_ratio(y) == pytest.approx(1)
+    assert maximum_imbalance_ratio(y) == pytest.approx(1)
 
 
 def test_imbalance_metrics_accept_target_from_load_dataset():
@@ -37,23 +37,23 @@ def test_imbalance_metrics_accept_target_from_load_dataset():
     counts = np.array([288, 49, 288])
     class_irs = (counts.sum() - counts) / ((len(counts) - 1) * counts)
 
-    assert compute_dataset_air(target) == pytest.approx(class_irs.mean())
-    assert compute_dataset_mir(target) == pytest.approx(counts.max() / counts.min())
+    assert average_imbalance_ratio(target) == pytest.approx(class_irs.mean())
+    assert maximum_imbalance_ratio(target) == pytest.approx(counts.max() / counts.min())
 
 
 def test_single_class_target_raises_value_error():
     """At least two classes are required to compute imbalance ratios."""
     with pytest.raises(ValueError, match="at least two distinct classes"):
-        compute_dataset_air([1, 1, 1])
+        average_imbalance_ratio([1, 1, 1])
 
 
 def test_multidimensional_target_raises_value_error():
     """Targets must be one-dimensional class labels, not one-hot matrices."""
     with pytest.raises(ValueError, match="one-dimensional"):
-        compute_dataset_mir([[1, 0], [0, 1]])
+        maximum_imbalance_ratio([[1, 0], [0, 1]])
 
 
 def test_target_parameter_is_validated():
     """Public functions reject values that are not array-like targets."""
     with pytest.raises(ValueError, match="array-like"):
-        compute_dataset_air(None)
+        average_imbalance_ratio(None)

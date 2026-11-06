@@ -1,4 +1,4 @@
-"""OrdinalDecomposition ensemble."""
+"""OrdinalDecompositionClassifier ensemble."""
 
 from __future__ import annotations
 
@@ -20,7 +20,9 @@ from skordinal.utils.extmath import cumproba_to_proba, losses_to_proba
 from skordinal.utils.validation import check_ordinal_targets
 
 
-class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
+class OrdinalDecompositionClassifier(
+    MetaEstimatorMixin, ClassifierMixin, BaseEstimator
+):
     """Ordinal decomposition ensemble classifier.
 
     This class implements an ensemble model where an ordinal problem is decomposed into
@@ -38,11 +40,17 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         default hyperparameters is used. Its own hyperparameters are reachable
         as ``estimator__<param>``.
 
-    decomposition : {'ordered_partitions', 'one_vs_next', 'one_vs_followers', 'one_vs_previous'}, \
-            default='ordered_partitions'
-        Type of decomposition used to build the coding matrix. Each row of the
-        coding matrix corresponds to a class and each column to a binary subproblem.
-        See :func:`~skordinal.preprocessing.build_coding_matrix`.
+    decomposition : {'cumulative', 'adjacent', 'sequential', 'sequential_reverse'}, \
+            default='cumulative'
+        Type of decomposition used to build the coding matrix, named after the
+        cumulative, sequential and adjacent categories models [3]_. Binary
+        subproblem ``k`` compares the classes ``{k+1, ..., K-1}`` with
+        ``{0, ..., k}`` in ``'cumulative'`` [2]_, class ``k+1`` with class ``k``
+        in ``'adjacent'``, the classes ``{k+1, ..., K-1}`` with class ``k`` in
+        ``'sequential'``, and class ``k+1`` with ``{0, ..., k}`` in
+        ``'sequential_reverse'``, the sequential model with the class order
+        reversed. Each row of the coding matrix corresponds to a class and each
+        column to a binary subproblem.
 
     decision_method : {'exponential_loss', 'hinge_loss', 'logarithmic_loss', 'frank_hall'}, \
             default='frank_hall'
@@ -65,8 +73,8 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         names that are all strings.
 
     coding_matrix_ : ndarray of shape (n_classes, n_classes - 1)
-        Matrix that defines which classes will be used to build the model of each
-        subproblem, and in which binary class they belong inside those new models.
+        Matrix that defines which classes build the model of each subproblem and
+        to which binary class they belong, with +1 for the upper group.
         Built by :func:`~skordinal.preprocessing.build_coding_matrix`.
 
     References
@@ -77,6 +85,13 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
            Engineering, Vol. 28. Issue 1, 2016,
            http://dx.doi.org/10.1109/TKDE.2015.2457911
 
+    .. [2] E. Frank and M. Hall, "A simple approach to ordinal classification",
+           European Conference on Machine Learning, Lecture Notes in Computer
+           Science, vol. 2167, pp. 145-156, 2001.
+
+    .. [3] G. Tutz, "Ordinal regression: A review and a taxonomy of models",
+           WIREs Computational Statistics, vol. 14, no. 2, e1545, 2022.
+
     """
 
     _parameter_constraints: dict = {
@@ -84,10 +99,10 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         "decomposition": [
             StrOptions(
                 {
-                    "ordered_partitions",
-                    "one_vs_next",
-                    "one_vs_followers",
-                    "one_vs_previous",
+                    "cumulative",
+                    "adjacent",
+                    "sequential",
+                    "sequential_reverse",
                 }
             )
         ],
@@ -101,7 +116,7 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
     def __init__(
         self,
         estimator=None,
-        decomposition: str = "ordered_partitions",
+        decomposition: str = "cumulative",
         decision_method: str = "frank_hall",
     ) -> None:
         self.estimator = estimator
@@ -109,7 +124,7 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
         self.decision_method = decision_method
 
     @_fit_context(prefer_skip_nested_validation=False)
-    def fit(self, X: ArrayLike, y: ArrayLike) -> OrdinalDecomposition:
+    def fit(self, X: ArrayLike, y: ArrayLike) -> OrdinalDecompositionClassifier:
         """Fit underlying estimators to data matrix X and target(s) y.
 
         Parameters
@@ -139,10 +154,9 @@ class OrdinalDecomposition(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
 
         decomposition = self.decomposition
         decision = self.decision_method
-        if decision == "frank_hall" and decomposition != "ordered_partitions":
+        if decision == "frank_hall" and decomposition != "cumulative":
             raise ValueError(
-                "When using Frank and Hall decision method, "
-                "ordered_partitions must be used"
+                'decision_method="frank_hall" requires decomposition="cumulative".'
             )
         self._decision_method_ = decision
 

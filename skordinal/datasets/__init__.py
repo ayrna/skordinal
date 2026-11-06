@@ -6,7 +6,7 @@ from ._base import (
     load_dataset,
     load_partitions,
 )
-from ._imbalance import compute_dataset_air, compute_dataset_mir
+from ._imbalance import average_imbalance_ratio, maximum_imbalance_ratio
 from ._loaders import (
     load_balance_scale,
     load_era,
@@ -23,9 +23,8 @@ from ._tocuco import (
 )
 
 __all__ = [
+    "average_imbalance_ratio",
     "clear_data_home",
-    "compute_dataset_air",
-    "compute_dataset_mir",
     "download_tocuco",
     "fetch_tocuco",
     "fetch_tocuco_partition",
@@ -39,4 +38,5 @@ __all__ = [
     "load_partitions",
     "load_swd",
     "make_ordinal_classification",
+    "maximum_imbalance_ratio",
 ]

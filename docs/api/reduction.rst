@@ -10,7 +10,7 @@ classifier or a regressor, or an ordinal threshold model in OPBE.
 .. autosummary::
    :toctree: generated/
 
-   OrdinalDecomposition
-   RegressorWrapper
-   CostSensitiveWrapper
+   OrdinalDecompositionClassifier
+   RegressionClassifier
+   CostSensitiveClassifier
    OPBE
