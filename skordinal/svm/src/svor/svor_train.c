@@ -7,196 +7,52 @@
 \*******************************************************************************/
 #include "Python.h"
 
-#include <stdio.h>
-#include <stdlib.h>
 #ifndef __MACH__
     #include <malloc.h>
 #endif
-#include <string.h>
 
 #include "svor_module_functions.h"
 #include "smo.h"
 #include "smo_loadproblem_python.h"
 #include "smo_model_python.h"
 
-#define CMD_LEN 2048
-
-PyObject* fit(PyObject* self, PyObject* args)
+PyObject* fit(PyObject* self, PyObject* args, PyObject* kwargs)
 {
    	//Python parameters
    	PyObject* labels = NULL;
    	PyObject* features = NULL;
-   	char* options = NULL;
+	int kernel = 0;
+	int degree = 0;
+	double gamma = 0;
+	double tol = 0;
+	double C = 0;
+	int constraints = 0;
+	static char *kwlist[] = {"", "", "kernel", "degree", "gamma", "tol", "C",
+		"constraints", NULL};
 
-   	/*Options is NULL terminated*/
-   	if (!PyArg_ParseTuple(args, "OOs", &labels, &features, &options)){
-		PyErr_SetString(PyExc_RuntimeError, "Unable to parse arguments");
+	// Take the hyperparameters as C values, as scikit-learn's libsvm.fit does
+   	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "OOiidddi", kwlist, &labels,
+			&features, &kernel, &degree, &gamma, &tol, &C, &constraints))
    		return NULL;
-   	}
-
-	/* Put options in argv[]*/
-	int argc = 0;
-	char *argv[CMD_LEN/2];
-	char options_copy[CMD_LEN];
-	strncpy(options_copy, options, CMD_LEN - 1);
-	options_copy[CMD_LEN - 1] = '\0';
-
-	if((argv[argc] = strtok(options_copy, " ")) != NULL)
-		while((argv[++argc] = strtok(NULL, " ")) != NULL)
-			;
 
 	/*Svor code*/
 	def_Settings * defsetting = NULL ;
 	smo_Settings * smosetting = NULL ;
 	PyObject * py_model = NULL;
-	char buf[LENGTH] ;
-	char errorBuf[1024]; //For error messages
-	unsigned int sz = 0;
-	unsigned int index = 0 ;
-	double parameter = 0 ;
 
 	if ( NULL == (defsetting = Create_def_Settings_Python()) )
 	{
-		// display help	
-		printf("\nUsage:  model = svor.fit(training_label_vector, training_instance_matrix, 'svor_options')\n") ;
-		printf("svor_options:\n") ;
-		printf("  -v     activates the verbose mode to display message.\n") ;		
-		printf("  -L     use imbalanced Linear kernel (default Gaussian kernel).\n") ;
-		printf("  -I     use the implicit threshold constraints (default explicit).\n") ;
-		printf("  -P  p  use Polynomial kernel with order p (default Gaussian kernel).\n") ;
-		printf("  -E  e  set Epsilon at e for regression only (default 0.1). (Not used in orca-python)\n") ;
-		printf("  -T  t  set Tolerance at t (default 0.001).\n") ;
-		printf("  -K o set kappa value at o (default 1).\n") ;	
-		printf("  -C o set C value at o (default  1).\n") ;
-		
-		if (NULL !=defsetting)
-			Clear_def_Settings( defsetting ) ;
-
 		PyErr_SetString(PyExc_MemoryError, "Unable to create the settings structure");
 		return NULL;
 	}
-	else
-	{
-		//if (argc>1)
-		//	printf("Options:\n") ;
-		do
-		{
-			strcpy(buf, argv[--argc]) ;
-			sz = strlen(buf) ;
-
-			if ( '-' == buf[0] )
-			{				
-				for (index = 1 ; index < sz ; index++)
-				{
-					switch (buf[index])
-					{
-					case 'v' :
-						printf("  - Verbose mode in display.\n") ;
-						defsetting->smo_display = TRUE ;
-						break ;
-					case 'L' :
-						//printf("  - choose Linear kernel.\n") ;
-						defsetting->kernel = LINEAR ;						
-						break ;
-					case 'I' :
-						//printf("  - choose implicit constraints.\n") ;
-						defsetting->constraints = IMPLICIT_CONSTRAINTS ;
-						break ;
-					case 'E' :
-						if (parameter>0)
-						{
-							//printf("  - set Epsilon as %.3f.\n", parameter) ;
-							defsetting->epsilon = parameter ;
-						}
-						else	
-						{
-							parameter = 0;
-							PyErr_SetString(PyExc_ValueError, "- E is invalid");
-							Clear_def_Settings( defsetting ) ;
-							return NULL ;
-						}
-
-						break ;					
-					case 'T' :
-						if (parameter>0)
-						{
-							//printf("  - set Tol as %.6f.\n", parameter) ;
-							defsetting->tol = parameter ;
-						}
-						else	
-						{
-							parameter = 0;
-							PyErr_SetString(PyExc_ValueError, "- T is invalid");
-							Clear_def_Settings( defsetting ) ;
-							return NULL ;
-						}
-						
-						break ;
-					case 'C' :
-						if (parameter > 0)
-						{ 
-							defsetting->vc = (parameter) ;
-							//printf("  - C at %f.\n", parameter) ;
-							parameter = 0 ;					
-						}
-						else
-						{
-							parameter = 0;
-							PyErr_SetString(PyExc_ValueError, "- C is invalid");
-							Clear_def_Settings( defsetting ) ;
-							return NULL ;
-						}
-						
-						break ;						
-					case 'K' :
-						if (parameter > 0)
-						{ 
-							defsetting->kappa = (parameter) ;
-							//printf("  - K at %f.\n", parameter) ;
-							parameter = 0 ;						
-						}
-						else
-						{
-							parameter = 0;
-							PyErr_SetString(PyExc_ValueError, "- K is invalid");
-							Clear_def_Settings( defsetting ) ;
-							return NULL ;
-						}
-						
-						break ;
-					case 'P' :						
-						if (parameter >= 1)
-						{ 
-							defsetting->kernel = POLYNOMIAL ;
-							defsetting->p = (unsigned int) parameter ;
-							//printf("  - choose Polynomial kernel with order %d.\n", defsetting->p) ;
-							parameter = 0 ;
-						}
-						else	
-						{
-							parameter = 0;
-							PyErr_SetString(PyExc_ValueError, "- P is invalid");
-							Clear_def_Settings( defsetting ) ;
-							return NULL ;
-						}	
-
-						break ;	
-					default :
-						if ('-' != buf[index]){
-							snprintf(errorBuf, sizeof(errorBuf), "-%c is invalid", buf[index]);
-							PyErr_SetString(PyExc_ValueError, errorBuf);
-							Clear_def_Settings( defsetting ) ;
-							return NULL ;
-						}
-					}
-				}
-			}
-			else
-				parameter = atof(buf) ;
-		}
-		while ( argc > 1 ) ;
-		//printf("\n") ;
-	}
+	defsetting->kernel = kernel ;
+	// Leave the default power with the other kernels, which ignore it
+	if (POLYNOMIAL == kernel)
+		defsetting->p = degree ;
+	defsetting->kappa = gamma ;
+	defsetting->tol = tol ;
+	defsetting->vc = C ;
+	defsetting->constraints = constraints ;
 
 	//Update defsetting
 	if (NULL == defsetting){

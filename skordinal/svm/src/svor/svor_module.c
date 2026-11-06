@@ -8,7 +8,10 @@
 #endif
 
 static PyMethodDef svorMethods[] = {
-	{ "fit", fit, METH_VARARGS, "Fits a model" },
+	{ "fit", (PyCFunction)(void(*)(void))fit, METH_VARARGS | METH_KEYWORDS,
+		"fit($module, labels, features, /, kernel, degree, gamma, tol, C, "
+		"constraints)\n--\n\n"
+		"Train the model using the C code by W. Chu et al. (low-level method)." },
     { "predict", predict, METH_VARARGS, "Predict labels" },
 	{ NULL, NULL, 0, NULL }
 };
