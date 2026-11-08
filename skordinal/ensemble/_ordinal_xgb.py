@@ -182,7 +182,7 @@ default="gain"
     n_features_in_ : int
         Number of features seen during ``fit``.
 
-    feature_names_in_ : ndarray of shape (n_features_in_,)
+    feature_names_in_ : ndarray of shape (`n_features_in_`,)
         Names of features seen during ``fit``. Defined only when ``X`` has
         feature names that are all strings.
 
@@ -193,7 +193,7 @@ default="gain"
     booster_ : xgboost.Booster
         The trained booster.
 
-    feature_importances_ : ndarray of shape (n_features_in_,)
+    feature_importances_ : ndarray of shape (`n_features_in_`,)
         Feature importances of type ``importance_type``, normalised to sum 1
         unless they are all 0. Unused features get 0.
 
@@ -525,7 +525,7 @@ default="gain"
 
         Returns
         -------
-        feature_importances : ndarray of shape (n_features_in_,), dtype float32
+        feature_importances : ndarray of shape (`n_features_in_`,), dtype float32
             Normalised importance of each feature.
 
         Raises
