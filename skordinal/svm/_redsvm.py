@@ -19,8 +19,8 @@ class REDSVM(ClassifierMixin, BaseEstimator):
     """Reduction from ordinal regression to binary SVM classifiers.
 
     The configuration used is the identity coding matrix, the absolute cost matrix and
-    the standard binary soft-margin SVM. This class uses libsvm-rank-2.81
-    implementation: (http://www.work.caltech.edu/~htlin/program/libsvm/)
+    the standard binary soft-margin SVM. This class uses LIBSVM 3.12 with the ordinal
+    regression extension of H.-T. Lin.
 
     Parameters
     ----------
@@ -81,7 +81,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
     ----------
     .. [1] H.-T. Lin and L. Li, "Reduction from cost-sensitive ordinal ranking to
            weighted binary classification", Neural Computation, vol. 24, no. 5, pp.
-           1329-1367, 2012, http://10.1162/NECO_a_00265
+           1329-1367, 2012, https://doi.org/10.1162/NECO_a_00265
 
     .. [2] P.A. Gutiérrez, M. Pérez-Ortiz, J. Sánchez-Monedero, F. Fernández-Navarro
            and C. Hervás-Martínez, "Ordinal regression methods: survey and

@@ -82,7 +82,7 @@ class ORBoost(ClassifierMixin, BaseEstimator):
 
     See Also
     --------
-    REDSVM : SVM-based ordinal classifier with a C++ backend.
+    skordinal.svm.REDSVM : SVM-based ordinal classifier with a C++ backend.
 
     Notes
     -----
