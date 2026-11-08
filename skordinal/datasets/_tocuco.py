@@ -266,7 +266,7 @@ class _CachedDataset:
             ) from err
 
     def is_oc(self):
-        """Return whether metadata flags this dataset as ordinal, False when unreadable."""
+        """Return whether metadata flags the dataset as ordinal, False if unreadable."""
         try:
             return _is_oc(self.metadata_row())
         except OSError:

@@ -52,8 +52,8 @@ class OrdinalDecompositionClassifier(
         reversed. Each row of the coding matrix corresponds to a class and each
         column to a binary subproblem.
 
-    decision_method : {'exponential_loss', 'hinge_loss', 'logarithmic_loss', 'frank_hall'}, \
-            default='frank_hall'
+    decision_method : {'exponential_loss', 'hinge_loss', 'logarithmic_loss', \
+            'frank_hall'}, default='frank_hall'
         Method to aggregate the predictions of the binary estimators into class
         probabilities or labels.
 
