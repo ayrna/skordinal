@@ -31,7 +31,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         Set type of kernel function.
 
         - linear: ``u'*v``
-        - polynomial: ``(gamma*u'*v + coef0)^degree``
+        - poly: ``(gamma*u'*v + coef0)^degree``
         - rbf: ``exp(-gamma*|u-v|^2)``
         - sigmoid: ``tanh(gamma*u'*v + coef0)``
         - stump: ``-|u-v|_1 + coef0``

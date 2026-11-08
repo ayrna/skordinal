@@ -526,6 +526,11 @@ def load_dataset(name, *, data_home=None, return_X_y=False, as_frame=False):
             ``None`` for external files.
 
     (data, target) : tuple if ``return_X_y`` is True
+        A tuple of two ndarrays. The first contains a 2D array of shape
+        ``(n_samples, n_features)`` with each row representing one sample and
+        each column representing a feature. The second array of shape
+        ``(n_samples,)`` contains the ordinal target labels. A
+        ``pandas.DataFrame`` and a ``pandas.Series`` when ``as_frame`` is True.
 
     Raises
     ------
