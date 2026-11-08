@@ -12,11 +12,11 @@ Every estimator follows the scikit-learn API, so it drops unchanged into a `Pipe
 pip install skordinal
 ```
 
-Binary wheels are published for Linux x86-64. On every other platform pip builds the three C extensions (`REDSVM`, `SVOR`, `ORBoost`) from source, which requires a C/C++ compiler. Progress bars during a benchmark run need one optional extra, `pip install "skordinal[progress]"`.
+Binary wheels are published for Linux x86-64. On every other platform pip builds the three C extensions (`REDSVM`, `SVOR`, `ORBoost`) from source, which requires a C/C++ compiler. Progress bars during a benchmark run need one optional extra, `pip install "skordinal[progress]"`, and `OrdinalXGBClassifier` another, `pip install "skordinal[xgboost]"`.
 
 ## What is inside
 
-- **Classifiers**: ten ordinal methods, from threshold models (`POM`, `LogisticAT`, `LogisticIT`) and neural networks (`NNPOM`, `NNOP`, `ELMOP`) to a kernel discriminant (`KDLOR`), support vector machines (`SVOR`, `REDSVM`) and boosting (`ORBoost`), plus three meta-estimators (`OrdinalDecompositionClassifier`, `RegressionClassifier`, `CostSensitiveClassifier`) that build an ordinal classifier out of any scikit-learn one.
+- **Classifiers**: fifteen ordinal methods, from threshold models (`POM`, `LogisticAT`, `LogisticIT`) and neural networks (`NNPOM`, `NNOP`, `ELMOP`, `MLPCLMClassifier`, `MLPSoftmaxClassifier`, `MLPTriangularClassifier`) to a kernel discriminant (`KDLOR`), support vector machines (`SVOR`, `REDSVM`), boosting (`ORBoost`, `OrdinalXGBClassifier`) and a projection ensemble (`OPBE`), plus four meta-estimators (`EBANO`, `OrdinalDecompositionClassifier`, `RegressionClassifier`, `CostSensitiveClassifier`) that combine ordinal classifiers or build one out of any scikit-learn one.
 - **Metrics**: thirteen ways to judge an ordinal prediction, including distance to the true class (MAE, AMAE, MMAE), exact and off-by-one accuracy, per-class sensitivity, weighted kappa, rank correlation and the ranked probability score. All but the last are available as scikit-learn scorers through `get_ordinal_scorer`.
 - **Datasets and experiments**: five bundled ordinal benchmark datasets, a loader for your own CSV files with reproducible resamples, and a `Benchmark` that fits every combination of model, dataset and resample and writes the aggregated results to disk.
 

@@ -50,6 +50,7 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable", None),
     "scipy": ("https://docs.scipy.org/doc/scipy", None),
     "sklearn": ("https://scikit-learn.org/stable", None),
+    "xgboost": ("https://xgboost.readthedocs.io/en/stable", None),
 }
 
 # --- Autodoc / autosummary --------------------------------------------------
