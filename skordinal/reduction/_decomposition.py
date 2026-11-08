@@ -218,7 +218,7 @@ class OrdinalDecompositionClassifier(
         -------
         y_proba : ndarray of shape (n_samples, n_classes)
             The probability of the sample for each class in the model, where classes are
-            ordered as they are in self.classes_.
+            ordered as they are in ``classes_``.
 
         Raises
         ------

@@ -48,6 +48,9 @@ intersphinx_mapping = {
 # stub pages under api/generated/ are built from scratch on every run.
 autosummary_generate = True
 
+# Class pages document every public method, inherited ones included, as in scikit-learn
+templates_path = ["_templates"]
+
 # --- Source links -----------------------------------------------------------
 
 # ``viewcode`` would republish the source of every documented object inside the
