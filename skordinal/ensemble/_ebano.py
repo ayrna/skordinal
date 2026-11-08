@@ -95,7 +95,7 @@ class EBANO(ClassifierMixin, _BaseComposition):
     n_features_in_ : int
         Number of features seen during fit. Only defined if the underlying
         estimator exposes such an attribute when fit.
-    feature_names_in_ : ndarray of shape (n_features_in_,)
+    feature_names_in_ : ndarray of shape (`n_features_in_`,)
         Names of features seen during fit. Only defined if the underlying
         estimators expose such an attribute when fit.
 

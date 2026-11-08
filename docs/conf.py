@@ -1,16 +1,6 @@
 # Configuration file for the Sphinx documentation builder.
-#
-# Source-docstring compatibility notes
-# -------------------------------------
-# All classifier docstrings include fitted-attribute names such as
-# ``n_features_in_`` in type strings (e.g. "ndarray of shape
-# (n_features_in_,)").  In plain RST, a word ending with ``_`` is a
-# hyperlink reference, producing "Unknown target name" errors.  An
-# ``autodoc-process-docstring`` hook escapes those trailing underscores
-# to ``\_`` inside parenthesised shape expressions.
 
 import inspect
-import re
 import sys
 from pathlib import Path
 
@@ -103,6 +93,9 @@ def linkcode_resolve(domain, info):
 
 # --- numpydoc ---------------------------------------------------------------
 
+# Single backticks are code, as in scikit-learn, so `n_features_in_` is not a link
+default_role = "literal"
+
 numpydoc_show_class_members = False
 
 # --- Sphinx-Gallery ---------------------------------------------------------
@@ -135,32 +128,3 @@ sphinx_gallery_conf = {
 # generated pages and a project-wide one into this directory. Both are
 # ``:orphan:`` build artefacts that do not belong on the site
 exclude_patterns = ["_build", "**/sg_execution_times.rst"]
-
-# --- Docstring post-processing ----------------------------------------------
-
-# Trailing underscores in plain text inside RST are treated as hyperlink
-# references (RST ``target_`` syntax).  Fitted sklearn attribute names such
-# as ``n_features_in_`` appear bare in shape descriptions and cause
-# "Unknown target name" ERROR nodes.  Escape them to ``\_``.
-_TRAILING_UNDERSCORE_RE = re.compile(
-    r"(?<![`\\])"  # not already escaped or inside a backtick role
-    r"([A-Za-z][A-Za-z0-9_]*)"  # identifier
-    r"_"  # trailing underscore (RST hyperlink ref syntax)
-    r"(?![_`a-zA-Z])",  # not followed by another _ or backtick
-)
-
-
-def _fixup_docstring(app, what, name, obj, options, lines):
-    """Normalise docstring lines for clean RST rendering.
-
-    Escapes bare trailing-underscore identifiers (fitted attribute names)
-    that RST would interpret as hyperlink references.
-    """
-    for i, line in enumerate(lines):
-        line = _TRAILING_UNDERSCORE_RE.sub(r"\1\\_", line)
-        lines[i] = line
-
-
-def setup(app):
-    app.connect("autodoc-process-docstring", _fixup_docstring)
-    return {"version": "0.1", "parallel_read_safe": True}
