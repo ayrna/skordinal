@@ -27,8 +27,8 @@ PyObject* predictLabels(PyObject* features, struct svm_model *model)
 	int svm_type=svm_get_svm_type(model);
 	int nr_class=svm_get_nr_class(model);
 
-	feature_number = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(PyList_GetItem(features, 0)))); /*features colums*/
-	testing_instance_number = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(features))); /*features rows*/
+	feature_number = (int) PyList_Size(PyList_GetItem(features, 0)); /*features colums*/
+	testing_instance_number = (int) PyList_Size(features); /*features rows*/
 
 	ptr_instance = Malloc(double*, testing_instance_number);
 	for (i = 0; i < testing_instance_number; i++){

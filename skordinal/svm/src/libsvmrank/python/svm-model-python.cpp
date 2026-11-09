@@ -272,7 +272,7 @@ struct svm_model* pythonToModel(PyObject* model){
 	/*SV*/
 	SV_list = PyDict_GetItemString(model, "SV");
 	aux_list = NULL;
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(SV_list)));
+	n = (int) PyList_Size(SV_list);
 
 	model_out->SV = (struct svm_node**) malloc(n * sizeof(struct svm_node*));
 	//Not enough memory
@@ -284,7 +284,7 @@ struct svm_model* pythonToModel(PyObject* model){
 	for (i = 0; i < n; i++){
 		aux_list = PyList_GetItem(SV_list, i);
 
-		nAux = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(aux_list)));
+		nAux = (int) PyList_Size(aux_list);
 		(model_out->SV)[i] = (struct svm_node*) malloc((nAux+1) * sizeof(struct svm_node));
 		//Not enough memory
 		if((model_out->SV)[i] == NULL){
@@ -305,7 +305,7 @@ struct svm_model* pythonToModel(PyObject* model){
 	/*sv_coef*/
 	svCoef_list = PyDict_GetItemString(model, "sv_coef");
 	aux_list = NULL;
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(svCoef_list)));
+	n = (int) PyList_Size(svCoef_list);
 
 	model_out->sv_coef = (double**) malloc(n * sizeof(double*));
 	//Not enough memory
@@ -318,7 +318,7 @@ struct svm_model* pythonToModel(PyObject* model){
 	for (i = 0; i < n; i++){
 		aux_list = PyList_GetItem(svCoef_list, i);
 
-		nAux = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(aux_list)));
+		nAux = (int) PyList_Size(aux_list);
 		(model_out->sv_coef)[i] = (double*) malloc(nAux * sizeof(double));
 		//Not enough memory
 		if((model_out->sv_coef)[i] == NULL){
@@ -335,7 +335,7 @@ struct svm_model* pythonToModel(PyObject* model){
 
 	/*rho*/
 	rho_list = PyDict_GetItemString(model, "rho");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(rho_list)));
+	n = (int) PyList_Size(rho_list);
 
 	model_out->rho = (double*) malloc(n * sizeof(double));
 	//Not enough memory
@@ -352,7 +352,7 @@ struct svm_model* pythonToModel(PyObject* model){
 
 	/*probA*/
 	probA_list = PyDict_GetItemString(model, "probA");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(probA_list)));
+	n = (int) PyList_Size(probA_list);
 
 	model_out->probA = (double*) malloc(n * sizeof(double));
 	//Not enough memory
@@ -370,7 +370,7 @@ struct svm_model* pythonToModel(PyObject* model){
 
 	/*probB*/
 	probB_list = PyDict_GetItemString(model, "probB");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(probB_list)));
+	n = (int) PyList_Size(probB_list);
 
 	model_out->probB = (double*) malloc(n * sizeof(double));
 	//Not enough memory
@@ -389,7 +389,7 @@ struct svm_model* pythonToModel(PyObject* model){
 
 	/*label*/
 	label_list = PyDict_GetItemString(model, "label");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(label_list)));
+	n = (int) PyList_Size(label_list);
 
 	model_out->label = (int*) malloc(n * sizeof(int));
 	//Not enough memory
@@ -409,7 +409,7 @@ struct svm_model* pythonToModel(PyObject* model){
 
 	/*nSV*/
 	nSV_list = PyDict_GetItemString(model, "nSV");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(nSV_list)));
+	n = (int) PyList_Size(nSV_list);
 
 	model_out->nSV = (int*) malloc(n * sizeof(int));
 	//Not enough memory

@@ -215,7 +215,7 @@ smo_Settings* pythonToModel(PyObject* model){
 
 	//ard
 	ard_list = PyDict_GetItemString(model, "ard");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(ard_list)));
+	n = (int) PyList_Size(ard_list);
 
 	ard = (double*) malloc(n * sizeof(double));
 	//Not enough memory
@@ -241,7 +241,7 @@ smo_Settings* pythonToModel(PyObject* model){
 
 	//pairs->x_mean
 	x_mean_list = PyDict_GetItemString(pairs_dict, "x_mean");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(x_mean_list)));
+	n = (int) PyList_Size(x_mean_list);
 	pairs->x_mean = (double*) malloc(n * sizeof(double));
 	//Not enough memory
 	if(pairs->x_mean == NULL){
@@ -256,7 +256,7 @@ smo_Settings* pythonToModel(PyObject* model){
 
 	//pairs->x_devi
 	x_devi_list = PyDict_GetItemString(pairs_dict, "x_devi");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(x_devi_list)));
+	n = (int) PyList_Size(x_devi_list);
 	pairs->x_devi = (double*) malloc(n * sizeof(double));
 	//Not enough memory
 	if(pairs->x_devi == NULL){
@@ -287,7 +287,7 @@ smo_Settings* pythonToModel(PyObject* model){
 	pairs->rear = NULL;
 
 	data_nodes_list = PyDict_GetItemString(pairs_dict, "data_nodes_list");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(data_nodes_list)));
+	n = (int) PyList_Size(data_nodes_list);
 
 	//Get all the list nodes from python
 	for (i = 0; i < n; i++){
@@ -352,7 +352,7 @@ smo_Settings* pythonToModel(PyObject* model){
 
 	//biasj
 	biasj_list = PyDict_GetItemString(model, "biasj");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(biasj_list)));
+	n = (int) PyList_Size(biasj_list);
 
 	biasj = (double*) malloc(n * sizeof(double));
 	//Not enough memory
@@ -372,7 +372,7 @@ smo_Settings* pythonToModel(PyObject* model){
 
 	//alpha
 	alpha_list = PyDict_GetItemString(model, "alpha");
-	n = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(alpha_list)));
+	n = (int) PyList_Size(alpha_list);
 	alpha = (Alphas*) calloc(n, sizeof(Alphas));
 	//Not enough memory
 	if(alpha == NULL){

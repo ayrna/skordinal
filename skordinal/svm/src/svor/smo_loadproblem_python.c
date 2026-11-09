@@ -30,11 +30,11 @@ BOOL smo_Loadproblem_Python ( Data_List * pairs, PyObject* features, PyObject* l
 
 	// Check the input dimension and instance number here
 	
-	dim = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(PyList_GetItem(features, 0)))); /*features colums*/ ;
+	dim = (int) PyList_Size(PyList_GetItem(features, 0)); /*features colums*/ ;
 	pairs->dimen = dim ;
 
-	instance_number = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(features))); /*features rows*/
-	label_number = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(labels)));
+	instance_number = (int) PyList_Size(features); /*features rows*/
+	label_number = (int) PyList_Size(labels);
 
 	if(instance_number != label_number){
 		PyErr_SetString(PyExc_ValueError, "Number of labels is different to the number of instances");

@@ -103,12 +103,12 @@ const char* read_problem(PyObject* label_vec, PyObject* instance_mat)
 	prob.y = NULL;
 	x_space = NULL;
 
-	sc = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(PyList_GetItem(instance_mat, 0)))); /*instance_mat colums*/
+	sc = (int) PyList_Size(PyList_GetItem(instance_mat, 0)); /*instance_mat colums*/
 
 	elements = 0;
 	/* the number of instance*/
-	prob.l = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(instance_mat))); /*instance_mat rows*/
-	label_vector_row_num = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(label_vec)));
+	prob.l = (int) PyList_Size(instance_mat); /*instance_mat rows*/
+	label_vector_row_num = (int) PyList_Size(label_vec);
 
 	if(label_vector_row_num!=prob.l)
 	{
