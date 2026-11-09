@@ -38,7 +38,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         - perceptron: ``-|u-v|_2 + coef0``
         - laplacian: ``exp(-gamma*|u-v|_1)``
         - exponential: ``exp(-gamma*|u-v|_2)``
-        - precomputed: kernel values in ``training_instance_matrix``
+        - precomputed: a square training kernel matrix
 
     degree : int, default=3
         Set degree in kernel function.
@@ -139,6 +139,11 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         self.tol = tol
         self.cache_size = cache_size
 
+    def __sklearn_tags__(self):
+        tags = super().__sklearn_tags__()
+        tags.input_tags.pairwise = self.kernel == "precomputed"
+        return tags
+
     @_fit_context(prefer_skip_nested_validation=True)
     def fit(self, X: ArrayLike, y: ArrayLike) -> REDSVM:
         """Fit the model with the training data.
@@ -147,7 +152,8 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         ----------
         X : array-like of shape (n_samples, n_features)
             Training patterns array, where n_samples is the number of samples and
-            n_features is the number of features.
+            n_features is the number of features. With ``kernel="precomputed"``,
+            provide a square matrix of training kernel values.
 
         y : array-like of shape (n_samples,)
             Target vector relative to X.
@@ -165,10 +171,19 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         """
         X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_encoded = check_ordinal_targets(y)
+        training_inputs = X
+        if self.kernel == "precomputed":
+            if X.shape[0] != X.shape[1]:
+                raise ValueError("A precomputed training kernel matrix must be square.")
+            # LIBSVM's dense precomputed format starts each row with its
+            # one-based training index. Keep this internal to the bridge.
+            training_inputs = np.column_stack((np.arange(1, len(X) + 1), X))
 
         # Resolve gamma to a scalar before passing it to the C++ backend
         n_features = X.shape[1]
-        if self.gamma == "scale":
+        if self.kernel == "precomputed":
+            gamma_value = 1.0
+        elif self.gamma == "scale":
             x_var = X.var()
             gamma_value = 1.0 / (n_features * x_var) if x_var != 0.0 else 1.0
         elif self.gamma == "auto":
@@ -192,7 +207,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
 
         self.model_ = svm.fit(
             (y_encoded + 1).tolist(),
-            X.tolist(),
+            training_inputs.tolist(),
             kernel=kernel_type,
             degree=self.degree,
             gamma=gamma_value,
@@ -202,6 +217,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
             shrinking=self.shrinking,
             cache_size=self.cache_size,
         )
+        self._precomputed_ = self.kernel == "precomputed"
         # the backend folds rho[0] into the projection; rho[1:] are the cutpoints
         self.thresholds_ = np.asarray(self.model_["rho"][1:], dtype=np.float64)
 
@@ -214,7 +230,8 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         ----------
         X : array-like of shape (n_samples, n_features)
             Test patterns array, where n_samples is the number of samples and
-            n_features is the number of features.
+            n_features is the number of features. With a precomputed kernel,
+            columns correspond to the training samples in their fitted order.
 
         Returns
         -------
@@ -232,6 +249,8 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, dtype=np.float64)
+        if getattr(self, "_precomputed_", False):
+            X = np.column_stack((np.zeros(len(X)), X))
         y_pred, _ = svm.predict(X.tolist(), self.model_)
         return self.classes_[np.asarray(y_pred).astype(int) - 1]
 
@@ -245,8 +264,8 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         Parameters
         ----------
         X : array-like of shape (n_samples, n_features)
-            Test patterns array, where n_samples is the number of samples and
-            n_features is the number of features.
+            Test patterns. With a precomputed kernel, columns correspond to
+            the training samples in their fitted order.
 
         Returns
         -------
@@ -264,5 +283,7 @@ class REDSVM(ClassifierMixin, BaseEstimator):
         """
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, dtype=np.float64)
+        if getattr(self, "_precomputed_", False):
+            X = np.column_stack((np.zeros(len(X)), X))
         _, projection = svm.predict(X.tolist(), self.model_)
         return np.asarray(projection, dtype=np.float64)
