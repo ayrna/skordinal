@@ -134,6 +134,27 @@ def test_evaluate_includes_string_resample_ids(tmp_path):
     assert df.loc["fold", "mean_absolute_error"] == pytest.approx(1.0)
 
 
+@pytest.mark.parametrize("identifiers", [["NA", "NULL"], ["01", "1"]])
+def test_evaluate_preserves_distinct_literal_resample_ids(tmp_path, identifiers):
+    """Literal identifiers remain distinct when evaluation indexes its results."""
+    _write_report(
+        tmp_path,
+        "A",
+        "d1",
+        {
+            identifiers[0]: {"mean_absolute_error_test": 0.0},
+            identifiers[1]: {"mean_absolute_error_test": 1.0},
+        },
+    )
+    _write_seed(tmp_path, "A", "d1", identifiers[0], "test", [0, 1], [0, 1])
+    _write_seed(tmp_path, "A", "d1", identifiers[1], "test", [0, 1], [1, 0])
+
+    evaluated = evaluate(tmp_path, "A", "d1")
+
+    assert [str(value) for value in evaluated.index] == identifiers
+    assert list(evaluated["mean_absolute_error"]) == pytest.approx([0.0, 1.0])
+
+
 def test_evaluate_skips_uncommitted_seed(seed_folder):
     """A seed directory with no report.csv row is not evaluated."""
     _write_seed(seed_folder, "A", "d1", 99, "test", [0, 1, 2, 2], [2, 2, 2, 2])

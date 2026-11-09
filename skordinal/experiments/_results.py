@@ -19,8 +19,11 @@ from ._base import _check_path_component, _check_resample_id, _check_split
 from ._io import (
     _atomic_dump,
     _atomic_write,
+    _canonical_resample_ids,
     _format_split_files,
     _parse_proba_column,
+    _read_report_csv,
+    _read_results_csv,
     _sweep_orphaned_temp_files,
 )
 
@@ -311,8 +314,7 @@ class Results:
         csv_path = base_dir / "report.csv"
         if not csv_path.is_file():
             return
-        df = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
-        df.index = df.index.astype(str)
+        df = _read_report_csv(csv_path)
         if str(resample_id) not in df.index:
             return
         df = df.drop(index=str(resample_id))
@@ -329,8 +331,7 @@ class Results:
         csv_path = base_dir / "report.csv"
         df = pd.DataFrame([row], index=pd.Index([str(result.resample_id)]))
         if csv_path.is_file():
-            existing = pd.read_csv(csv_path, index_col=0, float_precision="round_trip")
-            existing.index = existing.index.astype(str)
+            existing = _read_report_csv(csv_path)
             df = pd.concat([existing, df])
         try:
             df = df.sort_index(key=lambda index: index.map(int))
@@ -345,23 +346,24 @@ class Results:
             k.removeprefix("clf__"): v for k, v in result.best_params.items()
         }
         # Set Seed last so no same-named parameter can shadow the upsert key
-        row["Seed"] = result.resample_id
+        row["Seed"] = str(result.resample_id)
 
         csv_path = base_dir / "hyperparameter_configuration.csv"
         df = pd.DataFrame([row])
         # Note which columns hold integers before the union can upcast them
         integral = {c for c in df.columns if pd.api.types.is_integer_dtype(df[c])}
         if csv_path.is_file():
-            existing = pd.read_csv(csv_path, float_precision="round_trip")
+            existing = _read_results_csv(csv_path, identifier="Seed")
             integral |= {
                 c
                 for c in existing.columns
                 if pd.api.types.is_integer_dtype(existing[c])
             }
-            existing = existing[existing["Seed"] != result.resample_id]
+            existing = existing[existing["Seed"] != str(result.resample_id)]
             df = pd.concat([existing, df], ignore_index=True)
 
         columns = ["Seed"] + sorted(c for c in df.columns if c != "Seed")
+        df["Seed"] = _canonical_resample_ids(pd.Index(df["Seed"]))
         df = df[columns].sort_values("Seed").reset_index(drop=True)
         # Restore only those, so a searched float like 10.0 is not written as 10
         for col in integral & set(df.columns):
@@ -438,10 +440,7 @@ class Results:
         for str_id in seed_ids:
             _check_resample_id(str_id)
             seed_dir = seeds_dir / f"seed_{str_id}"
-            try:
-                resample_id: int | str = int(str_id)
-            except ValueError:
-                resample_id = str_id
+            resample_id = _canonical_resample_ids(pd.Index([str_id]))[0]
             path = seed_dir / f"{split}_predictions.csv"
             if path.is_file():
                 files.append((resample_id, path))
@@ -479,7 +478,9 @@ class Results:
         Returns
         -------
         pd.DataFrame
-            Contents of ``report.csv``, indexed by resample id.
+            Contents of ``report.csv``, indexed by resample id. Canonical
+            integer identifiers are returned as integers. Other identifiers
+            retain their literal text.
 
         Raises
         ------
@@ -505,13 +506,14 @@ class Results:
         path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not path.is_file():
             raise FileNotFoundError(f"No report found at {path}.")
-        report = pd.read_csv(path, index_col=0, float_precision="round_trip")
+        report = _read_report_csv(path)
         if report.index.has_duplicates:
             duplicate_ids = report.index[report.index.duplicated()].unique().tolist()
             raise pd.errors.ParserError(
                 f"Report at {path} contains duplicate resample identifiers: "
                 f"{duplicate_ids}."
             )
+        report.index = _canonical_resample_ids(report.index)
         return report
 
     def hyperparameters(self, classifier_name: str, dataset_name: str) -> pd.DataFrame:
@@ -529,7 +531,9 @@ class Results:
         -------
         pd.DataFrame
             Contents of ``hyperparameter_configuration.csv``, one row per
-            resample, with the resample id in the ``Seed`` column.
+            resample, with the resample id in the ``Seed`` column. Canonical
+            integer identifiers are returned as integers. Other identifiers
+            retain their literal text.
 
         Raises
         ------
@@ -555,7 +559,9 @@ class Results:
         )
         if not path.is_file():
             raise FileNotFoundError(f"No hyperparameter configuration at {path}.")
-        return pd.read_csv(path, float_precision="round_trip")
+        parameters = _read_results_csv(path, identifier="Seed")
+        parameters["Seed"] = _canonical_resample_ids(pd.Index(parameters["Seed"]))
+        return parameters
 
     def predictions(
         self,
@@ -725,8 +731,10 @@ class Results:
         if not csv_path.is_file():
             return False
         # Only the index decides, and a resumed run reads it once per resample
-        index = pd.read_csv(csv_path, index_col=0, usecols=[0]).index
-        return str(resample_id) in index.astype(str)
+        identifiers = pd.read_csv(
+            csv_path, usecols=[0], dtype=str, na_filter=False
+        ).iloc[:, 0]
+        return str(resample_id) in pd.Index(identifiers)
 
     def iter_experiments(self) -> Iterator[tuple[str, str]]:
         """Yield every readable pair as ``(classifier_name, dataset_name)``.

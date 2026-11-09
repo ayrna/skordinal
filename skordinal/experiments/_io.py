@@ -7,6 +7,7 @@ import os
 import sys
 import tempfile
 from collections.abc import Iterable
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,43 @@ import pandas as pd
 from sklearn.metrics import confusion_matrix
 
 _TEMP_PREFIX = ".skordinal-tmp-"
+
+
+def _read_results_csv(path: Path, *, identifier: int | str = 0) -> pd.DataFrame:
+    """Preserve literal identifiers and pandas' normal parsing of other columns."""
+    # Parse one snapshot twice because pandas versions differ in whether
+    # converters bypass NA handling. Only the identifier pass disables it.
+    content = path.read_bytes()
+    frame = pd.read_csv(BytesIO(content), float_precision="round_trip")
+    identifiers = pd.read_csv(
+        BytesIO(content), usecols=[identifier], dtype=str, na_filter=False
+    ).iloc[:, 0]
+    column = frame.columns[identifier] if isinstance(identifier, int) else identifier
+    frame[column] = identifiers
+    return frame
+
+
+def _read_report_csv(path: Path) -> pd.DataFrame:
+    """Read metric columns normally while preserving every literal resample id."""
+    report = _read_results_csv(path)
+    index_name = report.columns[0]
+    report = report.set_index(index_name)
+    if index_name == "Unnamed: 0":
+        report.index.name = None
+    return report
+
+
+def _canonical_resample_ids(identifiers: pd.Index) -> pd.Index:
+    """Restore integer ids only when their spelling is unchanged by conversion."""
+    if identifiers.empty:
+        return identifiers
+    try:
+        numbers = [int(value) for value in identifiers]
+    except (TypeError, ValueError):
+        return identifiers
+    if all(str(number) == value for number, value in zip(numbers, identifiers)):
+        return pd.Index(numbers, name=identifiers.name)
+    return identifiers
 
 
 def _ensure_parent(path: Path) -> None:
