@@ -42,6 +42,28 @@ _DATASET_MASKS_LIST = [[True] * 7 + [False] * 3, [True, False] * 5]
 
 _SITE_TRAIN_MASKS = {"0": _DATASET_MASKS_LIST[0], "1": _DATASET_MASKS_LIST[1]}
 
+_INVALID_STAGED_DATA = [
+    pytest.param("", _SITE_TRAIN_MASKS, "CSV.*malformed", id="empty-csv"),
+    pytest.param(
+        _CSV_CONTENT.replace("1.0,2.0,0", "1.0,2.0,0.5"),
+        _SITE_TRAIN_MASKS,
+        "CSV.*malformed",
+        id="continuous-target",
+    ),
+    pytest.param(
+        _CSV_CONTENT + "21.0,22.0\n",
+        _SITE_TRAIN_MASKS,
+        "CSV.*malformed",
+        id="truncated-row",
+    ),
+    pytest.param(
+        _CSV_CONTENT,
+        {"0": [True, False] * 4},
+        "8 entries.*10 samples",
+        id="mask-csv-length-mismatch",
+    ),
+]
+
 
 _METADATA_HEADER = (
     "dataset,is_oc,n_patterns_train,n_patterns_test,n_features,n_classes,"
@@ -579,6 +601,31 @@ def test_download_tocuco_broken_dataset_publishes_nothing(
     assert not zip_path.exists()
 
 
+@pytest.mark.parametrize("csv_content,masks,match", _INVALID_STAGED_DATA)
+def test_download_tocuco_rejects_invalid_csv_and_mask_alignment(
+    csv_content, masks, match, tmp_path, staged_archive
+):
+    """Invalid dataset content aborts publication of the entire archive."""
+    zip_path = tmp_path / "TOC-UCO_v2.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for name, content, site_masks in [
+            ("aa_good", _CSV_CONTENT, _SITE_TRAIN_MASKS),
+            ("zz_bad", csv_content, masks),
+        ]:
+            zf.writestr(f"{name}/{name}.csv", content)
+            zf.writestr(
+                f"{name}/metadata.csv", _METADATA_CSV.replace("oc03_fake", name)
+            )
+            zf.writestr(f"{name}/train_masks.json", json.dumps(site_masks))
+
+    staged_archive(zip_path)
+    with pytest.raises(OSError, match=match):
+        download_tocuco(data_home=tmp_path)
+
+    _assert_nothing_published(tmp_path)
+    assert not zip_path.exists()
+
+
 @pytest.mark.network
 def test_download_tocuco_real_download_validates_tree(tmp_path):
     """download_tocuco performs a real download into an isolated data home."""
@@ -890,6 +937,27 @@ def test_fetch_tocuco_corrupt_masks_variants_raise_and_do_not_publish(
     with pytest.raises(OSError, match="is malformed"):
         fetch_tocuco("oc03_fake", data_home=tmp_path)
     _assert_nothing_published(tmp_path)
+
+
+@pytest.mark.parametrize("fetcher", _FETCHERS, ids=["fetch", "partition"])
+@pytest.mark.parametrize("csv_content,masks,match", _INVALID_STAGED_DATA)
+def test_fetch_tocuco_validates_staged_csv_and_masks_before_publication(
+    fetcher, csv_content, masks, match, tmp_path, fake_urlretrieve
+):
+    """Corrupt downloads leave no cache and a later valid retry succeeds."""
+    fake_urlretrieve.raw_payloads["/oc03_fake.csv"] = (
+        csv_content,
+        "application/octet-stream",
+    )
+    fake_urlretrieve.site_masks = masks
+    with pytest.raises(OSError, match=match):
+        fetcher("oc03_fake", data_home=tmp_path)
+    _assert_nothing_published(tmp_path)
+
+    fake_urlretrieve.raw_payloads.clear()
+    fake_urlretrieve.site_masks = _SITE_TRAIN_MASKS
+    fetcher("oc03_fake", data_home=tmp_path)
+    assert len(fake_urlretrieve.calls) == 6
 
 
 def test_fetch_tocuco_soft_404_backstop_on_masks(tmp_path, fake_urlretrieve):
