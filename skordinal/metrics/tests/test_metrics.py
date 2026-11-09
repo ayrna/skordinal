@@ -5,6 +5,7 @@ import inspect
 import numpy as np
 import numpy.testing as npt
 import pytest
+from sklearn.metrics import confusion_matrix
 from sklearn.utils._param_validation import InvalidParameterError
 
 from skordinal.metrics import (
@@ -649,6 +650,87 @@ def test_labels_must_cover_the_data():
     """A metric's explicit labels must cover y_pred, so no sample is dropped."""
     with pytest.raises(ValueError, match="y_pred contains values"):
         accuracy_off1_score([0, 1, 2], [0, 1, 5], labels=[0, 1, 2])
+
+
+@pytest.mark.parametrize("fn", _ORDERED_METRICS, ids=_ORDERED_METRIC_IDS)
+@pytest.mark.parametrize("labels", [[0, 1, 1, 2], ["low", "mid", "mid", "high"]])
+def test_ordered_metrics_reject_duplicate_labels(fn, labels):
+    """A class cannot occupy two ranks in the ordinal scale."""
+    with pytest.raises(ValueError, match="distinct class values"):
+        fn([labels[0], labels[1]], [labels[1], labels[0]], labels=labels)
+
+
+@pytest.mark.parametrize("string_labels", [False, True])
+@pytest.mark.parametrize("weighted", [False, True])
+def test_rank_metrics_match_confusion_matrix_definition(string_labels, weighted):
+    """Rank reductions preserve arbitrary class order and weighted supports."""
+    rng = np.random.RandomState(42)
+    labels = rng.permutation(np.arange(12) * 10 + 1)
+    if string_labels:
+        labels = np.array([f"class_{value}" for value in labels])
+    y_true = rng.choice(labels[:8], size=200)
+    y_pred = rng.choice(labels, size=200)
+    weights = rng.uniform(size=200) if weighted else None
+    if weighted:
+        weights[y_true == labels[0]] = 0
+
+    cm = confusion_matrix(y_true, y_pred, labels=labels, sample_weight=weights)
+    costs = np.abs(np.arange(labels.size)[:, None] - np.arange(labels.size))
+    support = cm.sum(axis=1)
+    present = support > 0
+    per_class = (cm * costs).sum(axis=1)[present] / support[present]
+
+    npt.assert_allclose(
+        average_mean_absolute_error(
+            y_true, y_pred, labels=labels, sample_weight=weights
+        ),
+        per_class.mean(),
+    )
+    npt.assert_allclose(
+        maximum_mean_absolute_error(
+            y_true, y_pred, labels=labels, sample_weight=weights
+        ),
+        per_class.max(),
+    )
+    npt.assert_allclose(
+        accuracy_off1_score(y_true, y_pred, labels=labels, sample_weight=weights),
+        cm[costs <= 1].sum() / cm.sum(),
+    )
+    npt.assert_allclose(
+        mean_zero_one_error(y_true, y_pred, sample_weight=weights),
+        1 - np.trace(cm) / cm.sum(),
+    )
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [average_mean_absolute_error, maximum_mean_absolute_error, accuracy_off1_score],
+)
+def test_rank_metrics_keep_unobserved_classes(fn):
+    """Explicit unobserved classes still occupy ranks in the ordinal scale."""
+    expected = {
+        average_mean_absolute_error: 4 / 3,
+        maximum_mean_absolute_error: 2,
+        accuracy_off1_score: 2 / 3,
+    }
+    npt.assert_allclose(
+        fn([0, 512, 1023], [1, 514, 1022], labels=np.arange(1024)), expected[fn]
+    )
+
+
+@pytest.mark.parametrize(
+    "fn",
+    [
+        average_mean_absolute_error,
+        maximum_mean_absolute_error,
+        accuracy_off1_score,
+        mean_zero_one_error,
+    ],
+)
+def test_rank_reductions_reject_continuous_targets(fn):
+    """The reductions retain classification target validation."""
+    with pytest.raises(ValueError, match="continuous|Unknown label type"):
+        fn([0.1, 0.2], [0.2, 0.1])
 
 
 @pytest.mark.parametrize("fn", _WEIGHTED_METRICS, ids=_WEIGHTED_METRIC_IDS)

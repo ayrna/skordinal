@@ -12,6 +12,7 @@ from sklearn.metrics import (
 )
 from sklearn.utils import check_array, check_consistent_length
 from sklearn.utils._param_validation import validate_params
+from sklearn.utils.multiclass import unique_labels
 from sklearn.utils.validation import _check_sample_weight
 
 
@@ -99,6 +100,8 @@ def _resolve_ordinal_labels(y_true, y_pred, labels):
         labels = check_array(labels, ensure_2d=False, dtype=None, input_name="labels")
         if labels.ndim != 1:
             raise ValueError(f"labels must be a 1-D array; got shape {labels.shape}.")
+        if np.unique(labels).size != labels.size:
+            raise ValueError("labels must contain distinct class values.")
         _check_labels_cover(y_true, labels, "y_true")
         _check_labels_cover(y_pred, labels, "y_pred")
         return labels
@@ -213,15 +216,27 @@ def _recall_per_class(y_true, y_pred, *, labels=None, sample_weight=None):
     return np.asarray(recall[support > 0], dtype=np.float64)
 
 
+def _ordinal_label_indices(y_true, y_pred, labels):
+    """Map validated classification targets to the supplied ordinal ranks."""
+    unique_labels(y_true, y_pred)
+    order = np.argsort(labels)
+    sorted_labels = labels[order]
+    return (
+        order[np.searchsorted(sorted_labels, y_true)],
+        order[np.searchsorted(sorted_labels, y_pred)],
+    )
+
+
 def _per_class_mae(y_true, y_pred, *, labels, sample_weight=None):
     """Return per-class rank MAE over ``labels``, dropping zero-support classes."""
-    cm = confusion_matrix(y_true, y_pred, labels=labels, sample_weight=sample_weight)
-    n_class = cm.shape[0]
-    costs = np.abs(np.arange(n_class)[:, None] - np.arange(n_class)[None, :])
-    errors = costs * cm
-    support = cm.sum(axis=1).astype(np.float64)
+    true_rank, pred_rank = _ordinal_label_indices(y_true, y_pred, labels)
+    errors = np.abs(true_rank - pred_rank).astype(np.float64)
+    if sample_weight is not None:
+        errors *= sample_weight
+    support = np.bincount(true_rank, weights=sample_weight, minlength=labels.size)
+    totals = np.bincount(true_rank, weights=errors, minlength=labels.size)
     non_zero = support > 0
-    return errors[non_zero].sum(axis=1) / support[non_zero]
+    return totals[non_zero] / support[non_zero]
 
 
 @validate_params(
@@ -256,7 +271,7 @@ def average_mean_absolute_error(y_true, y_pred, *, labels=None, sample_weight=No
         which must then be numeric.
 
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to the confusion matrix.
+        Sample weights used to compute each class's mean absolute error.
 
     Returns
     -------
@@ -490,7 +505,7 @@ def maximum_mean_absolute_error(y_true, y_pred, *, labels=None, sample_weight=No
         which must then be numeric.
 
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to the confusion matrix.
+        Sample weights used to compute each class's mean absolute error.
 
     Returns
     -------
@@ -587,7 +602,7 @@ def mean_zero_one_error(y_true, y_pred, *, sample_weight=None):
         Predicted labels.
 
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to the confusion matrix.
+        Sample weights used to compute the error rate.
 
     Returns
     -------
@@ -605,8 +620,7 @@ def mean_zero_one_error(y_true, y_pred, *, sample_weight=None):
     """
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
-    cm = confusion_matrix(y_true, y_pred, sample_weight=sample_weight)
-    return float(1 - np.diagonal(cm).sum() / cm.sum())
+    return float(1 - accuracy_score(y_true, y_pred, sample_weight=sample_weight))
 
 
 @validate_params(
@@ -892,7 +906,7 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
         which must then be numeric.
 
     sample_weight : array-like of shape (n_samples,), default=None
-        Sample weights forwarded to the confusion matrix.
+        Sample weights used to compute the accuracy.
 
     Returns
     -------
@@ -917,14 +931,8 @@ def accuracy_off1_score(y_true, y_pred, *, labels=None, sample_weight=None):
     y_true, y_pred = _check_metric_inputs(y_true, y_pred)
     sample_weight = _check_metric_weight(y_true, sample_weight)
     labels = _resolve_ordinal_labels(y_true, y_pred, labels)
-    conf_mat = confusion_matrix(
-        y_true, y_pred, labels=labels, sample_weight=sample_weight
-    )
-    n = conf_mat.shape[0]
-    mask = np.eye(n, n) + np.eye(n, n, k=1) + np.eye(n, n, k=-1)
-    correct = mask * conf_mat
-
-    return float(np.sum(correct) / np.sum(conf_mat))
+    true_rank, pred_rank = _ordinal_label_indices(y_true, y_pred, labels)
+    return float(np.average(np.abs(true_rank - pred_rank) <= 1, weights=sample_weight))
 
 
 _LABEL_METRICS = {
