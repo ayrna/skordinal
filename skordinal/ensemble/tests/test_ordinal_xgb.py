@@ -24,6 +24,22 @@ xgb = pytest.importorskip("xgboost")
 THRESHOLD_UPDATES = ["fixed", "refit", "input_median", "input_mean", "latent_median"]
 
 
+def test_predict_repeated_thresholds_and_adjacent_floats(monkeypatch):
+    """Hard predictions preserve lower ties with repeated thresholds."""
+    classifier = OrdinalXGBClassifier()
+    classifier.classes_ = np.array([-10, 20, 50, 80])
+    classifier.thresholds_ = np.array([-0.5, 0.5, 0.5])
+    classifier.n_features_in_ = 1
+    projection = np.array(
+        [-1e100, -0.5, np.nextafter(-0.5, np.inf), 0.5, np.nextafter(0.5, np.inf), 1e100]
+    )
+    monkeypatch.setattr(classifier, "_project", lambda X: projection)
+
+    np.testing.assert_array_equal(
+        classifier.predict(np.zeros((len(projection), 1))), [-10, -10, 20, 20, 80, 80]
+    )
+
+
 @pytest.fixture(autouse=True)
 def single_openmp_thread():
     """Run XGBoost on one OpenMP thread, as all cores slow it down on small data."""

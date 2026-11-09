@@ -639,7 +639,7 @@ default="gain"
             self, X, reset=False, dtype=np.float64, ensure_all_finite="allow-nan"
         )
         f = self._project(X)
-        labels_enc = (f[:, np.newaxis] > self.thresholds_[np.newaxis, :]).sum(axis=1)
+        labels_enc = np.searchsorted(self.thresholds_, f, side="left")
         return self.classes_[labels_enc]
 
     def predict_projection(self, X):
