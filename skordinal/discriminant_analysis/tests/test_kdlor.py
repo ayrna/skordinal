@@ -355,6 +355,17 @@ def test_kdlor_identical_patterns_within_each_class(kernel, repeats):
     np.testing.assert_allclose(clf.predict_proba(X).sum(axis=1), 1.0)
 
 
+@pytest.mark.parametrize("scale", [1e150, 1e154])
+def test_kdlor_zero_scatter_kernel_intermediates_overflow_raises(scale):
+    """A finite zero-scatter matrix cannot hide overflow in the class means or QP."""
+    X = np.repeat(np.array([[1.0], [1.1], [1.2]]) * scale, 3, axis=0)
+    y = np.repeat([0, 1, 2], 3)
+
+    with np.errstate(over="ignore", invalid="ignore"):
+        with pytest.raises(ValueError, match="non-finite"):
+            KDLOR(kernel="linear", gamma="auto").fit(X, y)
+
+
 def test_kdlor_poly_kernel_overflow_raises_value_error():
     """A poly-kernel overflow raises ValueError instead of silent NaN."""
     rng = np.random.default_rng(0)

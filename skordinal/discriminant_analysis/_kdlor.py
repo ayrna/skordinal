@@ -265,9 +265,10 @@ class KDLOR(ClassifierMixin, BaseEstimator):
         # Symmetrise exactly; cho_factor requires it
         H = (H + H.T) * 0.5
 
-        if not np.isfinite(H).all():
+        if not (np.isfinite(H).all() and np.isfinite(D).all()):
             raise ValueError(
-                "The within-class scatter matrix contains non-finite values, "
+                "The kernel class means or within-class scatter matrix contain "
+                "non-finite values, "
                 "usually from kernel overflow on large inputs.  Rescale X or "
                 "reduce gamma."
             )
@@ -285,6 +286,11 @@ class KDLOR(ClassifierMixin, BaseEstimator):
         Q = D.T @ HinvD  # (K-1, K-1)
         # Symmetrise exactly; the analytic gradient assumes symmetry
         Q = (Q + Q.T) * 0.5
+        if not np.isfinite(Q).all():
+            raise ValueError(
+                "The dual quadratic matrix contains non-finite values. "
+                "Rescale X or reduce gamma."
+            )
 
         alpha, result = self._solve_qp(Q)
         self.n_iter_ = int(result.nit)
