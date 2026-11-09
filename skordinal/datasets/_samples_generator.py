@@ -33,10 +33,17 @@ def _resolve_weights(weights, n_classes):
             f"weights must contain only finite values; got weights={weights.tolist()}."
         )
     if weights.size == n_classes - 1:
-        weights = np.append(weights, 1.0 - weights.sum())
-    if np.any(weights < 0) or weights.sum() <= 0:
+        with np.errstate(over="ignore"):
+            weights = np.append(weights, 1.0 - weights.sum())
+    if np.any(weights < 0) or not weights.any():
         raise ValueError("weights must be non-negative and sum to a positive value.")
-    return weights / weights.sum()
+    with np.errstate(over="ignore"):
+        weight_sum = weights.sum()
+    if not np.isfinite(weight_sum):
+        # Scale before summing when finite non-negative weights overflow.
+        weights = weights / weights.max()
+        weight_sum = weights.sum()
+    return weights / weight_sum
 
 
 @validate_params(
@@ -163,6 +170,8 @@ def make_ordinal_classification(
 
     # Quantile cut points make the class frequencies follow `proportions`
     cut_percentiles = np.cumsum(proportions)[:-1] * 100.0
+    # Cumulative rounding can place a boundary just above 100 percent.
+    np.clip(cut_percentiles, 0.0, 100.0, out=cut_percentiles)
     thresholds = np.percentile(z, cut_percentiles)
     y = np.searchsorted(thresholds, z).astype(np.int32)
 
