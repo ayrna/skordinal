@@ -48,10 +48,10 @@ def _atomic_dump(path: Path, obj: Any) -> None:
     _ensure_parent(path)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=_TEMP_PREFIX, suffix=".tmp")
     try:
-        # Close the mkstemp descriptor; joblib opens its own handle by path
-        os.close(fd)
-        joblib.dump(obj, tmp)
-        with open(tmp, "rb") as fh:
+        # Windows requires a writable descriptor for fsync.
+        with os.fdopen(fd, "wb") as fh:
+            joblib.dump(obj, fh)
+            fh.flush()
             os.fsync(fh.fileno())
         os.replace(tmp, path)
     except BaseException:
