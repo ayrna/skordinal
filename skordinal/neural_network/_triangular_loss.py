@@ -3,7 +3,7 @@
 from numbers import Real
 
 import numpy as np
-from scipy.special import logsumexp
+from scipy.special import log_softmax
 
 from ._triangular_distribution import get_triangular_soft_labels
 
@@ -130,7 +130,7 @@ class TriangularLoss:
             )
         weight_sum = np.sum(sample_weight)
 
-        log_proba = logits - logsumexp(logits, axis=1, keepdims=True)
+        log_proba = log_softmax(logits, axis=1)
         loss = -np.sum(sample_weight[:, np.newaxis] * T * log_proba) / weight_sum
 
         # The soft labels lose ~1e-9 of mass at the interval ends, so keep

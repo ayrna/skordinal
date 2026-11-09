@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from scipy.optimize import check_grad
+from scipy.special import log_softmax, softmax
 from sklearn.exceptions import NotFittedError
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -332,6 +333,49 @@ def test_mlp_softmax_large_magnitude_inputs_remain_finite():
 
     assert np.isfinite(proba).all()
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "offset, differences",
+    [
+        (1e20, [0.0, 0.0, 0.0]),
+        (-1e20, [0.0, 0.0, 0.0]),
+        (1e16, [0.0, 0.0, 2.0]),
+        (1e20, [0.0, 16384.0, 16384.0]),
+    ],
+    ids=["positive-tie", "negative-tie", "distinct-logits", "largest-logits-tie"],
+)
+def test_mlp_softmax_large_common_logit_offset_preserves_loss_and_probabilities(
+    offset, differences
+):
+    """Representable common offsets preserve normalization, loss and gradients."""
+    X = np.array([[0.0, 1.0], [2.0, -1.0], [3.0, 4.0]])
+    Y = np.eye(3)[[0, 2, 1]]
+    sample_weight = np.array([1.0, 2.0, 4.0])
+    differences = np.asarray(differences)
+    clf = MLPSoftmaxClassifier(n_hidden_units=2, alpha=0.0)
+    clf.n_features_in_ = X.shape[1]
+    clf.n_classes_ = Y.shape[1]
+    params = np.zeros_like(clf._initialize_parameters(np.random.RandomState(0)))
+    params[-3:] = differences
+    base_loss, base_grad = clf._cost_and_grad(params, X, Y, sample_weight)
+    params[-3:] += offset
+
+    loss, grad = clf._cost_and_grad(params, X, Y, sample_weight)
+    proba = clf.predict_proba(X)
+    expected_proba = np.tile(softmax(differences), (len(X), 1))
+    expected_loss = -np.average(Y @ log_softmax(differences), weights=sample_weight)
+    delta = (expected_proba - Y) * sample_weight[:, None] / sample_weight.sum()
+    expected_grad = np.zeros_like(params)
+    expected_grad[-9:-3] = np.tile(0.5 * delta.sum(axis=0), 2)
+    expected_grad[-3:] = delta.sum(axis=0)
+
+    np.testing.assert_allclose(proba, expected_proba, atol=1e-15)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-15)
+    assert loss == pytest.approx(expected_loss, rel=1e-14)
+    assert loss == pytest.approx(base_loss, rel=1e-14)
+    np.testing.assert_allclose(grad, expected_grad, atol=1e-15)
+    np.testing.assert_allclose(grad, base_grad, atol=1e-15)
 
 
 def test_mlp_softmax_behaviour_on_ordinal_data(ordinal_data):
