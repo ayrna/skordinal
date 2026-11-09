@@ -420,9 +420,9 @@ def test_loss_decoding_matches_ternary_code_sum(
     """All coding strategies retain each positive, negative and zero contribution."""
     classifier = OrdinalDecompositionClassifier(decomposition=decomposition)
     classifier.coding_matrix_ = build_coding_matrix(n_classes, decomposition)
-    predictions = np.random.default_rng(42).uniform(
-        -1.0, 1.0, (7, n_classes - 1)
-    ).astype(dtype)
+    predictions = (
+        np.random.default_rng(42).uniform(-1.0, 1.0, (7, n_classes - 1)).astype(dtype)
+    )
     predictions[:3] = np.array([-1.0, 0.0, 1.0])[:, None]
     margin = predictions[:, None, :] * classifier.coding_matrix_[None, :, :]
     if loss_method == "exponential":

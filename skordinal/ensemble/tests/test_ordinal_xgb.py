@@ -31,7 +31,14 @@ def test_predict_repeated_thresholds_and_adjacent_floats(monkeypatch):
     classifier.thresholds_ = np.array([-0.5, 0.5, 0.5])
     classifier.n_features_in_ = 1
     projection = np.array(
-        [-1e100, -0.5, np.nextafter(-0.5, np.inf), 0.5, np.nextafter(0.5, np.inf), 1e100]
+        [
+            -1e100,
+            -0.5,
+            np.nextafter(-0.5, np.inf),
+            0.5,
+            np.nextafter(0.5, np.inf),
+            1e100,
+        ]
     )
     monkeypatch.setattr(classifier, "_project", lambda X: projection)
 
