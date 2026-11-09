@@ -424,13 +424,20 @@ class Results:
         )
 
         files: list[tuple[int | str, Path]] = []
-        for seed_dir in seeds_dir.iterdir():
-            if not seed_dir.is_dir() or not seed_dir.name.startswith("seed_"):
-                continue
-            str_id = seed_dir.name.removeprefix("seed_")
-            # Only report.csv membership decides: non-integer ids are legal
-            if report is not None and str_id not in report.index:
-                continue
+        # A committed seed may have lost its entire directory. Enumerate the
+        # report so every expected predictions file receives the same check.
+        seed_ids = (
+            list(report.index)
+            if report is not None
+            else [
+                entry.name.removeprefix("seed_")
+                for entry in seeds_dir.iterdir()
+                if entry.is_dir() and entry.name.startswith("seed_")
+            ]
+        )
+        for str_id in seed_ids:
+            _check_resample_id(str_id)
+            seed_dir = seeds_dir / f"seed_{str_id}"
             try:
                 resample_id: int | str = int(str_id)
             except ValueError:
@@ -486,6 +493,9 @@ class Results:
         FileNotFoundError
             If the pair has no ``report.csv``.
 
+        pandas.errors.ParserError
+            If the report contains duplicate resample identifiers.
+
         Examples
         --------
         >>> from skordinal.experiments import Results
@@ -495,7 +505,14 @@ class Results:
         path = self._pair_dir(classifier_name, dataset_name) / "report.csv"
         if not path.is_file():
             raise FileNotFoundError(f"No report found at {path}.")
-        return pd.read_csv(path, index_col=0, float_precision="round_trip")
+        report = pd.read_csv(path, index_col=0, float_precision="round_trip")
+        if report.index.has_duplicates:
+            duplicate_ids = report.index[report.index.duplicated()].unique().tolist()
+            raise pd.errors.ParserError(
+                f"Report at {path} contains duplicate resample identifiers: "
+                f"{duplicate_ids}."
+            )
+        return report
 
     def hyperparameters(self, classifier_name: str, dataset_name: str) -> pd.DataFrame:
         """Return the per-seed best parameters of one classifier/dataset pair.

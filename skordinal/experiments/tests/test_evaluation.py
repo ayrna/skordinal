@@ -142,16 +142,16 @@ def test_evaluate_skips_uncommitted_seed(seed_folder):
 
 
 def test_evaluate_skips_non_seed_entries(tmp_path, recwarn):
-    """Only a directory named ``seed_<id>`` counts, even when the id is committed."""
+    """Uncommitted files and directories leave evaluation unchanged."""
     _write_report(
         tmp_path,
         "A",
         "d1",
-        {2: {"mean_absolute_error_test": 0.0}, 10: {"mean_absolute_error_test": 0.0}},
+        {2: {"mean_absolute_error_test": 0.0}},
     )
     _write_seed(tmp_path, "A", "d1", 2, "test", [0, 1], [0, 1])
     seeds_dir = tmp_path / "A" / "d1" / "predictions_by_seed"
-    # Taken for a seed, a file with no predictions file inside warns
+    # An uncommitted file can share the seed prefix.
     (seeds_dir / "seed_10").write_text("noise")
     # Taken for a seed, an unprefixed directory contributes foreign predictions
     unprefixed = seeds_dir / "10"
@@ -172,6 +172,53 @@ def test_evaluate_warns_on_a_missing_committed_file(tmp_path):
     with pytest.warns(RuntimeWarning, match="is missing"):
         df = evaluate(tmp_path, "A", "d1")
     assert df.empty
+
+
+@pytest.mark.parametrize("seed_exists", [False, True], ids=["missing", "file"])
+def test_evaluate_warns_on_a_missing_committed_seed(tmp_path, seed_exists):
+    """Losing a complete seed directory cannot silently change the sample of runs."""
+    _write_report(
+        tmp_path,
+        "A",
+        "d1",
+        {2: {"mean_absolute_error_test": 0.0}, 10: {"mean_absolute_error_test": 1.0}},
+    )
+    _write_seed(tmp_path, "A", "d1", 2, "test", [0, 1], [0, 1])
+    if seed_exists:
+        seed = tmp_path / "A" / "d1" / "predictions_by_seed" / "seed_10"
+        seed.write_text("corrupt seed directory", encoding="utf-8")
+
+    with pytest.warns(RuntimeWarning, match="seed 10.*is missing"):
+        scored = evaluate(tmp_path, "A", "d1")
+
+    assert list(scored.index) == [2]
+
+
+@pytest.mark.parametrize(
+    "reader",
+    [
+        lambda root: evaluate(root, "A", "d1"),
+        summarize,
+        tabulate_results,
+        save_summary,
+    ],
+    ids=["evaluate", "summarize", "tabulate_results", "save_summary"],
+)
+def test_result_readers_reject_duplicate_resample_ids(tmp_path, reader):
+    """Repeated report rows cannot give one resample extra weight in the summary."""
+    report = _write_report(
+        tmp_path,
+        "A",
+        "d1",
+        {0: {"mean_absolute_error_test": 0.0}, 1: {"mean_absolute_error_test": 1.0}},
+    )
+    frame = pd.read_csv(report, index_col=0)
+    frame.index = [0, 0]
+    frame.to_csv(report, index_label="resample_id")
+    _write_seed(tmp_path, "A", "d1", 0, "test", [0, 1], [0, 1])
+
+    with pytest.raises(pd.errors.ParserError, match="duplicate resample"):
+        reader(tmp_path)
 
 
 def test_evaluate_is_silent_for_a_train_only_row(tmp_path, recwarn):
