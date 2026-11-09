@@ -185,14 +185,16 @@ class ELMOP(ClassifierMixin, BaseEstimator):
         H_test = self._hidden(X)  # (n_test, n_hidden)
         TY = H_test @ self.output_weights_  # (n_test, K-1)
 
-        # Class k uses exp(-TY) for partitions before k and exp(TY) for
-        # the remaining partitions. Prefix and suffix sums avoid the
-        # (n_test, K, K-1) tensor required by explicit code comparisons.
-        losses = np.zeros((X.shape[0], K), dtype=np.float64)
-        np.cumsum(np.exp(-TY), axis=1, out=losses[:, 1:])
-        positive = np.exp(TY)
-        np.cumsum(positive[:, ::-1], axis=1, out=positive[:, ::-1])
-        losses[:, :-1] += positive
+        # Class k uses exp(-TY) before partition k and exp(TY) after it.
+        # Reuse these terms without constructing an (n_test, K, K-1)
+        # tensor. Preserve the original summation order and exact ties.
+        terms = np.exp(TY)
+        negative = np.exp(-TY)
+        losses = np.empty((X.shape[0], K), dtype=np.float64)
+        losses[:, 0] = terms.sum(axis=1)
+        for k in range(1, K):
+            terms[:, k - 1] = negative[:, k - 1]
+            losses[:, k] = terms.sum(axis=1)
 
         return losses
 

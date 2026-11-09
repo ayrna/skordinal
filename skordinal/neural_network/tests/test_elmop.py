@@ -253,7 +253,7 @@ def test_elmop_decoding_matches_exponential_code_loss(n_classes, activation):
     code = np.where(np.arange(n_classes)[:, None] > np.arange(n_classes - 1), 1.0, -1.0)
     expected = np.exp(-outputs[:, None, :] * code).sum(axis=2)
 
-    np.testing.assert_allclose(clf._losses(X_test), expected, rtol=1e-13)
+    np.testing.assert_array_equal(clf._losses(X_test), expected)
     np.testing.assert_array_equal(
         clf.predict(X_test), clf.classes_[expected.argmin(axis=1)]
     )
@@ -269,3 +269,41 @@ def test_elmop_decoding_preserves_lower_class_ties():
     np.testing.assert_array_equal(clf._losses(X), np.full((6, 3), 2.0))
     np.testing.assert_array_equal(clf.predict(X), np.full(6, -3))
     np.testing.assert_allclose(clf.predict_proba(X), np.full((6, 3), 1.0 / 3.0))
+
+
+@pytest.mark.parametrize(
+    "outputs, tied_ranks",
+    [
+        ([0.5413008314283235, 0.0, -1.1795336656348026], [1, 2]),
+        ([0.5413008314283235, 0.0, 0.0, -1.1795336656348026], [1, 2, 3]),
+        ([0.0, 0.0, -1.1795336656348026], [0, 1, 2]),
+        ([0.5413008314283235, 0.0, 0.0], [1, 2, 3]),
+        ([-0.05490835344742284, 0.05490835344742284, -0.5949621910111295], [0, 2]),
+    ],
+    ids=["interior", "consecutive", "leading", "trailing", "nonadjacent"],
+)
+def test_elmop_decoding_retains_exact_ties_with_nonzero_outputs(outputs, tied_ranks):
+    """Summation preserves exact ties between adjacent and separated classes."""
+    n_classes = len(outputs) + 1
+    X = np.arange(2 * n_classes, dtype=float).reshape(n_classes, 2)
+    clf = ELMOP(n_hidden=1, activation="hardlim", random_state=0).fit(
+        X, np.arange(n_classes)
+    )
+    clf.input_weights_.fill(0.0)
+    clf.input_biases_.fill(1.0)
+    clf.output_weights_[0] = outputs
+
+    code = np.where(np.arange(n_classes)[:, None] > np.arange(n_classes - 1), 1.0, -1.0)
+    expected = np.exp(-np.asarray(outputs) * code).sum(axis=1)
+    actual = clf._losses(X)
+    np.testing.assert_array_equal(actual, np.tile(expected, (len(X), 1)))
+    np.testing.assert_array_equal(
+        actual[:, tied_ranks],
+        np.repeat(actual[:, tied_ranks[:1]], len(tied_ranks), axis=1),
+    )
+    np.testing.assert_array_equal(clf.predict(X), np.full(len(X), tied_ranks[0]))
+    proba = clf.predict_proba(X)
+    np.testing.assert_array_equal(
+        proba[:, tied_ranks],
+        np.repeat(proba[:, tied_ranks[:1]], len(tied_ranks), axis=1),
+    )
