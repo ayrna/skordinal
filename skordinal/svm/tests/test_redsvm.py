@@ -264,6 +264,8 @@ def test_redsvm_precomputed_kernel_matches_explicit_kernel(kernel):
     """A standard Gram matrix reproduces native kernel labels and projections."""
     X = np.arange(36, dtype=float).reshape(18, 2) / 12.0 - 1.5
     y = np.repeat([-3, 2, 9], 6)
+    order = np.random.default_rng(42).permutation(len(X))
+    X, y = X[order], y[order]
     X_test = X[::3] + 0.1
     params = {"gamma": 0.3, "degree": 2, "coef0": 0.4}
     K = pairwise_kernels(X, metric=kernel, filter_params=True, **params)
