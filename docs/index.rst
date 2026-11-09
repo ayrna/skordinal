@@ -20,17 +20,22 @@ See :doc:`getting_started` to install it and fit the first model, then
 At a glance
 -----------
 
-**Thirteen ordinal classifiers**: threshold models
+**Nineteen ordinal classifiers**: threshold models
 (:class:`~skordinal.linear_model.POM`,
 :class:`~skordinal.linear_model.LogisticAT`,
 :class:`~skordinal.linear_model.LogisticIT`), neural networks
 (:class:`~skordinal.neural_network.NNPOM`,
 :class:`~skordinal.neural_network.NNOP`,
-:class:`~skordinal.neural_network.ELMOP`), kernel discriminants
+:class:`~skordinal.neural_network.ELMOP`,
+:class:`~skordinal.neural_network.MLPCLMClassifier`,
+:class:`~skordinal.neural_network.MLPSoftmaxClassifier`,
+:class:`~skordinal.neural_network.MLPTriangularClassifier`), kernel discriminants
 (:class:`~skordinal.discriminant_analysis.KDLOR`), support vector machines
 (:class:`~skordinal.svm.REDSVM`,
 :class:`~skordinal.svm.SVOR`), boosting
-(:class:`~skordinal.ensemble.ORBoost`) and four meta-estimators
+(:class:`~skordinal.ensemble.ORBoost`,
+:class:`~skordinal.ensemble.OrdinalXGBClassifier`), a projection-based
+ensemble (:class:`~skordinal.reduction.OPBE`) and four meta-estimators
 (:class:`~skordinal.ensemble.EBANO`,
 :class:`~skordinal.reduction.OrdinalDecompositionClassifier`,
 :class:`~skordinal.reduction.RegressionClassifier`,

@@ -52,8 +52,11 @@ dependencies = [
 progress = [
     "tqdm>=4.66",
 ]
+xgboost = [
+    "xgboost>=3.0",
+]
 dev = [
-    "skordinal[progress]",
+    "skordinal[progress,xgboost]",
     "pytest>=7.0",
     "pytest-cov",
     "pytest-xdist[psutil]",
