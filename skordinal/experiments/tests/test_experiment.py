@@ -7,6 +7,9 @@ import numpy.testing as npt
 import pytest
 from sklearn.decomposition import PCA
 from sklearn.dummy import DummyClassifier
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
@@ -238,6 +241,99 @@ def test_run_preprocessing_does_not_mutate_inputs(split_with_test):
 
     npt.assert_array_equal(X_train, train_before)
     npt.assert_array_equal(X_test, test_before)
+
+
+@pytest.mark.parametrize("model", [_MINIMAL_CONF, _CONF_CV], ids=["fixed", "search"])
+def test_run_inplace_preprocessing_preserves_inputs_and_predictions(
+    split_with_test, model
+):
+    """An in-place transformer cannot change the caller's train or test data."""
+    X_train, y_train, X_test, y_test = split_with_test
+    train_before = X_train.copy()
+    test_before = X_test.copy()
+    result = _call_run(
+        _make_experiment(model, input_preprocessing=StandardScaler(copy=False)),
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+    )
+
+    npt.assert_array_equal(X_train, train_before)
+    npt.assert_array_equal(X_test, test_before)
+    reference = SVC(**result.best_params).fit(
+        StandardScaler().fit_transform(train_before), y_train
+    )
+    npt.assert_allclose(result.best_model.support_vectors_, reference.support_vectors_)
+    npt.assert_array_equal(
+        result.test_predicted_y,
+        reference.predict(StandardScaler().fit(train_before).transform(test_before)),
+    )
+
+
+def test_search_fits_preprocessing_within_each_fold(split_with_test, monkeypatch):
+    """Each validation fold is excluded when preprocessing statistics are fitted."""
+    fitted_sizes = []
+    original_fit = StandardScaler.fit
+
+    def record_fit(self, X, y=None, **kwargs):
+        fitted_sizes.append(len(X))
+        return original_fit(self, X, y, **kwargs)
+
+    monkeypatch.setattr(StandardScaler, "fit", record_fit)
+    X_train, y_train, X_test, y_test = split_with_test
+    _call_run(
+        _make_experiment(_CONF_CV, input_preprocessing=StandardScaler()),
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+    )
+
+    assert sorted(fitted_sizes) == [20] * 6 + [30]
+
+
+@pytest.mark.parametrize("model", [_MINIMAL_CONF, _CONF_CV], ids=["fixed", "search"])
+def test_preprocessing_accepts_supervised_transformers(split_with_test, model):
+    """Supervised feature selection receives the labels used to fit the model."""
+    X_train, y_train, X_test, y_test = split_with_test
+    result = _call_run(
+        _make_experiment(model, input_preprocessing=SelectKBest(f_classif, k=2)),
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+    )
+
+    assert result.best_model.n_features_in_ == 2
+    npt.assert_array_equal(
+        result.test_predicted_y,
+        result.best_model.predict(result.scaler.transform(X_test)),
+    )
+
+
+def test_preprocessed_search_preserves_nested_model_parameters(split_with_test):
+    """The result exposes the original estimator and its original parameter names."""
+    X_train, y_train, X_test, y_test = split_with_test
+    model = ModelConfig(Pipeline([("svc", SVC())]), param_grid={"svc__C": [0.1, 1.0]})
+    result = _call_run(
+        _make_experiment(model, input_preprocessing=StandardScaler(), random_state=7),
+        X_train,
+        y_train,
+        X_test,
+        y_test,
+    )
+    reference = GridSearchCV(
+        Pipeline([("scaler", StandardScaler()), ("clf", model.estimator)]),
+        {"clf__svc__C": [0.1, 1.0]},
+        scoring="neg_mean_absolute_error",
+        cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=7),
+    ).fit(X_train, y_train)
+
+    assert result.best_params == {"svc__C": reference.best_params_["clf__svc__C"]}
+    assert list(result.best_model.named_steps) == ["svc"]
+    npt.assert_array_equal(result.test_predicted_y, reference.predict(X_test))
+    npt.assert_allclose(result.scaler.mean_, np.mean(X_train, axis=0))
 
 
 def test_run_metric_keys_for_each_eval_metric(split_with_test):
