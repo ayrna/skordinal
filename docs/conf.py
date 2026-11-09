@@ -42,6 +42,7 @@ intersphinx_mapping = {
     "pandas": ("https://pandas.pydata.org/pandas-docs/stable/", None),
     "joblib": ("https://joblib.readthedocs.io/en/latest/", None),
     "sklearn": ("https://scikit-learn.org/stable", None),
+    "xgboost": ("https://xgboost.readthedocs.io/en/stable", None),
 }
 
 # --- Autodoc / autosummary --------------------------------------------------
