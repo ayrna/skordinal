@@ -191,7 +191,7 @@ def test_logistic_it_predict_rejects_wrong_n_features(X, y):
     ],
 )
 def test_logistic_it_label_roundtrip(labels):
-    """fit preserves arbitrary ordinal labels in classes_."""
+    """fit and predict keep arbitrary ordinal labels."""
     labels_array = np.array(labels)
     X = np.array(
         [[i, i] for i, _ in enumerate(np.repeat(labels_array, 3))], dtype=float
@@ -223,27 +223,7 @@ def test_logistic_it_thresholds_non_decreasing(ordinal_data):
     assert set(clf.predict(X)).issubset(set(clf.classes_))
 
 
-def test_logistic_it_proba_and_cumproba_well_formed(ordinal_data):
-    """predict_proba/predict_cumproba are well-formed and match predict."""
-    X, y = ordinal_data
-    clf = LogisticIT().fit(X, y)
-    n_classes = len(clf.classes_)
-
-    proba = clf.predict_proba(X)
-    assert proba.shape == (X.shape[0], n_classes)
-    assert np.all(proba >= 0.0) and np.all(proba <= 1.0)
-    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
-
-    cumproba = clf.predict_cumproba(X)
-    assert cumproba.shape == (X.shape[0], n_classes - 1)
-    assert np.all(cumproba >= 0.0) and np.all(cumproba <= 1.0)
-    assert np.all(np.diff(cumproba, axis=1) >= 0)
-
-    expected_pred = clf.classes_[(cumproba < 0.5).sum(axis=1)]
-    np.testing.assert_array_equal(clf.predict(X), expected_pred)
-
-
-def test_logistic_it_alpha_regularisation_reduces_coef_norm(ordinal_data):
+def test_logistic_it_alpha_shrinks_weights(ordinal_data):
     """Higher alpha yields a coef_ with a smaller L2 norm than alpha=0."""
     X, y = ordinal_data
     clf_noreg = LogisticIT(alpha=0.0).fit(X, y)
@@ -276,6 +256,26 @@ def test_logistic_it_class_weight_balanced_differs_from_none_and_matches_dict():
 
     np.testing.assert_allclose(clf_dict.coef_, clf_bal.coef_, atol=1e-8)
     np.testing.assert_allclose(clf_dict.thresholds_, clf_bal.thresholds_, atol=1e-8)
+
+
+def test_logistic_it_proba_and_cumproba_well_formed(ordinal_data):
+    """predict_proba/predict_cumproba are well-formed and match predict."""
+    X, y = ordinal_data
+    clf = LogisticIT().fit(X, y)
+    n_classes = len(clf.classes_)
+
+    proba = clf.predict_proba(X)
+    assert proba.shape == (X.shape[0], n_classes)
+    assert np.all(proba >= 0.0) and np.all(proba <= 1.0)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-8)
+
+    cumproba = clf.predict_cumproba(X)
+    assert cumproba.shape == (X.shape[0], n_classes - 1)
+    assert np.all(cumproba >= 0.0) and np.all(cumproba <= 1.0)
+    assert np.all(np.diff(cumproba, axis=1) >= 0)
+
+    expected_pred = clf.classes_[(cumproba < 0.5).sum(axis=1)]
+    np.testing.assert_array_equal(clf.predict(X), expected_pred)
 
 
 def test_logistic_it_binary_ordinal_data():
@@ -325,7 +325,7 @@ def _build_logistic_it_objective_callables(n, p, K, seed):
     return fun, jac, params
 
 
-@pytest.mark.parametrize("K", [3, 5])
+@pytest.mark.parametrize("K", [2, 4])
 def test_logistic_it_objective_gradient_matches_numerical(K):
     """Analytic gradient of _objective matches finite differences."""
     fun, jac, params = _build_logistic_it_objective_callables(n=80, p=3, K=K, seed=42)
@@ -342,8 +342,11 @@ def test_logistic_it_large_magnitude_x_finite_probabilities():
     )
     X = X * 1000.0
 
-    classifier = LogisticIT().fit(X, y)
-    proba = classifier.predict_proba(X)
+    # Let no RuntimeWarning such as a log of a non-positive value escape fit
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        classifier = LogisticIT().fit(X, y)
+        proba = classifier.predict_proba(X)
 
     assert np.isfinite(proba).all()
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-12)
@@ -361,6 +364,15 @@ def test_logistic_it_convergence_warning(ordinal_data):
 
     assert f"after {clf.n_iter_} iteration(s)" in str(record[0].message)
     assert np.isfinite(clf.loss_)
+
+
+def test_logistic_it_default_tol_reaches_the_optimum(ordinal_data):
+    """The default tol stops at the optimum a far tighter tol reaches."""
+    X, y = ordinal_data
+    clf = LogisticIT(alpha=0.01).fit(X, y)
+    tight = LogisticIT(alpha=0.01, tol=1e-10, max_iter=5000).fit(X, y)
+
+    assert clf.loss_ <= tight.loss_ + 1e-8
 
 
 def test_logistic_it_projection_well_formed(ordinal_data):
