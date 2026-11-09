@@ -292,10 +292,8 @@ class OrdinalDecompositionClassifier(
             each class label.
 
         """
-        C = self.coding_matrix_[None, :, :]
-        M = predictions[:, None, :]
-        e_losses = np.exp(-M * C).sum(axis=2)
-        return e_losses
+        predictions = np.asarray(predictions, dtype=np.float64)
+        return self._aggregate_losses(np.exp(-predictions), np.exp(predictions), 1.0)
 
     def _hinge_loss(self, predictions: np.ndarray) -> np.ndarray:
         """Compute the Hinge losses for each label.
@@ -316,10 +314,12 @@ class OrdinalDecompositionClassifier(
             class label.
 
         """
-        C = self.coding_matrix_[None, :, :]
-        M = predictions[:, None, :]
-        h_losses = np.maximum(0.0, 1.0 - C * M).sum(axis=2)
-        return h_losses
+        predictions = np.asarray(predictions, dtype=np.float64)
+        return self._aggregate_losses(
+            np.maximum(0.0, 1.0 - predictions),
+            np.maximum(0.0, 1.0 + predictions),
+            1.0,
+        )
 
     def _logarithmic_loss(self, predictions: np.ndarray) -> np.ndarray:
         """Compute the logarithmic losses for each label.
@@ -340,10 +340,35 @@ class OrdinalDecompositionClassifier(
             each class label.
 
         """
-        C = self.coding_matrix_[None, :, :]
-        M = predictions[:, None, :]
-        l_losses = np.log1p(np.exp(-2.0 * C * M)).sum(axis=2)
-        return l_losses
+        predictions = np.asarray(predictions, dtype=np.float64)
+        return self._aggregate_losses(
+            np.log1p(np.exp(-2.0 * predictions)),
+            np.log1p(np.exp(2.0 * predictions)),
+            np.log(2.0),
+        )
+
+    def _aggregate_losses(
+        self, positive: np.ndarray, negative: np.ndarray, zero: float
+    ) -> np.ndarray:
+        """Sum ternary-code losses with O(n_samples * n_classes) memory."""
+        n_samples, n_subproblems = positive.shape
+        losses = np.empty((n_samples, len(self.coding_matrix_)), dtype=np.float64)
+        terms = np.full_like(positive, zero)
+        previous = np.zeros(n_subproblems, dtype=np.intp)
+
+        # Consecutive ordinal codes change at most three columns. Reuse their
+        # precomputed losses and retain the original summation order for ties.
+        for k, code in enumerate(self.coding_matrix_):
+            for column in np.flatnonzero(code != previous):
+                if code[column] > 0:
+                    terms[:, column] = positive[:, column]
+                elif code[column] < 0:
+                    terms[:, column] = negative[:, column]
+                else:
+                    terms[:, column] = zero
+            losses[:, k] = terms.sum(axis=1)
+            previous = code
+        return losses
 
     def _frank_hall_method(self, predictions: np.ndarray) -> np.ndarray:
         """Calculate probability of each pattern belonging to each target.

@@ -406,3 +406,78 @@ def test_ordinal_decomposition_validates_nested_estimator_params(X, y):
 
     with pytest.raises(ValueError, match=r"The 'C' parameter of LogisticRegression"):
         classifier.fit(X, y)
+
+
+@pytest.mark.parametrize(
+    "decomposition", ["cumulative", "adjacent", "sequential", "sequential_reverse"]
+)
+@pytest.mark.parametrize("n_classes", [2, 3, 11])
+@pytest.mark.parametrize("loss_method", ["exponential", "hinge", "logarithmic"])
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_loss_decoding_matches_ternary_code_sum(
+    decomposition, n_classes, loss_method, dtype
+):
+    """All coding strategies retain each positive, negative and zero contribution."""
+    classifier = OrdinalDecompositionClassifier(decomposition=decomposition)
+    classifier.coding_matrix_ = build_coding_matrix(n_classes, decomposition)
+    predictions = np.random.default_rng(42).uniform(
+        -1.0, 1.0, (7, n_classes - 1)
+    ).astype(dtype)
+    predictions[:3] = np.array([-1.0, 0.0, 1.0])[:, None]
+    margin = predictions[:, None, :] * classifier.coding_matrix_[None, :, :]
+    if loss_method == "exponential":
+        expected = np.exp(-margin).sum(axis=2)
+    elif loss_method == "hinge":
+        expected = np.maximum(0.0, 1.0 - margin).sum(axis=2)
+    else:
+        expected = np.log1p(np.exp(-2.0 * margin)).sum(axis=2)
+
+    actual = getattr(classifier, f"_{loss_method}_loss")(predictions)
+
+    npt.assert_array_equal(actual, expected)
+    assert (actual >= 0.0).all()
+
+
+@pytest.mark.parametrize(
+    "decomposition", ["cumulative", "adjacent", "sequential", "sequential_reverse"]
+)
+@pytest.mark.parametrize("loss_method", ["exponential", "hinge", "logarithmic"])
+def test_loss_decoding_preserves_exact_ties(decomposition, loss_method):
+    """Reassociated sums must preserve the decisions of the original formulas."""
+    classifier = OrdinalDecompositionClassifier(decomposition=decomposition)
+    classifier.coding_matrix_ = build_coding_matrix(7, decomposition)
+    predictions = np.array(
+        [
+            [-1.0, -1.0, 1.0, 1.0, -1.0, -1.0],
+            [0.0, 0.0, 0.0, 0.0, -1.0, -1.0],
+        ]
+    )
+    margin = predictions[:, None, :] * classifier.coding_matrix_[None, :, :]
+    if loss_method == "exponential":
+        expected = np.exp(-margin).sum(axis=2)
+    elif loss_method == "hinge":
+        expected = np.maximum(0.0, 1.0 - margin).sum(axis=2)
+    else:
+        expected = np.log1p(np.exp(-2.0 * margin)).sum(axis=2)
+
+    actual = getattr(classifier, f"_{loss_method}_loss")(predictions)
+
+    npt.assert_array_equal(actual, expected)
+    npt.assert_array_equal(actual.argmin(axis=1), expected.argmin(axis=1))
+
+
+@pytest.mark.parametrize(
+    "decomposition", ["cumulative", "adjacent", "sequential", "sequential_reverse"]
+)
+def test_loss_decoding_keeps_fitted_decomposition(X_3class, y_3class, decomposition):
+    """Changing an init parameter leaves the fitted coding and predictions intact."""
+    classifier = OrdinalDecompositionClassifier(
+        decomposition=decomposition, decision_method="exponential_loss"
+    ).fit(X_3class, y_3class)
+    probabilities = classifier.predict_proba(X_3class)
+
+    classifier.set_params(
+        decomposition="adjacent" if decomposition == "cumulative" else "cumulative"
+    )
+
+    npt.assert_allclose(classifier.predict_proba(X_3class), probabilities)
