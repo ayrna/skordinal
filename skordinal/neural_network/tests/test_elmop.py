@@ -8,6 +8,7 @@ import pytest
 from sklearn.exceptions import NotFittedError
 
 from skordinal.neural_network import ELMOP
+from skordinal.utils.extmath import losses_to_proba
 
 
 @pytest.fixture
@@ -237,3 +238,34 @@ def test_elmop_large_magnitude_x_no_nan():
 
     assert np.isfinite(proba).all()
     np.testing.assert_allclose(proba.sum(axis=1), 1.0, atol=1e-12)
+
+
+@pytest.mark.parametrize("n_classes", [2, 3, 16, 128])
+@pytest.mark.parametrize("activation", ["sigmoid", "hardlim"])
+def test_elmop_decoding_matches_exponential_code_loss(n_classes, activation):
+    """Optimised decoding preserves the ordered-partitions loss and predictions."""
+    rng = np.random.default_rng(42)
+    X = rng.standard_normal((2 * n_classes, 4))
+    y = np.repeat(np.arange(n_classes) * 3 - 7, 2)
+    clf = ELMOP(n_hidden=8, activation=activation, random_state=42).fit(X, y)
+    X_test = rng.standard_normal((7, 4))
+    outputs = clf._hidden(X_test) @ clf.output_weights_
+    code = np.where(np.arange(n_classes)[:, None] > np.arange(n_classes - 1), 1.0, -1.0)
+    expected = np.exp(-outputs[:, None, :] * code).sum(axis=2)
+
+    np.testing.assert_allclose(clf._losses(X_test), expected, rtol=1e-13)
+    np.testing.assert_array_equal(
+        clf.predict(X_test), clf.classes_[expected.argmin(axis=1)]
+    )
+    np.testing.assert_allclose(clf.predict_proba(X_test), losses_to_proba(expected))
+
+
+def test_elmop_decoding_preserves_lower_class_ties():
+    """Equal partition outputs give equal losses for all candidate classes."""
+    X = np.arange(12, dtype=float).reshape(6, 2)
+    clf = ELMOP(n_hidden=3, random_state=0).fit(X, [-3, -3, 2, 2, 7, 7])
+    clf.output_weights_.fill(0.0)
+
+    np.testing.assert_array_equal(clf._losses(X), np.full((6, 3), 2.0))
+    np.testing.assert_array_equal(clf.predict(X), np.full(6, -3))
+    np.testing.assert_allclose(clf.predict_proba(X), np.full((6, 3), 1.0 / 3.0))
