@@ -24,6 +24,38 @@ xgb = pytest.importorskip("xgboost")
 THRESHOLD_UPDATES = ["fixed", "refit", "input_median", "input_mean", "latent_median"]
 
 
+@pytest.mark.parametrize(
+    "class_weight",
+    [
+        {10: 0.0, 20: 0.0, 30: 0.0},
+        {10: -1.0, 20: 1.0, 30: 1.0},
+        {10: np.nan},
+        {10: np.inf},
+        {10: -np.inf},
+        {10: 1e308, 20: 1e308, 30: 1e308},
+    ],
+    ids=["zero", "negative", "nan", "infinity", "negative-infinity", "overflow"],
+)
+def test_fit_rejects_invalid_class_weights(class_weight):
+    """Invalid class weights raise before training the booster or thresholds."""
+    X = np.arange(12, dtype=float).reshape(6, 2)
+    y = np.repeat([10, 20, 30], 2)
+
+    with pytest.raises(ValueError, match="weight"):
+        OrdinalXGBClassifier(n_estimators=1, class_weight=class_weight).fit(X, y)
+
+
+def test_fit_accepts_individual_zero_class_weights():
+    """Zero class weights remain valid when some samples have positive weight."""
+    X = np.arange(12, dtype=float).reshape(6, 2)
+    y = np.repeat([10, 20, 30], 2)
+
+    classifier = OrdinalXGBClassifier(n_estimators=1, class_weight={10: 0.0}).fit(X, y)
+
+    assert np.isfinite(classifier.thresholds_).all()
+    assert np.isfinite(classifier.predict_proba(X)).all()
+
+
 @pytest.fixture(autouse=True)
 def single_openmp_thread():
     """Run XGBoost on one OpenMP thread, as all cores slow it down on small data."""

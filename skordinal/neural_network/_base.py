@@ -6,12 +6,15 @@ from numbers import Integral, Real
 import numpy as np
 import scipy.optimize
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
-from sklearn.utils import check_random_state, compute_sample_weight
+from sklearn.utils import check_random_state
 from sklearn.utils._param_validation import Interval, StrOptions
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.utils._optimize import _check_optimize_result
-from skordinal.utils.validation import check_ordinal_targets
+from skordinal.utils.validation import (
+    _compute_class_sample_weight,
+    check_ordinal_targets,
+)
 
 
 class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
@@ -30,6 +33,8 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
 
     class_weight : dict, "balanced", or None, default=None
         Weights associated with classes.
+        Weights must be finite and nonnegative. Their sum over training samples
+        must be finite and positive.
 
     max_iter : int, default=500
         Maximum number of iterations for the solver.
@@ -150,10 +155,7 @@ class MLPBaseClassifier(ClassifierMixin, BaseEstimator, ABC):
         Y = np.zeros((n_samples, self.n_classes_))
         Y[np.arange(n_samples), y_encoded] = 1.0
 
-        sample_weight = np.ones(n_samples)
-        if self.class_weight is not None:
-            sw = compute_sample_weight(class_weight=self.class_weight, y=y)
-            sample_weight *= sw
+        sample_weight = _compute_class_sample_weight(self.class_weight, y)
 
         rng = check_random_state(self.random_state)
 

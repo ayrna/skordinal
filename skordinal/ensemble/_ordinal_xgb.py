@@ -8,12 +8,14 @@ import scipy.optimize
 import scipy.special
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.utils._param_validation import Interval, StrOptions
-from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.utils._optimize import _check_optimize_result
 from skordinal.utils.extmath import cumproba_to_proba, repair_cumproba
-from skordinal.utils.validation import check_ordinal_targets
+from skordinal.utils.validation import (
+    _compute_class_sample_weight,
+    check_ordinal_targets,
+)
 
 
 class OrdinalXGBClassifier(ClassifierMixin, BaseEstimator):
@@ -173,6 +175,8 @@ default="gain"
         weights inversely proportional to class frequencies in the input data
         as ``n_samples / (n_classes * np.bincount(y))``. The weights apply to
         the booster objective and to ``threshold_update="refit"``.
+        Weights must be finite and nonnegative. Their sum over training samples
+        must be finite and positive.
 
     Attributes
     ----------
@@ -387,7 +391,7 @@ default="gain"
             self, X, y, dtype=np.float64, ensure_all_finite="allow-nan"
         )
         self.classes_, y_enc = check_ordinal_targets(y)
-        sample_weight = compute_sample_weight(self.class_weight, y)
+        sample_weight = _compute_class_sample_weight(self.class_weight, y)
 
         # Start the thresholds at the logits of the cumulative class frequencies
         n_classes = len(self.classes_)

@@ -5,10 +5,28 @@ import pytest
 from numpy.testing import assert_array_equal
 
 from skordinal.utils.validation import (
+    _compute_class_sample_weight,
     _rank_encode_labels,
     check_ordinal_targets,
     check_thresholds,
 )
+
+
+@pytest.mark.parametrize(
+    "class_weight, expected",
+    [
+        (None, [1.0, 1.0, 1.0, 1.0]),
+        ("balanced", [2 / 3, 2 / 3, 2 / 3, 2.0]),
+        ({10: 0.0, 30: 2.0}, [0.0, 0.0, 0.0, 2.0]),
+    ],
+)
+def test_class_sample_weight_preserves_valid_weights(class_weight, expected):
+    """Weights preserve label mapping, balanced weights and individual zeros."""
+    weights = _compute_class_sample_weight(class_weight, np.array([10, 10, 10, 30]))
+
+    np.testing.assert_allclose(weights, expected)
+    assert weights.dtype == np.float64
+
 
 _ALL_HELPERS = [
     check_ordinal_targets,
