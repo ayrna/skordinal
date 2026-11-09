@@ -579,4 +579,4 @@ class NNPOM(ClassifierMixin, BaseEstimator):
             axis=0,
         )
 
-        return J, grad
+        return float(J), grad
