@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import warnings
 from collections.abc import Iterator
@@ -140,6 +141,7 @@ class Results:
                 hyperparameter_configuration.csv
                 predictions_by_seed/
                     seed_<resample_id>/
+                        classes.json
                         train_predictions.csv
                         test_predictions.csv
                         train_confusion_matrix.txt
@@ -155,8 +157,10 @@ class Results:
     original dataset array, or its position within the partition when no
     sample indices were recorded. ``Prediction`` always reflects the
     estimator's own ``predict`` decision, even when probability
-    estimates are stored alongside it. Each
-    ``*_confusion_matrix.txt`` holds the confusion matrix of the same
+    estimates are stored alongside it. ``classes.json`` records the original
+    class labels in their fitted order,
+    including when ``save_model=False``, so evaluation can restore label values.
+    Each ``*_confusion_matrix.txt`` holds the confusion matrix of the same
     file's ``Target`` and ``Prediction`` columns.
     Each ``models/<resample_id>.joblib`` holds the fitted estimator, or a
     ``Pipeline`` of the run's scaler and that estimator when the inputs were
@@ -259,6 +263,7 @@ class Results:
                 classes=classes,
                 resample_id=result.resample_id,
             )
+        files["classes.json"] = json.dumps(classes.tolist(), allow_nan=False) + "\n"
 
         # Clear any temp file left by a prior crash before writing new ones
         _sweep_orphaned_temp_files(base_dir)
