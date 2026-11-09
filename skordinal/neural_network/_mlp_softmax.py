@@ -34,7 +34,7 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
     max_iter : int, default=500
         Maximum number of iterations for the L-BFGS-B solver.
 
-    tol: float, default=1e-4
+    tol : float, default=1e-4
         Tolerance for the optimization.
 
     random_state : int, RandomState instance or None, default=None

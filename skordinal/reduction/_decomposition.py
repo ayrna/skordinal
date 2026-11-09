@@ -52,8 +52,8 @@ class OrdinalDecompositionClassifier(
         reversed. Each row of the coding matrix corresponds to a class and each
         column to a binary subproblem.
 
-    decision_method : {'exponential_loss', 'hinge_loss', 'logarithmic_loss', 'frank_hall'}, \
-            default='frank_hall'
+    decision_method : {'exponential_loss', 'hinge_loss', 'logarithmic_loss', \
+            'frank_hall'}, default='frank_hall'
         Method to aggregate the predictions of the binary estimators into class
         probabilities or labels.
 
@@ -68,7 +68,7 @@ class OrdinalDecompositionClassifier(
     n_features_in_ : int
         Number of features seen during fit.
 
-    feature_names_in_ : ndarray of shape (n_features_in_,)
+    feature_names_in_ : ndarray of shape (`n_features_in_`,)
         Names of features seen during fit. Defined only when X has feature
         names that are all strings.
 
@@ -83,7 +83,7 @@ class OrdinalDecompositionClassifier(
            and C. Hervás-Martínez, "Ordinal regression methods: survey and
            experimental study", IEEE Transactions on Knowledge and Data
            Engineering, Vol. 28. Issue 1, 2016,
-           http://dx.doi.org/10.1109/TKDE.2015.2457911
+           https://doi.org/10.1109/TKDE.2015.2457911
 
     .. [2] E. Frank and M. Hall, "A simple approach to ordinal classification",
            European Conference on Machine Learning, Lecture Notes in Computer
@@ -218,7 +218,7 @@ class OrdinalDecompositionClassifier(
         -------
         y_proba : ndarray of shape (n_samples, n_classes)
             The probability of the sample for each class in the model, where classes are
-            ordered as they are in self.classes_.
+            ordered as they are in ``classes_``.
 
         Raises
         ------

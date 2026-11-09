@@ -65,7 +65,7 @@ class ORBoost(ClassifierMixin, BaseEstimator):
     n_features_in_ : int
         Number of features seen during ``fit``.
 
-    feature_names_in_ : ndarray of shape (n_features_in_,), dtype object
+    feature_names_in_ : ndarray of shape (`n_features_in_`,), dtype object
         Feature names seen during ``fit``. Defined only when ``X`` is a
         ``pandas.DataFrame``.
 
@@ -82,7 +82,7 @@ class ORBoost(ClassifierMixin, BaseEstimator):
 
     See Also
     --------
-    REDSVM : SVM-based ordinal classifier with a C++ backend.
+    skordinal.svm.REDSVM : SVM-based ordinal classifier with a C++ backend.
 
     Notes
     -----

@@ -266,7 +266,7 @@ class _CachedDataset:
             ) from err
 
     def is_oc(self):
-        """Return whether metadata flags this dataset as ordinal, False when unreadable."""
+        """Return whether metadata flags the dataset as ordinal, False if unreadable."""
         try:
             return _is_oc(self.metadata_row())
         except OSError:
@@ -542,6 +542,11 @@ def fetch_tocuco(
             Always ``None`` for fetched datasets.
 
     (data, target) : tuple if ``return_X_y`` is True
+        A tuple of two ndarrays. The first contains a 2D array of shape
+        ``(n_samples, n_features)`` with each row representing one sample and
+        each column representing a feature. The second array of shape
+        ``(n_samples,)`` contains the ordinal target labels. A
+        ``pandas.DataFrame`` and a ``pandas.Series`` when ``as_frame`` is True.
 
     Raises
     ------

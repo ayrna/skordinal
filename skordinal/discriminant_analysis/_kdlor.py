@@ -77,7 +77,7 @@ class KDLOR(ClassifierMixin, BaseEstimator):
     n_features_in_ : int
         Number of features seen during ``fit``.
 
-    feature_names_in_ : ndarray of shape (n_features_in_,), dtype object
+    feature_names_in_ : ndarray of shape (`n_features_in_`,), dtype object
         Feature names seen during ``fit``. Defined only when ``X`` is a
         ``pandas.DataFrame``.
 

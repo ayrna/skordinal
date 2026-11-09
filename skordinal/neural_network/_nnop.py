@@ -100,7 +100,7 @@ class NNOP(ClassifierMixin, BaseEstimator):
            and C. Hervás-Martínez, "Ordinal regression methods: survey and
            experimental study", IEEE Transactions on Knowledge and Data
            Engineering, Vol. 28. Issue 1, 2016,
-           http://dx.doi.org/10.1109/TKDE.2015.2457911
+           https://doi.org/10.1109/TKDE.2015.2457911
 
     """
 

@@ -56,7 +56,7 @@ def load_era(*, return_X_y=False, as_frame=False):
         filename : str
             Name of the CSV file inside the data module.
         data_module : str
-            Python module path used by :func:`importlib.resources` to
+            Python module path used by :mod:`importlib.resources` to
             locate the data file.
 
     (data, target) : tuple if ``return_X_y`` is True
