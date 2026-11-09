@@ -248,9 +248,14 @@ class KDLOR(ClassifierMixin, BaseEstimator):
         M_means = M_sums / class_counts  # (n, K)
         D = M_means[:, 1:] - M_means[:, :-1]  # (n, K-1)
 
-        # Within-class scatter: H = K K^T - sum_c (1/n_c) s_c s_c^T
-        #                          = K K^T - (M_sums / counts) @ M_sums^T
-        H = K_train @ K_train - (M_sums / class_counts) @ M_sums.T
+        # Center within each class before forming the scatter matrix. The
+        # difference of uncentered products loses precision for small scatter.
+        # Subtract an observed column first so identical columns center to zero.
+        _, first_in_class = np.unique(y_enc, return_index=True)
+        centered = K_train - K_train[:, first_in_class[y_enc]]
+        centered -= ((centered @ E) / class_counts)[:, y_enc]
+        H = centered @ centered.T
+        del centered, K_train, E
         # Ridge relative to H's own scale; fall back to an absolute
         # ridge when H is exactly zero (e.g. constant training data)
         scale = H.diagonal().mean()

@@ -341,6 +341,20 @@ def test_kdlor_constant_x_gamma_scale_fallback():
     np.testing.assert_array_equal(preds, np.zeros(len(y), dtype=preds.dtype))
 
 
+@pytest.mark.parametrize("kernel", ["linear", "rbf", "poly", "laplacian"])
+@pytest.mark.parametrize("repeats", [2, 3, 10, 20])
+def test_kdlor_identical_patterns_within_each_class(kernel, repeats):
+    """Zero within-class scatter fits with the documented absolute ridge."""
+    X = np.repeat([[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]], repeats, axis=0)
+    y = np.repeat([-3, 2, 9], repeats)
+
+    clf = KDLOR(kernel=kernel).fit(X, y)
+
+    assert np.isfinite(clf.dual_coef_).all()
+    np.testing.assert_array_equal(clf.predict(X), y)
+    np.testing.assert_allclose(clf.predict_proba(X).sum(axis=1), 1.0)
+
+
 def test_kdlor_poly_kernel_overflow_raises_value_error():
     """A poly-kernel overflow raises ValueError instead of silent NaN."""
     rng = np.random.default_rng(0)
