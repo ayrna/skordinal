@@ -103,7 +103,9 @@ class Benchmark:
         instance, e.g. a scaler or a ``Pipeline``, cloned and seeded with
         ``random_state`` for each resample. Fitted on the training split
         only, then applied to both splits. ``None`` means no
-        preprocessing.
+        preprocessing. During a search, preprocessing is fitted separately
+        within each cross-validation training fold. Supervised transformers
+        receive the training labels.
 
     random_state : int or None, default=0
         Seed forwarded to the base estimator, to the ``StratifiedKFold``

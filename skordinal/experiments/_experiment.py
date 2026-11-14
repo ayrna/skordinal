@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
 
 from skordinal.metrics import get_ordinal_scorer
 
@@ -66,7 +67,9 @@ class Experiment:
         instance, e.g. a scaler or a ``Pipeline``, cloned and seeded with
         ``random_state`` for each partition. Fitted on the training split
         only, then applied to the train split and, when present, the test
-        split. ``None`` means no preprocessing.
+        split. During a search, preprocessing is fitted separately within
+        each cross-validation training fold. Supervised transformers receive
+        the training labels. ``None`` means no preprocessing.
 
     random_state : int or None, default=None
         Seed forwarded to the base estimator, to the ``StratifiedKFold``
@@ -219,47 +222,65 @@ class Experiment:
         if y_test is not None and X_test is None:
             raise ValueError("'y_test' was given without 'X_test'.")
 
-        # Preprocess into locals so the caller's arrays are never mutated
-        train_inputs: np.ndarray = X_train
-        test_inputs: np.ndarray | None = X_test
         scaler = self._build_scaler()
-
-        if scaler is not None:
-            train_inputs = scaler.fit(train_inputs).transform(train_inputs)
-            if X_test is not None:
-                test_inputs = scaler.transform(X_test)
-
         # Keep the refit metadata in locals, never on the estimator itself
         base = self.model.build(self.random_state)
+        if not self.model.needs_search and self.model.param_grid:
+            base.set_params(**self.model.fixed_params())
+        # A Pipeline fits preprocessing on each fold's training samples.
+        # Work on a copy because transformers may modify their inputs in place.
+        estimator = (
+            Pipeline([("scaler", scaler), ("clf", base)])
+            if scaler is not None
+            else base
+        )
+        fit_inputs = X_train.copy() if scaler is not None else X_train
         if self.model.needs_search:
             scorer = get_ordinal_scorer(self.tuning_metric)
             splitter = StratifiedKFold(
                 n_splits=self.cv, shuffle=True, random_state=self.random_state
             )
+            param_grid = self.model.search_grid()
+            if scaler is not None:
+                param_grid = {f"clf__{key}": value for key, value in param_grid.items()}
             search = GridSearchCV(
-                base,
-                param_grid=self.model.search_grid(),
+                estimator,
+                param_grid=param_grid,
                 scoring=scorer,
                 n_jobs=self.n_jobs,
                 cv=splitter,
                 error_score="raise",
             )
-            search.fit(train_inputs, y_train)
+            search.fit(fit_inputs, y_train)
             best_estimator = search.best_estimator_
             best_params = search.best_params_
+            if scaler is not None:
+                best_params = {
+                    key.removeprefix("clf__"): value
+                    for key, value in best_params.items()
+                }
             refit_time = search.refit_time_
             cv_time_train = search.cv_results_["mean_fit_time"].mean()
             cv_time_test = search.cv_results_["mean_score_time"].mean()
         else:
-            if self.model.param_grid:
-                base.set_params(**self.model.fixed_params())
             fit_start = perf_counter()
-            base.fit(train_inputs, y_train)
+            estimator.fit(fit_inputs, y_train)
             refit_time = perf_counter() - fit_start
-            best_estimator = base
+            best_estimator = estimator
             best_params = self.model.fixed_params()
             cv_time_train = np.nan
             cv_time_test = np.nan
+
+        del fit_inputs
+        train_inputs: np.ndarray = X_train
+        test_inputs: np.ndarray | None = X_test
+        if scaler is not None:
+            # Preserve ExperimentResult's separate fitted transformer and model.
+            scaler = best_estimator.named_steps["scaler"]
+            best_estimator = best_estimator.named_steps["clf"]
+            train_inputs = scaler.transform(X_train.copy())
+            if X_test is not None:
+                test_inputs = scaler.transform(X_test.copy())
 
         train_predicted_y = best_estimator.predict(train_inputs)
 
