@@ -89,6 +89,47 @@ def test_atomic_dump_round_trips_no_temp(tmp_path):
     assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
 
 
+def test_atomic_dump_fsyncs_a_writable_descriptor(tmp_path, monkeypatch):
+    """Model bytes are flushed through a writable descriptor before replacement."""
+    calls = []
+    real_fsync = os.fsync
+
+    def check_fsync(fd):
+        # Windows requires write access for fsync. POSIX rejects the empty
+        # write on a read-only descriptor without changing serialized data.
+        os.write(fd, b"")
+        calls.append(os.fstat(fd).st_size)
+        return real_fsync(fd)
+
+    monkeypatch.setattr("skordinal.experiments._io.os.fsync", check_fsync)
+    target = tmp_path / "model.joblib"
+    values = np.arange(1000, dtype=np.float64).reshape(100, 10)
+    _atomic_dump(target, {"weights": values})
+
+    assert len(calls) == 1
+    assert calls[0] >= values.nbytes
+    npt.assert_array_equal(joblib.load(target)["weights"], values)
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
+@pytest.mark.parametrize("failure", ["dump", "fsync"])
+def test_atomic_dump_failure_preserves_existing_model(tmp_path, monkeypatch, failure):
+    """A serialization or flush failure preserves the prior model and removes temp files."""
+    target = tmp_path / "model.joblib"
+    joblib.dump({"version": "original"}, target)
+
+    def fail(*args, **kwargs):
+        raise OSError("write failed")
+
+    dependency = "joblib.dump" if failure == "dump" else "os.fsync"
+    monkeypatch.setattr(f"skordinal.experiments._io.{dependency}", fail)
+    with pytest.raises(OSError, match="write failed"):
+        _atomic_dump(target, {"version": "replacement"})
+
+    assert joblib.load(target) == {"version": "original"}
+    assert list(tmp_path.glob(f"{_TEMP_PREFIX}*")) == []
+
+
 def test_sweep_removes_only_stray_temp_files(tmp_path):
     """The sweep unlinks temp files, keeping directories; a missing root is a no-op."""
     _sweep_orphaned_temp_files(tmp_path / "absent")
