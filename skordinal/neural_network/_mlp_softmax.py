@@ -1,7 +1,7 @@
 """Multi-Layer Perceptron classifier (Softmax)."""
 
 import numpy as np
-from scipy.special import expit, logsumexp
+from scipy.special import expit, log_softmax
 from sklearn.utils._param_validation import StrOptions
 
 from ._base import MLPBaseClassifier
@@ -211,11 +211,7 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
         Z_out = np.dot(A[-1], W_out) + b_out
 
         # Numerically stable log-softmax
-        log_prob = Z_out - logsumexp(
-            Z_out,
-            axis=1,
-            keepdims=True,
-        )
+        log_prob = log_softmax(Z_out, axis=1)
         P = np.exp(log_prob)
 
         # -------------------------
@@ -308,5 +304,5 @@ class MLPSoftmaxClassifier(MLPBaseClassifier):
         Z_out = np.dot(A, self.W_out_) + self.b_out_
 
         # Apply softmax
-        log_prob = Z_out - logsumexp(Z_out, axis=1, keepdims=True)
+        log_prob = log_softmax(Z_out, axis=1)
         return np.exp(log_prob)

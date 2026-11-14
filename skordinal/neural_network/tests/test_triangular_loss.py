@@ -360,6 +360,43 @@ def test_triangular_loss_is_stable_for_large_logits(rng, scale):
     assert np.isfinite(grad).all()
 
 
+@pytest.mark.parametrize("eta", [0.0, 0.7, 1.0])
+@pytest.mark.parametrize(
+    "offset, differences",
+    [
+        (1e20, [0.0, 0.0, 0.0]),
+        (-1e20, [0.0, 0.0, 0.0]),
+        (1e16, [0.0, 0.0, 2.0]),
+        (1e20, [0.0, 16384.0, 16384.0]),
+    ],
+    ids=["positive-tie", "negative-tie", "distinct-logits", "largest-logits-tie"],
+)
+def test_triangular_loss_preserves_large_common_logit_shifts(eta, offset, differences):
+    """Common offsets preserve the cross entropy and its zero-sum gradient."""
+    loss_fn = TriangularLoss(3, alpha2=0.1, eta=eta)
+    logits = np.tile(differences, (3, 1))
+    Y = np.eye(3)[[0, 2, 1]]
+    weights = np.array([1.0, 2.0, 4.0])
+    targets = loss_fn.soft_targets(Y)
+    base_loss, base_grad = loss_fn.loss_and_grad(logits, Y, weights)
+
+    loss, grad = loss_fn.loss_and_grad(logits + offset, Y, weights)
+    expected_loss = -np.average(
+        np.sum(targets * log_softmax(logits, axis=1), axis=1), weights=weights
+    )
+    expected_grad = (
+        (softmax(logits, axis=1) * targets.sum(axis=1, keepdims=True) - targets)
+        * weights[:, None]
+        / weights.sum()
+    )
+
+    assert loss == pytest.approx(expected_loss, rel=1e-14)
+    assert loss == pytest.approx(base_loss, rel=1e-14)
+    np.testing.assert_allclose(grad, expected_grad, atol=1e-15)
+    np.testing.assert_allclose(grad, base_grad, atol=1e-15)
+    np.testing.assert_allclose(grad.sum(axis=1), 0.0, atol=1e-15)
+
+
 def test_triangular_loss_confident_wrong_prediction_is_large_but_finite():
     """A confident mistake costs about the logit gap times the target mass."""
     loss_fn = TriangularLoss(3, alpha2=0.0, eta=0.0)
