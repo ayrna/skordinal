@@ -118,6 +118,41 @@ def test_weights_control_class_proportions(weights, expected):
     np.testing.assert_allclose(proportions, expected, atol=0.02)
 
 
+@pytest.mark.parametrize(
+    "weights, reference_weights",
+    [
+        ([1e308, 1e308, 1e308], [1, 1, 1]),
+        ([8e307, 4e307, 8e307], [2, 1, 2]),
+        ([1e308, 1e308, 0.0], [1, 1, 0]),
+    ],
+    ids=["balanced", "unbalanced", "zero-weight-class"],
+)
+def test_large_finite_weights_preserve_class_proportions(weights, reference_weights):
+    """A finite weight sum that overflows preserves the requested proportions."""
+    options = dict(n_samples=900, n_classes=3, random_state=42)
+    expected_X, expected_y = make_ordinal_classification(
+        weights=reference_weights, **options
+    )
+    with np.errstate(over="raise", invalid="raise"):
+        X, y = make_ordinal_classification(weights=weights, **options)
+
+    assert_array_equal(X, expected_X)
+    assert_array_equal(y, expected_y)
+
+
+@pytest.mark.parametrize("last_weight", [0.0, 1e-20], ids=["zero", "tiny-positive"])
+def test_weights_near_upper_quantile_boundary_are_valid(last_weight):
+    """Cumulative rounding cannot push a valid quantile above 100 percent."""
+    _, y = make_ordinal_classification(
+        n_samples=900,
+        n_classes=10,
+        weights=[1.0] * 9 + [last_weight],
+        random_state=42,
+    )
+
+    assert_array_equal(np.bincount(y, minlength=10), [100] * 9 + [0])
+
+
 def test_output_trains_sklearn_classifier():
     """Generated data is valid input for a scikit-learn classifier."""
     X, y = make_ordinal_classification(n_samples=120, n_classes=4, random_state=0)
