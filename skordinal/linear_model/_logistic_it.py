@@ -284,7 +284,7 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
         check_is_fitted(self)
         X = validate_data(self, X, reset=False, dtype=np.float64)
         f = self._project(X)
-        labels_enc = (f[:, np.newaxis] > self.thresholds_[np.newaxis, :]).sum(axis=1)
+        labels_enc = np.searchsorted(self.thresholds_, f, side="left")
         return self.classes_[labels_enc]
 
     def predict_projection(self, X):

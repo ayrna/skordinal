@@ -146,12 +146,9 @@ class RegressionClassifier(MetaEstimatorMixin, ClassifierMixin, BaseEstimator):
 
         y_cont = self._project(X)
 
-        # Clip so unbounded output maps to the nearest extreme class
-        max_rank = self.classes_.size - 1
-        y_cont = np.clip(y_cont, 0.0, max_rank)
-
-        ranks = np.arange(self.classes_.size, dtype=float)
-        idx = np.abs(y_cont[:, None] - ranks[None, :]).argmin(axis=1)
+        # The left insertion position keeps midpoint ties in the lower class.
+        # Values beyond the outer thresholds map to the extreme classes.
+        idx = np.searchsorted(self.thresholds_, y_cont, side="left")
         return self.classes_[idx]
 
     def _project(self, X: np.ndarray) -> np.ndarray:

@@ -195,3 +195,30 @@ def test_regression_projection_is_the_wrapped_regressor_output(X, y):
     clipped = np.clip(projection, 0.0, max_rank)
     n_exceeded = (clipped[:, np.newaxis] > clf.thresholds_[np.newaxis, :]).sum(axis=1)
     npt.assert_array_equal(clf.predict(X), clf.classes_[n_exceeded])
+
+
+def test_regression_predict_midpoints_and_extremes(monkeypatch):
+    """Nearest-rank decisions preserve lower ties and unbounded outputs."""
+    projection = np.array(
+        [
+            -np.inf,
+            -1e100,
+            np.nextafter(0.5, -np.inf),
+            0.5,
+            np.nextafter(0.5, np.inf),
+            np.nextafter(1.5, -np.inf),
+            1.5,
+            np.nextafter(1.5, np.inf),
+            1e100,
+            np.inf,
+        ]
+    )
+    X = np.arange(len(projection), dtype=float)[:, None]
+    classifier = RegressionClassifier(LinearRegression()).fit(
+        X, np.resize([-10, 20, 50], len(X))
+    )
+    monkeypatch.setattr(classifier.estimator_, "predict", lambda X: projection)
+
+    npt.assert_array_equal(
+        classifier.predict(X), [-10, -10, -10, -10, 20, 20, 20, 50, 50, 50]
+    )
