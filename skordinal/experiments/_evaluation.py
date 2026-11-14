@@ -1,9 +1,11 @@
 """Read-back aggregation over saved experiment results."""
 
+import json
 import math
 
 import numpy as np
 import pandas as pd
+from sklearn.utils import check_array
 
 from ._base import _check_metric_names, _check_split, _compute_metric
 from ._io import _atomic_write, _read_confusion_matrix_size
@@ -97,11 +99,13 @@ def evaluate(
     Notes
     -----
     The stored ``Target`` and ``Prediction`` columns are zero-based ranks into
-    ``best_model.classes_``, so metrics are recomputed in rank space, where
-    adjacent categories are always distance 1. ``report.csv``'s own values are
-    computed on the raw labels, so the two agree only while the label set is
-    contiguous. The scale spans the pair's saved confusion matrix, so a tree
-    written without one is scored on the ranks its predictions contain.
+    ``best_model.classes_``. The seed's ``classes.json`` restores the original
+    class values and their full ordinal scale, so recomputation uses the same
+    labels as ``report.csv``. This metadata is saved even without a model.
+    Older results without class metadata retain evaluation in rank space.
+    Their scale spans the saved confusion matrix, or the ranks present in
+    the predictions when that matrix is absent. Raw label distances cannot
+    be recovered from these older results.
 
     Examples
     --------
@@ -129,11 +133,37 @@ def evaluate(
             )
         y_true = df["Target"].to_numpy()
         y_pred = df["Prediction"].to_numpy()
-        # The saved confusion matrix is the only artefact that still carries K
-        size = _read_confusion_matrix_size(
-            path.parent / f"{split}_confusion_matrix.txt"
-        )
-        labels = np.arange(size) if size else None
+        class_path = path.parent / "classes.json"
+        if class_path.is_file():
+            try:
+                values = json.loads(class_path.read_text(encoding="utf-8"))
+                if not isinstance(values, list) or not (
+                    all(isinstance(value, (int, float)) for value in values)
+                    or all(isinstance(value, str) for value in values)
+                ):
+                    raise ValueError("Expected an array of class labels.")
+                labels = check_array(values, ensure_2d=False, dtype=None)
+                if labels.ndim != 1 or np.unique(labels).size != labels.size:
+                    raise ValueError("Expected distinct one-dimensional class labels.")
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Malformed class metadata at {class_path}.") from exc
+            ranks = df[["Target", "Prediction"]].to_numpy()
+            if (
+                not np.issubdtype(ranks.dtype, np.integer)
+                or (ranks < 0).any()
+                or (ranks >= labels.size).any()
+            ):
+                raise ValueError(
+                    f"Malformed predictions file at {path}: class indices must be "
+                    f"integers in [0, {labels.size})."
+                )
+            y_true, y_pred = labels[ranks].T
+        else:
+            # Legacy results retain their original rank-space interpretation.
+            size = _read_confusion_matrix_size(
+                path.parent / f"{split}_confusion_matrix.txt"
+            )
+            labels = np.arange(size) if size else None
         rows[resample_id] = {
             name: _compute_metric(name, y_true, y_pred, labels=labels)
             for name in metric_names

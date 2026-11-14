@@ -1,5 +1,6 @@
 """Tests for the _evaluation read-back/reporting functions."""
 
+import json
 import math
 from pathlib import Path
 
@@ -274,8 +275,9 @@ def test_evaluate_reports_a_malformed_predictions_file(tmp_path):
         evaluate(tmp_path, "A", "d1")
 
 
-def test_evaluate_scores_in_rank_space_not_raw_labels(tmp_path):
-    """Recomputed values use ranks, so a gapped label set diverges from report.csv."""
+@pytest.mark.parametrize("split", ["train", "test"])
+def test_evaluate_preserves_original_label_values(tmp_path, split):
+    """Recomputed raw label errors match the saved report for gapped classes."""
     classes = np.array([0, 5, 10])
     features = np.repeat(classes, 4).reshape(-1, 1).astype(float)
     estimator = SVC().fit(features, np.repeat(classes, 4))
@@ -289,7 +291,7 @@ def test_evaluate_scores_in_rank_space_not_raw_labels(tmp_path):
             train_predicted_y=predicted_y,
             test_predicted_y=predicted_y,
             y_proba=None,
-            train_metrics={},
+            train_metrics={"mean_absolute_error_train": 5 / 3},
             test_metrics={"mean_absolute_error_test": 5 / 3},
             best_params={},
             best_model=estimator,
@@ -298,10 +300,79 @@ def test_evaluate_scores_in_rank_space_not_raw_labels(tmp_path):
         ),
         save_model=False,
     )
-    df = evaluate(tmp_path, "A", "d1")
-    # Ranks make 0 and 5 adjacent, so the recomputed error is 1/3, not 5/3
-    assert df.loc[0, "mean_absolute_error"] == pytest.approx(1 / 3)
+    df = evaluate(tmp_path, "A", "d1", split=split)
+    report = Results(tmp_path).report("A", "d1")
+    assert df.loc[0, "mean_absolute_error"] == pytest.approx(
+        report.loc[0, f"mean_absolute_error_{split}"]
+    )
     assert mean_absolute_error(true_y, predicted_y) == pytest.approx(5 / 3)
+
+
+def test_evaluate_restores_full_scale_without_confusion_matrix(tmp_path):
+    """Class metadata retains an absent middle class without a saved model."""
+    classes = np.array([0, 10, 20])
+    estimator = SVC().fit(classes[:, None], classes)
+    truth = np.array([0, 0, 20, 20, 0, 20])
+    prediction = np.array([0, 20, 0, 20, 0, 20])
+    results = Results(tmp_path)
+    results.save(
+        ExperimentResult(
+            dataset_name="d1",
+            classifier_name="A",
+            resample_id=0,
+            train_predicted_y=classes,
+            test_predicted_y=prediction,
+            y_proba=None,
+            train_metrics={},
+            test_metrics={"accuracy_off1_score_test": 2 / 3},
+            best_params={},
+            best_model=estimator,
+            train_true_y=classes,
+            test_true_y=truth,
+        ),
+        save_model=False,
+    )
+    seed = tmp_path / "A" / "d1" / "predictions_by_seed" / "seed_0"
+    (seed / "test_confusion_matrix.txt").unlink()
+
+    scored = evaluate(
+        tmp_path,
+        "A",
+        "d1",
+        metrics=[
+            "accuracy_off1_score",
+            "average_mean_absolute_error",
+            "maximum_mean_absolute_error",
+            "mean_absolute_error",
+        ],
+    )
+
+    assert scored.loc[0, "accuracy_off1_score"] == pytest.approx(2 / 3)
+    assert scored.loc[0, "average_mean_absolute_error"] == pytest.approx(2 / 3)
+    assert scored.loc[0, "maximum_mean_absolute_error"] == pytest.approx(2 / 3)
+    assert scored.loc[0, "mean_absolute_error"] == pytest.approx(20 / 3)
+
+
+@pytest.mark.parametrize(
+    "classes", [[], [[0, 10], [20, 30]], [0, 0], [None], [0, "10"]]
+)
+def test_evaluate_rejects_malformed_class_metadata(tmp_path, classes):
+    """Malformed class metadata fails before it can change the reported scale."""
+    seed = _write_seed(tmp_path, "A", "d1", 0, "test", [0, 1], [0, 0])
+    (seed / "classes.json").write_text(json.dumps(classes), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="class metadata"):
+        evaluate(tmp_path, "A", "d1")
+
+
+@pytest.mark.parametrize("prediction", [[-1, 0], [0, 3], [0.5, 1.0]])
+def test_evaluate_rejects_invalid_saved_rank_indices(tmp_path, prediction):
+    """Invalid ranks cannot select unrelated classes through NumPy indexing."""
+    seed = _write_seed(tmp_path, "A", "d1", 0, "test", [0, 1], prediction)
+    (seed / "classes.json").write_text("[0, 10, 20]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="class indices"):
+        evaluate(tmp_path, "A", "d1")
 
 
 def test_summarize_aggregates_metrics(two_pair_folder):
