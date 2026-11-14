@@ -417,12 +417,20 @@ def test_results_path_resolved_once_across_chdir(tmp_path, monkeypatch):
     assert not (work_b / "runs").exists()
 
 
-def test_summarize_reraises_a_corrupt_report(tmp_path):
+@pytest.mark.parametrize(
+    "content,error",
+    [
+        ("", pd.errors.EmptyDataError),
+        ("resample_id,mae_test\n0,0.1\n0,0.2\n", pd.errors.ParserError),
+    ],
+    ids=["empty", "duplicate-resample"],
+)
+def test_summarize_reraises_a_corrupt_report(tmp_path, content, error):
     """An unreadable report.csv is data loss, so it must not read as 'nothing'."""
     pair = tmp_path / "out" / "SVM" / _BUNDLED_DS
     pair.mkdir(parents=True)
-    (pair / "report.csv").write_text("", encoding="utf-8")
-    with pytest.raises(pd.errors.EmptyDataError):
+    (pair / "report.csv").write_text(content, encoding="utf-8")
+    with pytest.raises(error):
         _make_benchmark(tmp_path / "out").summarize()
 
 

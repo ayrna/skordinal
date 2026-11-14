@@ -818,6 +818,60 @@ def test_report_rows_fall_back_to_lexicographic_order(tmp_path):
     assert list(df.index) == ["fold_a", "fold_b"]
 
 
+@pytest.mark.parametrize(
+    "identifiers,expected",
+    [
+        (["NA", "NULL"], ["NA", "NULL"]),
+        (["01", "1"], ["01", "1"]),
+        (["+1", "1"], ["+1", "1"]),
+        (["1.0", "1"], ["1.0", "1"]),
+        (["0", "10"], [0, 10]),
+        (["0", "fold"], ["0", "fold"]),
+    ],
+)
+def test_report_preserves_literal_ids_and_metric_nan(tmp_path, identifiers, expected):
+    """Only canonical integer identifiers are converted to an integer index."""
+    pair = tmp_path / "clf" / "ds"
+    pair.mkdir(parents=True)
+    pd.DataFrame(
+        {"mae_test": [0.1, np.nan]}, index=pd.Index(identifiers, name="resample_id")
+    ).to_csv(pair / "report.csv")
+    results = Results(tmp_path)
+
+    report = results.report("clf", "ds")
+
+    assert list(report.index) == expected
+    assert report.iloc[0, 0] == pytest.approx(0.1)
+    assert np.isnan(report.iloc[1, 0])
+    assert all(results.exists("clf", "ds", identifier) for identifier in identifiers)
+
+
+def test_save_preserves_literal_ids_when_appending_and_replacing(tmp_path):
+    """Appending or replacing another seed preserves every original identifier."""
+    results = Results(tmp_path)
+    for value, identifier in enumerate(["NA", "NULL", "01"]):
+        results.save(
+            _make_result(partition=identifier, best_params={"C": value + 0.5}),
+            save_model=False,
+        )
+    results.save(
+        _make_result(
+            partition="NA", test_metrics={"mae_test": 0.9}, best_params={"C": 9.5}
+        ),
+        save_model=False,
+    )
+
+    report = results.report("clf", "ds")
+
+    assert list(report.index) == ["01", "NA", "NULL"]
+    assert report.loc["NA", "mae_test"] == pytest.approx(0.9)
+    assert report.loc["NULL", "mae_test"] == pytest.approx(0.1)
+    parameters = results.hyperparameters("clf", "ds").set_index("Seed")
+    assert list(parameters.index) == ["01", "NA", "NULL"]
+    assert parameters.loc["NA", "C"] == pytest.approx(9.5)
+    assert parameters.loc["NULL", "C"] == pytest.approx(1.5)
+
+
 def test_report_row_sort_preserves_pre_existing_duplicates(tmp_path):
     """Sorting a report that already holds a duplicate row must not multiply it."""
     _make_pair_csv(
