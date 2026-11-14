@@ -21,7 +21,7 @@ import numpy as np
 from sklearn.utils import Bunch
 from sklearn.utils._param_validation import Interval, validate_params
 
-from ._base import get_data_home, load_dataset, load_partitions
+from ._base import _read_csv_any, get_data_home, load_dataset, load_partitions
 
 _logger = logging.getLogger(__name__)
 
@@ -156,7 +156,7 @@ def _make_descr(dataset_name, meta):
 
 
 def _normalise_dataset_masks(train_masks_path, masks_path, name):
-    """Replace a keyed 0..N-1 ``train_masks.json`` with an ordered-list masks file."""
+    """Validate staged data and replace keyed masks with an ordered-list file."""
     message = (
         f"TOC-UCO train_masks.json for {name!r} is malformed (it must be a "
         "non-empty JSON object keyed '0'..'N-1' mapping to equal-length, "
@@ -182,6 +182,18 @@ def _normalise_dataset_masks(train_masks_path, masks_path, name):
         raise OSError(message)
     if any(all(value) or not any(value) for value in values):
         raise OSError(message)
+    csv_path = train_masks_path.parent / f"{name}.csv"
+    try:
+        _, target, _, _ = _read_csv_any(csv_path)
+    except (ValueError, csv.Error) as err:
+        raise OSError(
+            f"TOC-UCO CSV for {name!r} is malformed ({err}); nothing was published."
+        ) from err
+    if len(values[0]) != target.size:
+        raise OSError(
+            f"TOC-UCO train_masks.json for {name!r} has {len(values[0])} entries "
+            f"per mask, but the CSV has {target.size} samples; nothing was published."
+        )
     # The site's plain "0".."N-1" keys match neither form _base reads
     masks_list = [keyed[str(k)] for k in range(len(keyed))]
     with masks_path.open("w", encoding="utf-8") as fh:
@@ -553,15 +565,15 @@ def fetch_tocuco(
     ValueError
         When ``name`` is empty, starts with a dot, contains a path
         separator, or ends with ``".csv"``, when ``name`` is not found in
-        the TOC-UCO repository, or when the downloaded CSV cannot be
-        parsed.
+        the TOC-UCO repository, or when a cached CSV cannot be parsed.
 
     OSError
         When ``download_if_missing=False`` and the dataset is not cached,
         when a per-dataset cache is stale or only partially populated (a
         missing file, a metadata row absent for the name, or a malformed
-        metadata row), or when the downloaded ``train_masks.json`` is
-        malformed.
+        metadata row), when a downloaded CSV or ``train_masks.json`` is
+        malformed, or when a downloaded mask's length differs from the CSV's
+        sample count. Invalid downloads are rejected before cache publication.
 
     urllib.error.URLError
         When the download fails: immediately for a permanent HTTP client
@@ -688,8 +700,10 @@ def fetch_tocuco_partition(
     ------
     OSError
         When ``download_if_missing=False`` and the dataset is not cached,
-        or when its cache is missing a file. A metadata row absent for
-        the name only degrades ``DESCR`` to a generic text.
+        when its cache is missing a file, or when a downloaded CSV and its
+        masks are malformed or have different sample counts. Invalid downloads
+        are rejected before cache publication. A metadata row absent for the
+        name only degrades ``DESCR`` to a generic text.
 
     ValueError
         When ``name`` is empty, starts with a dot, contains a path
@@ -812,7 +826,8 @@ def download_tocuco(
         safety cap, when the extracted tree does not hold one
         ``<name>/<name>.csv`` directory per dataset with its
         ``metadata.csv`` and ``train_masks.json``, or when a dataset's
-        ``train_masks.json`` is malformed.
+        CSV or ``train_masks.json`` is malformed, or when their sample counts
+        differ. Every dataset is validated before any dataset is published.
 
     ValueError
         When a downloaded archive contains a member path that would
