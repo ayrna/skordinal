@@ -8,6 +8,9 @@ import numpy as np
 import numpy.testing as npt
 import pandas as pd
 import pytest
+from sklearn.metrics.pairwise import pairwise_kernels
+from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.utils import get_tags
 
 from skordinal.svm import REDSVM
 from skordinal.utils._testing import make_balance_scale_split
@@ -254,3 +257,65 @@ def test_redsvm_projection_well_formed(kernel):
         axis=1
     )
     npt.assert_array_equal(clf.predict(X_test), clf.classes_[n_reached])
+
+
+@pytest.mark.parametrize("kernel", ["linear", "rbf", "poly"])
+def test_redsvm_precomputed_kernel_matches_explicit_kernel(kernel):
+    """A standard Gram matrix reproduces native kernel labels and projections."""
+    X = np.arange(36, dtype=float).reshape(18, 2) / 12.0 - 1.5
+    y = np.repeat([-3, 2, 9], 6)
+    order = np.random.default_rng(42).permutation(len(X))
+    X, y = X[order], y[order]
+    X_test = X[::3] + 0.1
+    params = {"gamma": 0.3, "degree": 2, "coef0": 0.4}
+    K = pairwise_kernels(X, metric=kernel, filter_params=True, **params)
+    K_test = pairwise_kernels(X_test, X, metric=kernel, filter_params=True, **params)
+    expected = REDSVM(kernel=kernel, tol=1e-6, **params).fit(X, y)
+    clf = REDSVM(kernel="precomputed", tol=1e-6).fit(K, y)
+
+    npt.assert_array_equal(clf.predict(K_test), expected.predict(X_test))
+    npt.assert_allclose(
+        clf.predict_projection(K_test), expected.predict_projection(X_test), atol=1e-5
+    )
+    with pytest.raises(ValueError, match="features"):
+        clf.predict(K_test[:, :-1])
+
+
+def test_redsvm_precomputed_kernel_requires_square_training_matrix():
+    """Reject rectangular training matrices before entering the native bridge."""
+    with pytest.raises(ValueError, match="square"):
+        REDSVM(kernel="precomputed").fit(np.ones((6, 5)), [0, 0, 1, 1, 2, 2])
+
+
+def test_redsvm_precomputed_kernel_cross_validation_slices_training_columns():
+    """The pairwise tag makes cross validation select matching Gram submatrices."""
+    X = np.arange(36, dtype=float).reshape(18, 2) / 12.0 - 1.5
+    y = np.repeat([-3, 2, 9], 6)
+    splitter = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+    K = pairwise_kernels(X, metric="rbf", gamma=0.3)
+
+    expected = cross_val_score(REDSVM(gamma=0.3), X, y, cv=splitter)
+    actual = cross_val_score(REDSVM(kernel="precomputed"), K, y, cv=splitter)
+
+    npt.assert_array_equal(actual, expected)
+    assert get_tags(REDSVM(kernel="precomputed")).input_tags.pairwise
+    assert not get_tags(REDSVM()).input_tags.pairwise
+
+
+@pytest.mark.parametrize("kernel", ["linear", "rbf", "precomputed"])
+def test_redsvm_legacy_fitted_state_retains_input_convention(kernel):
+    """Previously serialized models keep their original prediction input format."""
+    X = np.arange(18, dtype=float).reshape(9, 2) / 10.0
+    y = np.repeat([-3, 2, 9], 3)
+    inputs = pairwise_kernels(X, metric="rbf") if kernel == "precomputed" else X
+    clf = REDSVM(kernel=kernel).fit(inputs, y)
+    expected = clf.predict(inputs)
+    expected_projection = clf.predict_projection(inputs)
+    del clf._precomputed_
+    if kernel == "precomputed":
+        # Earlier models counted the caller-supplied serial column as a feature.
+        clf.n_features_in_ += 1
+        inputs = np.column_stack((np.zeros(len(inputs)), inputs))
+
+    npt.assert_array_equal(clf.predict(inputs), expected)
+    npt.assert_array_equal(clf.predict_projection(inputs), expected_projection)
