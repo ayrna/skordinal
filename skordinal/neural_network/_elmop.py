@@ -185,17 +185,16 @@ class ELMOP(ClassifierMixin, BaseEstimator):
         H_test = self._hidden(X)  # (n_test, n_hidden)
         TY = H_test @ self.output_weights_  # (n_test, K-1)
 
-        # Build the code matrix: C[k, j] = +1 if k >= j + 1 else -1.
-        C = np.where(
-            np.arange(K)[:, np.newaxis] >= np.arange(1, K)[np.newaxis, :],
-            1.0,
-            -1.0,
-        )  # (K, K-1)
-
-        # Sum the exponential loss of the outputs against each code row.
-        losses = np.exp(-TY[:, np.newaxis, :] * C[np.newaxis, :, :]).sum(
-            axis=2
-        )  # (n_test, K)
+        # Class k uses exp(-TY) before partition k and exp(TY) after it.
+        # Reuse these terms without constructing an (n_test, K, K-1)
+        # tensor. Preserve the original summation order and exact ties.
+        terms = np.exp(TY)
+        negative = np.exp(-TY)
+        losses = np.empty((X.shape[0], K), dtype=np.float64)
+        losses[:, 0] = terms.sum(axis=1)
+        for k in range(1, K):
+            terms[:, k - 1] = negative[:, k - 1]
+            losses[:, k] = terms.sum(axis=1)
 
         return losses
 
