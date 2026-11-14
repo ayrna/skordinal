@@ -7,7 +7,6 @@ import scipy.optimize
 import scipy.special
 from sklearn.base import BaseEstimator, ClassifierMixin, _fit_context
 from sklearn.utils._param_validation import Interval, StrOptions
-from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.utils.validation import check_is_fitted, validate_data
 
 from skordinal.utils._optimize import _check_optimize_result
@@ -18,7 +17,10 @@ from skordinal.utils.extmath import (
     thresholds_grad,
     thresholds_to_params,
 )
-from skordinal.utils.validation import check_ordinal_targets
+from skordinal.utils.validation import (
+    _compute_class_sample_weight,
+    check_ordinal_targets,
+)
 
 
 class LogisticIT(ClassifierMixin, BaseEstimator):
@@ -54,6 +56,8 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
         proportional to ``n_samples / (n_classes * np.bincount(y))``.
         ``None`` assigns weight 1 to every sample.  The L2 penalty on
         ``w`` and the threshold parameters are not affected.
+        Weights must be finite and nonnegative. Their sum over training samples
+        must be finite and positive.
 
     Attributes
     ----------
@@ -171,7 +175,7 @@ class LogisticIT(ClassifierMixin, BaseEstimator):
         """
         X, y = validate_data(self, X, y, dtype=np.float64)
         self.classes_, y_enc = check_ordinal_targets(y)
-        sample_weight = compute_sample_weight(self.class_weight, y)
+        sample_weight = _compute_class_sample_weight(self.class_weight, y)
 
         n_features = X.shape[1]
         n_classes = len(self.classes_)

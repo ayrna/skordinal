@@ -5,7 +5,25 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 from sklearn.utils import check_array
+from sklearn.utils.class_weight import compute_sample_weight
 from sklearn.utils.multiclass import check_classification_targets
+from sklearn.utils.validation import _check_sample_weight
+
+
+def _compute_class_sample_weight(class_weight, y: ArrayLike) -> NDArray[np.float64]:
+    """Compute finite, nonnegative class weights with finite positive total weight."""
+    weights = _check_sample_weight(
+        compute_sample_weight(class_weight, y), y, dtype=np.float64
+    )
+    if np.any(weights < 0.0):
+        raise ValueError("Class weights must be nonnegative.")
+    with np.errstate(over="ignore"):
+        total_weight = weights.sum()
+    if not np.isfinite(total_weight) or total_weight <= 0.0:
+        raise ValueError(
+            "Class weights must have a finite positive sum over training samples."
+        )
+    return weights
 
 
 def check_ordinal_targets(
