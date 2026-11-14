@@ -42,28 +42,20 @@ PyObject* predict(PyObject* self, PyObject* args)
 	}
 
 	//Get the test data from python
-	testdata = (Data_List*) malloc(sizeof(Data_List));
+	testdata = (Data_List*) calloc(1, sizeof(Data_List));
 	if(testdata == NULL){
 		PyErr_SetString(PyExc_MemoryError, "Not enough memory");
 		return NULL;
 	}
-	testdata->front = NULL;
-	testdata->rear = NULL;
-	testdata->x_mean = NULL;
-	testdata->x_devi = NULL;
-	testdata->featuretype = NULL;
-	testdata->labels = NULL;
-	testdata->labelnum = NULL;
-	testdata->filename = NULL;
-
-	feature_number = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(PyList_GetItem(features, 0)))); /*features colums*/
-	testing_instance_number = (int) PyLong_AsLong(PyLong_FromSsize_t(PyList_Size(features))); /*features rows*/
+	feature_number = (int) PyList_Size(PyList_GetItem(features, 0)); /*features colums*/
+	testing_instance_number = (int) PyList_Size(features); /*features rows*/
 	
 	for(i=0; i<testing_instance_number; i++){
 		testnode = (Data_Node*) malloc(sizeof(Data_Node));
 		if(testnode == NULL){
 			PyErr_SetString(PyExc_MemoryError, "Not enough memory");
 			Clear_Data_List(testdata);
+			free(testdata);
 			return NULL;
 		}
 		testnode->point = (double*) malloc(feature_number * sizeof(double));
@@ -71,6 +63,7 @@ PyObject* predict(PyObject* self, PyObject* args)
 			PyErr_SetString(PyExc_MemoryError, "Not enough memory");
 			free(testnode);
 			Clear_Data_List(testdata);
+			free(testdata);
 			return NULL;
 		}
 		testnode->next = NULL;
@@ -87,6 +80,7 @@ PyObject* predict(PyObject* self, PyObject* args)
 	{
 		PyErr_SetString(PyExc_MemoryError, "Unable to translate python model to C");
 		Clear_Data_List(testdata);
+		free(testdata);
 
 		return NULL;
 	}
@@ -127,15 +121,18 @@ PyObject* predict(PyObject* self, PyObject* args)
 
 		if (FALSE == Clear_Data_List(model->pairs)){
 			PyErr_SetString(PyExc_MemoryError, "Unable to clear memory") ;
+			free(model->pairs);
 			free(model->alpha) ;
 			free (model) ;
 			model = NULL ;
 			Clear_Data_List(testdata);
+			free(testdata);
 			Py_DECREF(predicted_labels);
 			Py_DECREF(projections);
 
 			return NULL;
 		}
+		free(model->pairs);
 
 		free(model->alpha) ;
 
@@ -145,11 +142,13 @@ PyObject* predict(PyObject* self, PyObject* args)
 
 	if (FALSE == Clear_Data_List(testdata)){
 		PyErr_SetString(PyExc_MemoryError, "Unable to clear memory") ;
+		free(testdata);
 		Py_DECREF(predicted_labels);
 		Py_DECREF(projections);
 
 		return NULL;
 	}
+	free(testdata);
 
 	return Py_BuildValue("(NN)", predicted_labels, projections);
 }
